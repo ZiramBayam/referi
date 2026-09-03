@@ -30,6 +30,13 @@ Alamat:
 - API: prod `https://api.acp.virtuals.io`, testnet `https://api-dev.acp.virtuals.io`
 - **Token escrow Base Sepolia = `0xECc22a8F6fD62388498fBa19813E214605a2BDb3`** (`cast call <ACP> "paymentToken()(address)"`;
   `symbol()` = `"USDC"`, `name()` = `"USD Coin"`, `decimals()` = 6). Ini **BUKAN** USDC Circle `0x036CbD53…dCF7e`.
+  **`symbol()` TIDAK BISA membedakan keduanya — jangan pernah dipakai sebagai bukti identitas token.** Dibaca ulang
+  2026-09-04 (`cast call <token> "symbol()(string)"|"name()(string)"|"decimals()(uint8)" --rpc-url https://sepolia.base.org`):
+  escrow → `"USDC"` / `"USD Coin"` / 6; Circle `0x036CbD53…dCF7e` → `"USDC"` / `"USDC"` / 6. Simbol IDENTIK, desimal identik;
+  hanya `name()` berbeda (pembeda lemah) dan **ALAMAT** yang mengikat. Satu-satunya cek yang sah:
+  `cast call 0x0b93793923CD5De81850aF8604a233f3f24d461e "paymentToken()(address)" --rpc-url https://sepolia.base.org`
+  lalu bandingkan hasilnya (case-insensitive) dengan `USDC_ADDRESS`. Setiap AC/skrip yang "membuktikan alamat token
+  dengan `symbol()`" adalah CACAT dan lolos untuk token yang salah.
   ACP hanya menarik token ini di `fund`; saldo USDC Circle TIDAK bisa dipakai. Token ini punya
   `mint(address,uint256)` TANPA kontrol akses (selector `0x40c10f19` ada di bytecode; dibuktikan di fork: pemanggil
   acak berhasil mint 100 USDC) → tidak butuh faucet Circle. Sama untuk bscTestnet; Base mainnet = USDC Circle asli.

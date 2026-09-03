@@ -63,16 +63,19 @@ ditemukan; hanya `uv` yang selamat (lewat `~/.profile`). Diverifikasi 2026-09-02
 | x402 (server/facilitator lib) | **BELUM DIVERIFIKASI** | cari paket resmi Coinbase x402 untuk Python/Node, verifikasi terhadap registry resmi sebelum server x402 dibuat |
 
 ## Jaringan & alamat (diverifikasi on-chain + docs.base.org + circlefin/skills)
-Baris token & fee diverifikasi ulang 2026-09-03 dengan `cast call <ACP> "paymentToken()(address)"`, `"platformFeeBP()(uint256)"`, `"evaluatorFeeBP()(uint256)"`, `"platformTreasury()(address)"`, `cast call <token> "symbol()(string)"` (RPC https://sepolia.base.org). Rincian perilaku: `docs/api-facts.md` §A.
+Baris token & fee diverifikasi ulang 2026-09-03 dengan `cast call <ACP> "paymentToken()(address)"`, `"platformFeeBP()(uint256)"`, `"evaluatorFeeBP()(uint256)"`, `"platformTreasury()(address)"` (RPC https://sepolia.base.org). Rincian perilaku: `docs/api-facts.md` §A.
+Baris alamat & token diverifikasi ULANG 2026-09-04 langsung ke chain. **`symbol()` BUKAN alat identifikasi token di jaringan ini** — dua alamat berbeda sama-sama menjawab `"USDC"`; satu-satunya pembeda yang mengikat adalah ALAMAT hasil `paymentToken()`. Lihat `docs/api-facts.md` §A.
 | Item | Nilai |
 |---|---|
 | Base Sepolia | chainId 84532 (0x14a34), RPC https://sepolia.base.org, explorer https://sepolia.basescan.org |
 | Base mainnet | chainId 8453, RPC https://mainnet.base.org |
 | EVM version Base | osaka (Azul: Sepolia 2026-04-20, mainnet 2026-05-28); gas cap per-tx 16,777,216 (EIP-7825) |
-| USDC Circle Base Sepolia | 0x036CbD53842c5426634e7929541eC2318f3dCF7e (6 desimal) — **TIDAK dipakai escrow ACP**, lihat baris berikutnya |
-| **Token escrow ACP Base Sepolia** | **0xECc22a8F6fD62388498fBa19813E214605a2BDb3** (`symbol()` = "USDC", `name()` = "USD Coin", 6 desimal). Nilai `paymentToken()` kontrak ACP; `mint(address,uint256)` terbuka untuk siapa pun → tidak butuh faucet Circle |
+| USDC Circle Base Sepolia | 0x036CbD53842c5426634e7929541eC2318f3dCF7e — **TIDAK dipakai escrow ACP**, lihat baris berikutnya. Dibaca 2026-09-04: `symbol()` = "USDC", `name()` = **"USDC"**, `decimals()` = 6 |
+| **Token escrow ACP Base Sepolia** | **0xECc22a8F6fD62388498fBa19813E214605a2BDb3** — nilai `paymentToken()` kontrak ACP; `mint(address,uint256)` terbuka untuk siapa pun → tidak butuh faucet Circle. Dibaca 2026-09-04: `symbol()` = "USDC" (IDENTIK dengan USDC Circle → tidak bisa membedakan), `name()` = "USD Coin", `decimals()` = 6 |
+| **Cara membedakan dua "USDC" itu** | `cast call 0x0b93793923CD5De81850aF8604a233f3f24d461e "paymentToken()(address)" --rpc-url https://sepolia.base.org` → `0xECc22a8F6fD62388498fBa19813E214605a2BDb3` (2026-09-04). Bandingkan **alamat**, jangan `symbol()`. Pembeda lemah tambahan: `name()` "USD Coin" (escrow) vs "USDC" (Circle) |
 | USDC Base mainnet | 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 (6 desimal) — di mainnet ACP memang memakai USDC Circle |
-| ACP Base Sepolia | 0x0b93793923CD5De81850aF8604a233f3f24d461e (proxy ERC-1967; implementasi 0xc4E95dBc7E8C99c114FF9C8299A3E4851e1530fF) |
+| ACP Base Sepolia | 0x0b93793923CD5De81850aF8604a233f3f24d461e (proxy ERC-1967; implementasi 0xc4E95dBc7E8C99c114FF9C8299A3E4851e1530fF — slot `0x360894…2bbc` dibaca ulang 2026-09-04, tidak berubah) |
+| **EvaluatorVault (kontrak KITA) Base Sepolia** | **0x5c6EE4586ACABcb6326069c229E58091B21ef384**. Deploy tx `0xfcf339e2732f60809bd8c86232ccc386e9cb5285edb285e355fb2ca1fe98b601`, blok 46350667, status 1, gasUsed 816969, `effectiveGasPrice` 6.000.000 wei, deployer/`from` = 0xfa5AF5BAeB4aC500267D7189fa1f0AA923eCA894 (`cast receipt … --rpc-url https://sepolia.base.org`, 2026-09-04). Immutable on-chain: `acp()` = ACP Base Sepolia, `agent()` = `arbiter()` = 0xfa5AF5BAeB4aC500267D7189fa1f0AA923eCA894 (**agent == arbiter pada deploy ini** — pisahkan sebelum 1.2c/`sweepToken`), `MIN_BOND()` = 0; konstanta `CHALLENGE_WINDOW()` = 120, `MIN_ACP_GAS()` = 300000, `KIND_COMPLETE()` = 1, `KIND_REJECT()` = 2. Catatan deploy: `deployments/84532.json` |
 | ACP Base mainnet | 0x238E541BfefD82238730D00a2208E5497F1832E0 |
 | Fee ACP Base Sepolia | `platformFeeBP()` = 100 (1%), `evaluatorFeeBP()` = 500 (5%), `platformTreasury()` = 0xb3bdEdda2050a3615B73bB9a2684946eC38B5375 |
 | Tenggang evaluator ACP | `EVALUATOR_GRACE_PERIOD()` = **900** detik (15 menit) — dibaca 2026-09-03 via `cast call <ACP> "EVALUATOR_GRACE_PERIOD()(uint256)"`. Setelah `expiredAt + 900`, SIAPA PUN boleh `claimRefund` job berstatus Submitted dan membatalkan verdict evaluator. Konstanta ini membatasi anggaran waktu vault; lihat `docs/api-facts.md` §A |
