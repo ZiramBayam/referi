@@ -3,36 +3,373 @@ Aturan: kode HANYA boleh memanggil fungsi/metode yang tercantum di sini. Jika bu
 BERHENTI, verifikasi dari sumber primer (URL di bawah), tambahkan ke file ini bersama URL-nya, baru pakai.
 Diverifikasi 24 Agu 2026.
 
-## A. Kontrak ACP (implementasi ERC-8183 milik Virtuals) — sumber: `src/core/acpAbi.ts`, `src/core/constants.ts` di
-## https://github.com/Virtual-Protocol/acp-node-v2 ; spek: https://eips.ethereum.org/EIPS/eip-8183
+## A. Kontrak ACP (implementasi ERC-8183 milik Virtuals) — sumber: `dist/core/acpAbi.js` + `dist/core/constants.js`
+## dari paket NYATA `@virtuals-protocol/acp-node-v2@0.1.12` (`npm pack`, shasum `c5342f3c…cb96`), DAN dikonfirmasi
+## langsung ke kontrak Base Sepolia. Spek (hanya rujukan, bukan sumber): https://eips.ethereum.org/EIPS/eip-8183
+## DIVERIFIKASI ON-CHAIN 2026-09-03. Metode: (1) `cast call/logs --rpc-url https://sepolia.base.org`;
+## (2) fork Base Sepolia dengan `forge test` (`vm.createSelectFork("https://sepolia.base.org")` + `vm.prank`),
+## yang mengeksekusi BYTECODE ASLI kontrak — semua "fakta perilaku" di bawah berasal dari eksekusi itu, bukan dari teks.
+## (3) SUMBER BARU 2026-09-03: kode sumber TERVERIFIKASI `AgenticCommerceV3.sol` dari Sourcify, `match=exact_match`
+##     (runtime DAN creation), `verifiedAt 2026-07-14`:
+##     `curl -s "https://sourcify.dev/server/v2/contract/84532/0xc4e95dbc7e8c99c114ff9c8299a3e4851e1530ff?fields=sources,abi"`
+##     (alamat WAJIB huruf kecil; endpoint v1 `/files/any/...` menolak dengan 403). Pakai ini untuk menentukan
+##     URUTAN CEK dan konstanta, lalu buktikan lagi lewat fork sebelum ditulis di sini.
+##     Paket itu memuat 28 file; hanya DUA yang milik Virtuals: `contracts/AgenticCommerceV3.sol` (631 baris,
+##     sha256 `3b47cdbcf6397583510c35a1c9783880d6d3443e5d2c12a70dbe82d3a508cddb`) dan `contracts/interfaces/IACPHook.sol`
+##     (36 baris, sha256 `4491e3abb21def6af6f9cd3123f4a408adcfb419cb6d3e5ad151cb5b614377d3`); sisanya OpenZeppelin.
+##     **Semua rujukan `:<baris>` di §A menunjuk ke file ber-sha256 itu** (ambil ulang & cocokkan sha sebelum percaya).
+##     `BaseACPHook` TIDAK ada di paket — jangan mengutip atau mewarisinya.
+## PERINGATAN SUMBER: ABI di paket SDK `acp-node-v2@0.1.12` adalah SUBSET BASI dari kontrak nyata — ia kehilangan
+## error `ClientIsProvider`, `EvaluatorIsProvider`, `EnforcedPause`, `ExpectedPause` DAN view `EVALUATOR_GRACE_PERIOD()`
+## (dihitung: ABI SDK punya 21 error, ABI terverifikasi punya 25). "Tidak ada di ABI SDK" TIDAK berarti "tidak ada di kontrak".
 Alamat:
-- Base Sepolia (84532): `0x0b93793923CD5De81850aF8604a233f3f24d461e`
+- Base Sepolia (84532): `0x0b93793923CD5De81850aF8604a233f3f24d461e` — ERC-1967 proxy.
+  Implementasi (slot `0x360894…2bbc`) = `0xc4E95dBc7E8C99c114FF9C8299A3E4851e1530fF`, nama kontrak `AgenticCommerceV3`.
 - Base mainnet (8453):  `0x238E541BfefD82238730D00a2208E5497F1832E0`
 - Sentinel "tanpa evaluator" (EVM): `0x0000000000000000000000000000000000000000`
 - API: prod `https://api.acp.virtuals.io`, testnet `https://api-dev.acp.virtuals.io`
+- **Token escrow Base Sepolia = `0xECc22a8F6fD62388498fBa19813E214605a2BDb3`** (`cast call <ACP> "paymentToken()(address)"`;
+  `symbol()` = `"USDC"`, `name()` = `"USD Coin"`, `decimals()` = 6). Ini **BUKAN** USDC Circle `0x036CbD53…dCF7e`.
+  ACP hanya menarik token ini di `fund`; saldo USDC Circle TIDAK bisa dipakai. Token ini punya
+  `mint(address,uint256)` TANPA kontrol akses (selector `0x40c10f19` ada di bytecode; dibuktikan di fork: pemanggil
+  acak berhasil mint 100 USDC) → tidak butuh faucet Circle. Sama untuk bscTestnet; Base mainnet = USDC Circle asli.
+- `platformTreasury()` Base Sepolia = `0xb3bdEdda2050a3615B73bB9a2684946eC38B5375`. `jobCounter()` = 408 (3 Sep 2026).
 
-Fungsi (ABI SDK — PERHATIKAN `fund` punya `expectedBudget`, berbeda dari teks EIP):
+Fungsi (ABI paket + dikonfirmasi ke chain — PERHATIKAN `fund` punya `expectedBudget`, berbeda dari teks EIP):
 ```
 createJob(address provider, address evaluator, uint256 expiredAt, string description, address hook) returns (uint256 jobId)
-setProvider(uint256 jobId, address provider)                 // client, saat Open
-setBudget(uint256 jobId, uint256 amount, bytes optParams)    // provider, saat Open
-fund(uint256 jobId, uint256 expectedBudget, bytes optParams) // client, Open→Funded; provider harus sudah di-set
-submit(uint256 jobId, bytes32 deliverable, bytes optParams)  // provider, Funded→Submitted
-complete(uint256 jobId, bytes32 reason, bytes optParams)     // evaluator, Submitted→Completed
-reject(uint256 jobId, bytes32 reason, bytes optParams)       // client saat Open; evaluator saat Funded/Submitted
-claimRefund(uint256 jobId)                                   // siapa pun, setelah expiredAt, Funded/Submitted→Expired
-getJob(uint256 jobId) returns (Job)                          // Job{id, client, provider, evaluator, description, budget, expiredAt, status, hook}
-evaluatorFeeBP() / platformFeeBP() / whitelistedHooks(address) — view
-setHookWhitelist / setEvaluatorFee / setPlatformFee — admin Virtuals (BUKAN kita)
+setProvider(uint256 jobId, address provider_)                // client, HANYA saat Open + now < expiredAt + provider == 0
+setBudget(uint256 jobId, uint256 amount, bytes optParams)    // provider, saat Open; boleh dipanggil BERULANG (menimpa)
+fund(uint256 jobId, uint256 expectedBudget, bytes optParams) // client, Open→Funded; expectedBudget HARUS == job.budget;
+                                                             // DITOLAK bila now >= expiredAt (guard expiry ADA — lihat urutan cek)
+submit(uint256 jobId, bytes32 deliverable, bytes optParams)  // provider, Funded→Submitted; DITOLAK bila now >= expiredAt
+                                                             // JUGA menerima status Open bila budget == 0 (hasil tergantung evaluator)
+complete(uint256 jobId, bytes32 reason, bytes optParams)     // evaluator, Submitted→Completed; TIDAK ada guard expiry
+reject(uint256 jobId, bytes32 reason, bytes optParams)       // client/provider saat Open; evaluator saat Funded/Submitted
+                                                             // (client/provider bila evaluator==0); TIDAK ada guard expiry
+claimRefund(uint256 jobId)                                   // siapa pun; Open/Funded → Expired saat now >= expiredAt;
+                                                             // Submitted → Expired saat now >= expiredAt + 900 (lihat tabel di bawah)
+getJob(uint256 jobId) returns (Job)                          // TIDAK revert untuk id tak dikenal → struct nol
+jobs(uint256) returns (client, status, provider, expiredAt, evaluator, hook, budget, description)  // getter mapping publik
+evaluatorFeeBP() / platformFeeBP() / platformTreasury() / paymentToken() / jobCounter() / whitelistedHooks(address) — view
+EVALUATOR_GRACE_PERIOD() returns (uint256)                   // konstanta publik = 900 (15 menit). TIDAK ada di ABI SDK;
+                                                             // dibaca langsung: cast call <ACP> "EVALUATOR_GRACE_PERIOD()(uint256)" → 900
+paused() returns (bool)                                      // kontrak Pausable; saat ini false (3 Sep 2026)
+setHookWhitelist / setEvaluatorFee / setPlatformFee / grantRole / upgradeToAndCall / pause / unpause /
+emergencyWithdraw / batchDetachHook — admin Virtuals (BUKAN kita). Signature + topic0 lengkap di §A.1.
 ```
-Event: JobCreated(jobId, client, provider, evaluator, expiredAt, hook); ProviderSet; BudgetSet(jobId, amount);
-JobFunded(jobId, client, amount); JobSubmitted(jobId, provider, deliverable); JobCompleted(jobId, evaluator, reason);
-JobRejected(jobId, rejector, reason); JobExpired(jobId); PaymentReleased(jobId, provider, amount);
-EvaluatorFeePaid(jobId, evaluator, amount); Refunded(jobId, client, amount).
-Status enum: Open=0, Funded=1, Submitted=2, Completed=3, Rejected=4, Expired=5.
-Fakta perilaku (dari spek): evaluator ≠ 0 dicek di createJob referensi, TAPI SDK default = sentinel 0x0 (skip evaluasi).
-Tidak ada pembayaran parsial. Tidak ada dispute/bond/timeout evaluator. `expiredAt` ≥ now+5 menit.
-Hook dipanggil di setBudget/fund/submit/complete/reject; TIDAK di setProvider/claimRefund; hook harus whitelisted.
+Struct `Job` (urutan field APA ADANYA dari ABI — TIDAK ada field `id`, `expiredAt` = **uint48**, `status` = uint8):
+```
+struct Job { address client; uint8 status; address provider; uint48 expiredAt; address evaluator; address hook; uint256 budget; string description; }
+// tuple ABI: (address,uint8,address,uint48,address,address,uint256,string)
+```
+Status enum: Open=0, Funded=1, Submitted=2, Completed=3, Rejected=4, Expired=5. `setBudget` TIDAK mengubah status (tetap Open).
+
+Fee (`cast call … --rpc-url https://sepolia.base.org`, 2026-09-03): **`platformFeeBP()` = 100 (1%)**, `evaluatorFeeBP()` = 500 (5%).
+Aritmetika `complete` dibuktikan di fork dengan budget 10.000.000 (10 USDC): provider **9.400.000**, evaluator **500.000**,
+treasury **100.000** — kedua fee dipotong dari budget. `reject` mengembalikan **100%** budget ke client, fee evaluator 0.
+Bila `evaluator == address(0)`: `submit` LANGSUNG menyelesaikan job (status → Completed) dan membayar provider
+budget − platformFee saja (9.900.000); `JobCompleted.reason` = nilai `deliverable`; `complete()` sesudahnya revert `WrongStatus`.
+
+**`submit` dari status Open — DUA HAL TERPISAH, jangan digabung (mock kita pernah menyimpang persis di sini).**
+Source `:456-459`: `if (job.status != Funded && (job.status != Open || job.budget > 0)) revert WrongStatus();`
+— syarat MASUK adalah `status == Funded` **ATAU** (`status == Open` **DAN** `budget == 0`). Status masuk sama sekali TIDAK
+melihat `evaluator`. Yang menentukan status KELUAR hanyalah cabang `evaluator` sesudahnya (`:466`, `:497-498`):
+
+  | status masuk | budget | evaluator | hasil |
+  |---|---|---|---|
+  | Open (0)   | `== 0` | `!= 0` | **Submitted (2)** — bukan Completed; evaluator masih bisa `complete()` → Completed (3) |
+  | Open (0)   | `== 0` | `== 0` | **Completed (3)** (jalur auto-complete, tanpa transfer karena budget nol) |
+  | Open (0)   | `> 0`  | apa pun| revert `WrongStatus()` `0x8e78f0cb` (harus `fund` dulu) |
+  | Funded (1) | apa pun| `!= 0` | Submitted (2) |
+  | Funded (1) | apa pun| `== 0` | Completed (3) |
+
+Keempat baris pertama dibuktikan di fork Base Sepolia 2026-09-03 atas bytecode asli. Catatan lama "juga menerima
+Open→Completed bila budget == 0 & evaluator == 0" TIDAK LENGKAP: ia melewatkan jalur Open+budget0+evaluator!=0 → Submitted.
+Awas: docstring kontrak sendiri (`:445`) juga menulis versi sempit "Also accepts Open -> Completed for zero-budget jobs
+without an evaluator" — **kode lebih longgar dari docstring-nya**; ikuti kode. Pada jalur Open+budget0+evaluator!=0 satu-satunya
+event yang diemit adalah `JobSubmitted` (fork: 1 log, topic0 `0x80c17d…538e`).
+
+Event — daftar `indexed` APA ADANYA dari ABI, dikonfirmasi ke log nyata (`cast logs`, job #403, blok 46173980-46173987):
+```
+JobCreated(uint256 indexed jobId, address indexed client, address indexed provider, address evaluator, uint256 expiredAt, address hook)
+ProviderSet(uint256 indexed jobId, address indexed provider)
+BudgetSet(uint256 indexed jobId, uint256 amount)
+JobFunded(uint256 indexed jobId, address indexed client, uint256 amount)
+JobSubmitted(uint256 indexed jobId, address indexed provider, bytes32 deliverable)
+JobCompleted(uint256 indexed jobId, address indexed evaluator, bytes32 reason)
+JobRejected(uint256 indexed jobId, address indexed rejector, bytes32 reason)
+JobExpired(uint256 indexed jobId)
+PaymentReleased(uint256 indexed jobId, address indexed provider, uint256 amount)
+EvaluatorFeePaid(uint256 indexed jobId, address indexed evaluator, uint256 amount)
+Refunded(uint256 indexed jobId, address indexed client, uint256 amount)
+```
+**`evaluator` TIDAK indexed di `JobCreated`** (ia ada di `data`) → watcher (task 2.2) TIDAK bisa memfilter job milik vault
+lewat topic saat `JobCreated`; penyaringan `evaluator == VAULT` harus dilakukan di sisi client atau lewat `JobCompleted`
+(di sana `evaluator` = topic 2). topic0 (`cast sig-event`, 2026-09-03):
+```
+JobCreated      0xb0f0239bfdd96453e24733e18bfc24b70d8fadf123dd977473518dd577ee79b9
+JobFunded       0xe3fbcc1ea1bdc559ec7f0347efde7655e58b5f45a30b0e4470a583c3ef5496b3
+JobSubmitted    0x80c17db79857f338a6a6df68a6883ecc0ce78e2202fe61ed979733573f40538e
+JobCompleted    0x0fd54bd364fa9e67f17b091aefe930932c09fe7651cf5ad02c71a418f3341444   <- (uint256,address,bytes32)
+JobRejected     0xae7362b1af91f4492868987b9c73990d780060811551b58728fbe96fd1bab275
+JobExpired      0x97237956f8810192811e2c3f273fd02c5d6295206fdd9c62e6fe2bfc19ba9232
+PaymentReleased 0x21d71db5be59bb9fa133895586b7404307dd33fb93b16db09dc6f1d9d7d231b0
+EvaluatorFeePaid 0x253dd534010ac976fa263caa123bae79b9c50292adf7ce67bdc5ec309f784e61
+Refunded        0x7ca5472b7ea78c2c0141c5a12ee6d170cf4ce8ed06be3d22c8252ddfc7a6a2c4
+BudgetSet       0x869e2577b006bf47ee981cf6fec2e25583548081c14b98deab587f77b5068038
+ProviderSet     0x9a87df076ea1725aba8ba29d32517ce37c9597d88cbf16ec6707892cc330ab69
+```
+**Bentuk 2-argumen `JobCompleted(uint256,bytes32)` TIDAK ADA.** topic0-nya `0x45c386dc6524a2d9fe630455323c6a39f557c52ab01e886deee20a0b538147ac`
+dan `cast logs --address <ACP> <topic0 itu> --from-block 46173040 --to-block 46183039` mengembalikan KOSONG pada rentang
+yang justru memuat `JobCompleted` bentuk 3-argumen. Jangan pernah memakai bentuk 2-argumen di AC/skrip/indexer.
+Urutan emit dalam satu tx (dibuktikan `vm.recordLogs` di fork): `complete` → EvaluatorFeePaid, JobCompleted, PaymentReleased.
+`claimRefund` — **DAFTAR EVENT PERSIS PER JALUR** (task 2.2 memfilter per event, jadi ini mengikat). Diuji di fork
+Base Sepolia 2026-09-03 atas bytecode asli `0x0b93…4d461e`, pemanggil = stranger `0xBADBEEF`, isi `vm.getRecordedLogs()`
+apa adanya, urutan sesuai indeks log:
+
+  | status sebelum refund | budget | event yang diemit, BERURUTAN |
+  |---|---|---|
+  | Open (0)      | 0 **atau** != 0 (hanya `setBudget`, belum `fund`) | **HANYA `JobExpired(jobId)`** — TIDAK ada `Refunded` |
+  | Funded (1)    | > 0  | ERC20 `Transfer(ACP→client)` (emitter = paymentToken, BUKAN ACP), lalu `Refunded(jobId, client, budget)`, lalu `JobExpired(jobId)` |
+  | Funded (1)    | == 0 | **HANYA `JobExpired`** |
+  | Submitted (2) | > 0  | ERC20 `Transfer`, `Refunded`, `JobExpired` — identik dengan jalur Funded |
+  | Submitted (2) | == 0 | **HANYA `JobExpired`** |
+
+  Sumber (badan `claimRefund` di source terverifikasi Sourcify `exact_match`): `if (job.budget > 0 && (prev == Funded ||
+  prev == Submitted)) { safeTransfer; emit Refunded; } emit JobExpired;` — syaratnya BUKAN status saja melainkan
+  **`budget > 0` DAN status ∈ {Funded, Submitted}**. **`Refunded` beramount NOL TIDAK PERNAH DIEMIT.**
+  Konsekuensi watcher: `JobExpired` satu-satunya event yang PASTI ada di semua jalur refund → pakai ia sebagai pemicu,
+  perlakukan `Refunded` sebagai opsional. "Tidak ada `Refunded`" TIDAK berarti dana tertahan: pada Open memang belum
+  pernah ada escrow, pada Funded/Submitted berbudget nol tidak ada yang dipindahkan.
+
+Custom error (ABI + selector `cast sig`) — kontrak asli TIDAK punya `PastExpiry`/`NotYetExpired`/`UnknownJob`/`NotClient`/`NotProvider`/`NotEvaluator`:
+```
+WrongStatus()        0x8e78f0cb   ExpiryTooShort()  0xf7a0748c   BudgetMismatch()      0x99b0fc87  (TANPA argumen)
+InvalidJob()         0x71c8f460   Unauthorized()    0x82b42900   ProviderNotSet()      0xa9456d43
+HookNotWhitelisted() 0xa04b28ec   ZeroAddress()     0xd92e233d   FeesTooHigh()         0xc9034e18
+ClientIsProvider()   0x332ff0f9   EvaluatorIsProvider() 0xc7b4e9eb   <- DUA INI TIDAK ADA DI ABI SDK, tapi ADA & dipakai
++ error OpenZeppelin: AccessControl*, ERC1967*, UUPS*, ReentrancyGuardReentrantCall (0x3ee5aeb5),
+  EnforcedPause/ExpectedPause (Pausable), SafeERC20FailedOperation, FailedCall
+```
+Fakta perilaku — SEMUA dibuktikan dengan eksekusi bytecode asli di fork Base Sepolia 2026-09-03:
+- `expiredAt` harus **> now + 300 detik**, bukan `>=`: `now+300` → revert `ExpiryTooShort()`, `now+301` → sukses.
+- Batas waktu diuji tepat di titiknya: `submit` pada `now == expiredAt` → revert `WrongStatus()` (jadi submit DILARANG
+  saat `now >= expiredAt`); `claimRefund` pada `now == expiredAt` → SUKSES **hanya dari status Open/Funded** — untuk
+  status Submitted lihat tenggang 900 detik di bawah.
+- **`complete` dan `reject` TIDAK punya guard expiry**: keduanya SUKSES pada `expiredAt + 1`. Verdict vault yang telat
+  tetap bisa dieksekusi selama status masih Submitted.
+- **KOREKSI 2026-09-03 — baris lama "`claimRefund` HANYA dari status Funded; dari Submitted → `WrongStatus()`" SALAH.**
+  Yang benar: `claimRefund` bisa dari **Open, Funded, DAN Submitted**; khusus Submitted ada tenggang
+  `EVALUATOR_GRACE_PERIOD` = **900 detik** setelah `expiredAt`. Tabel lengkap (semua diuji ulang di fork 2026-09-03,
+  bytecode asli, pemanggil = alamat acak `0xBADBEEF`, evaluator = KONTRAK, budget 10 USDC, `expiredAt = now + 3600`):
+
+  | status saat dipanggil | syarat waktu | hasil | transfer |
+  |---|---|---|---|
+  | Open (0)      | `now >= expiredAt`         | SUKSES → Expired(5) | tidak ada (belum ada escrow) |
+  | Funded (1)    | `now >= expiredAt`         | SUKSES → Expired(5) | 100% budget ke client |
+  | Submitted (2) | `now >= expiredAt + 900`   | SUKSES → Expired(5) | 100% budget ke client, provider NOL |
+  | Completed (3) | — | selalu `WrongStatus()` `0x8e78f0cb` | — |
+  | Rejected (4)  | — | selalu `WrongStatus()` `0x8e78f0cb` | — |
+  | Expired (5)   | — | selalu `WrongStatus()` `0x8e78f0cb` (tidak ada refund ganda) | — |
+
+  Bisection eksplisit dari status Submitted, offset terhadap `expiredAt` (returndata apa adanya):
+  `-1, 0, +1, +100, +600, +898, +899` → revert `0x8e78f0cb` (`WrongStatus()`); `+900, +901, +902, +1800, +3600, +100000`
+  → SUKSES, status 5, saldo client +10.000.000. Jadi ambangnya **tepat `expiredAt + 900`, inklusif**.
+  Anchor = `expiredAt`, BUKAN waktu submit: submit di `expiredAt-1` tetap gagal di `expiredAt+899` dan sukses di
+  `expiredAt+900`; sebaliknya submit sangat awal lalu refund di `submitTime+900` (masih < `expiredAt`) → `WrongStatus()`.
+  Dari Open/Funded TIDAK ada tenggang: `expiredAt-1` revert, `expiredAt+0/+1/+899/+900` sukses.
+  Sesudah refund dari Submitted, `complete()` DAN `reject()` oleh evaluator sama-sama revert `WrongStatus()` `0x8e78f0cb`.
+  Konstanta ini BISA dibaca on-chain: `cast call <ACP> "EVALUATOR_GRACE_PERIOD()(uint256)" --rpc-url https://sepolia.base.org`
+  → `900`. Jangan hardcode 900 di kode tanpa membacanya, dan jangan berasumsi angkanya sama di Base mainnet.
+  **Konsekuensi model ancaman:** griefing `claimRefund` setelah `submit` BUKAN mustahil, hanya tertunda 900 detik. Siapa pun
+  boleh membatalkan job yang sudah Submitted begitu `expiredAt + 900` lewat, dan itu MEMBUNUH verdict vault yang belum
+  dieksekusi (`complete`/`reject` sesudahnya revert). Anggaran waktu vault kasus terburuk = `expiredAt + 900` sejak job dibuat.
+  METODE YANG MENYEBABKAN KESALAHAN LAMA (jangan diulang): (1) `claimRefund` dari Submitted hanya diuji DI/DEKAT `expiredAt`
+  lalu digeneralisasi jadi aturan status; (2) daftar error/fungsi diambil dari ABI SDK yang basi sehingga
+  `EVALUATOR_GRACE_PERIOD()` tak pernah terlihat. Aturan sekarang: untuk setiap guard waktu, uji minimal
+  `t-1 / t / t+1` DI SETIAP STATUS yang mungkin, dan cek daftar konstanta publik di sumber terverifikasi.
+- `fund`: hanya client (`Unauthorized()` untuk pihak lain); `expectedBudget != job.budget` → `BudgetMismatch()` (pengaman
+  selip harga, interpretasi "harus sama persis" TERBUKTI); fund kedua kali → `WrongStatus()`; tanpa provider → `ProviderNotSet()`.
+  `fund(jobId, 0, "")` pada job yang belum pernah `setBudget` DITERIMA (budget 0 sah, status → Funded).
+- `setBudget`: hanya provider (`Unauthorized()`); `amount == 0` diterima; boleh dipanggil berulang selagi Open
+  **dan `now < expiredAt`** — pada `now == expiredAt` revert `WrongStatus()` (dibuktikan di fork 2026-09-03).
+- **URUTAN CEK `setBudget` / `fund` / `submit` — APA ADANYA dari source terverifikasi, tiap kombinasi dieksekusi di fork
+  Base Sepolia 2026-09-03 (returndata mentah). `fund` BERBEDA dari dua lainnya; jangan digeneralisasi.**
+```
+setBudget :396-399  InvalidJob → status!=Open WrongStatus → now>=expiredAt WrongStatus → bukan provider Unauthorized
+submit    :455-461  InvalidJob → status WrongStatus → now>=expiredAt WrongStatus → bukan provider Unauthorized
+fund      :420-425  InvalidJob → status!=Open WrongStatus → bukan client Unauthorized → provider==0 ProviderNotSet
+                    → now>=expiredAt WrongStatus → budget!=expectedBudget BudgetMismatch
+```
+  Jadi di `setBudget`/`submit` otorisasi dicek TERAKHIR, tetapi di `fund` otorisasi dicek SEBELUM `ProviderNotSet` dan
+  SEBELUM guard expiry. Selector pemenang untuk kombinasi (fork 2026-09-03):
+
+  | fungsi | pelanggaran gabungan | selector pemenang |
+  |---|---|---|
+  | `fund`      | caller salah **DAN** status salah      | `WrongStatus()` `0x8e78f0cb` |
+  | `fund`      | caller salah **DAN** `now >= expiredAt`| **`Unauthorized()` `0x82b42900`** (auth menang atas expiry) |
+  | `fund`      | caller salah **DAN** provider belum diset | `Unauthorized()` `0x82b42900` |
+  | `fund`      | client benar **DAN** provider belum diset **DAN** expiry lewat | `ProviderNotSet()` `0xa9456d43` |
+  | `fund`      | client benar **DAN** `now >= expiredAt` **DAN** expectedBudget salah | `WrongStatus()` `0x8e78f0cb` |
+  | `setBudget` | caller salah **DAN** status salah      | `WrongStatus()` `0x8e78f0cb` |
+  | `setBudget` | caller salah **DAN** `now >= expiredAt`| `WrongStatus()` `0x8e78f0cb` (expiry menang atas auth) |
+  | `submit`    | caller salah **DAN** status salah      | `WrongStatus()` `0x8e78f0cb` |
+  | `submit`    | caller salah **DAN** `now >= expiredAt`| `WrongStatus()` `0x8e78f0cb` (expiry menang atas auth) |
+
+  Kontrol satu-cabang (semua di fork): caller salah SAJA di `setBudget`/`submit` → `Unauthorized()` `0x82b42900`.
+- **`fund` PUNYA guard expiry** (source `:424` `if (block.timestamp >= job.expiredAt) revert WrongStatus();`) — fakta ini
+  dulu tidak tercatat. Dibuktikan di fork: client memanggil `fund` tepat pada `now == expiredAt` → `WrongStatus()`
+  `0x8e78f0cb`; pada `expiredAt - 1` → SUKSES, status → Funded(1). Jadi jendela pendanaan client tertutup di `expiredAt`,
+  sama seperti `setBudget` dan `submit`. Hanya `complete` dan `reject` yang tanpa guard expiry.
+- `setProvider` (satu-satunya fungsi ALUR JOB yang tidak `nonReentrant`). Urutan cek APA ADANYA:
+  `InvalidJob` → `status != Open` `WrongStatus()` → `now >= expiredAt` `WrongStatus()` → bukan client `Unauthorized()`
+  → `provider != 0` `WrongStatus()` → `provider_ == 0` `ZeroAddress()` → `provider_ == client` `ClientIsProvider()` `0x332ff0f9`
+  → `provider_ == evaluator` `EvaluatorIsProvider()` `0xc7b4e9eb`. Dibuktikan di fork 2026-09-03: job Open berprovider nol
+  yang sudah di-`reject` (status 4) → `setProvider` revert `WrongStatus()` `0x8e78f0cb`; `setProvider` pada `now == expiredAt`
+  (masih Open) → `WrongStatus()`. Catatan lama "tidak ada cek status" SALAH.
+  Prioritas itu kini DIKUATKAN EKSEKUSI per-cabang (fork 2026-09-03, dua guard dilanggar dalam satu panggilan, returndata
+  apa adanya): `provider_ == 0` DAN `provider_ == job.evaluator` (job berevaluator nol) → **`ZeroAddress()` `0xd92e233d`**
+  (jadi `ZeroAddress` menang atas `EvaluatorIsProvider`); `provider_ == client` DAN `client == job.evaluator` →
+  **`ClientIsProvider()` `0x332ff0f9`** (menang atas `EvaluatorIsProvider`); `now >= expiredAt` DAN `provider_ == 0` →
+  **`WrongStatus()` `0x8e78f0cb`**; pemanggil bukan client DAN `provider_ == 0` (job juga lewat expiry) → `WrongStatus()`.
+  Kontrol satu-cabang: ZeroAddress saja `0xd92e233d`, ClientIsProvider saja `0x332ff0f9`, EvaluatorIsProvider saja
+  `0xc7b4e9eb`. Kombinasi `ZeroAddress`+`ClientIsProvider` TIDAK BISA dicapai (butuh client = `address(0)`, dan job
+  seperti itu tak bisa dibuat) — urutan keduanya hanya diketahui dari source, bukan eksekusi.
+- `complete` mengecek **STATUS DULU, baru otorisasi**: `complete(non-evaluator, status=Funded)` → `WrongStatus()` `0x8e78f0cb`
+  (BUKAN `Unauthorized()`); `complete(evaluator, status=Funded)` → `WrongStatus()`; `complete(non-evaluator, status=Submitted)`
+  → `Unauthorized()` `0x82b42900`. Dibuktikan di fork 2026-09-03. Mock yang mengecek auth lebih dulu akan menyimpang di sini.
+- `reject` — matriks otorisasi lengkap (dibuktikan di fork 2026-09-03; catatan lama "saat Open hanya client" SALAH):
+  status Open → **client ATAU provider** (provider berhasil reject job Open, status → 4); Funded/Submitted dengan
+  `evaluator != 0` → HANYA evaluator (client/stranger → `Unauthorized()`); Funded/Submitted dengan `evaluator == 0` →
+  **client ATAU provider** (stranger → `Unauthorized()`); status lain → `WrongStatus()`.
+- **`reject` melewati `Refunded` saat `budget == 0` — ATURAN SERAGAM dengan `claimRefund`.** Source `:584-590`:
+  `if ((prev == Funded || prev == Submitted) && job.budget > 0) { safeTransfer(client, budget); emit Refunded; }`
+  lalu `emit JobRejected` selalu. Syaratnya identik dengan `claimRefund`: **`budget > 0` DAN status sebelumnya ∈
+  {Funded, Submitted}**. Berlaku untuk KEDUA fungsi: **`Refunded` diemit HANYA bila `budget > 0`; `Refunded` beramount NOL
+  TIDAK PERNAH DIEMIT di mana pun di kontrak ini.** Daftar event persis (fork 2026-09-03, `vm.getRecordedLogs()` apa adanya):
+
+  | status sebelum `reject` | budget | event yang diemit, BERURUTAN |
+  |---|---|---|
+  | Funded/Submitted | > 0  | ERC20 `Transfer(ACP→client)` (emitter = paymentToken), `Refunded(jobId, client, budget)`, `JobRejected(jobId, rejector, reason)` |
+  | Funded/Submitted | == 0 | **HANYA `JobRejected`** (1 log) |
+  | Open             | apa pun (termasuk `setBudget` besar yang belum di-`fund`) | **HANYA `JobRejected`** (1 log) |
+
+  Baris Open penting: job Open berbudget 10 USDC yang belum pernah di-`fund` tetap TIDAK memicu `Refunded` (tidak ada escrow).
+  Konsekuensi watcher (2.2): pemicu yang PASTI ada di jalur reject = `JobRejected`; `Refunded` bersifat OPSIONAL — sama
+  seperti di jalur `claimRefund` yang pemicunya `JobExpired`. Jangan menunggu `Refunded` untuk menutup job.
+- `getJob(<id tak dikenal>)` **tidak revert**, mengembalikan struct nol. Fungsi yang MENGUBAH state (`fund`, `claimRefund`, …)
+  pada id tak dikenal → `InvalidJob()`. Jangan pakai revert sebagai deteksi "job tidak ada"; bandingkan `job.evaluator`.
+- `createJob` dengan `hook` yang tidak di-whitelist → `HookNotWhitelisted()` (dicek sudah di createJob, bukan nanti).
+  `hook = address(0)` dan `evaluator = address(0)` keduanya sah; `provider = address(0)` juga sah (diisi belakangan
+  lewat `setProvider`).
+- `createJob` — batas atas `expiredAt` NYATA (dibuktikan di fork 2026-09-03): `expiredAt > type(uint48).max` → revert
+  **`ExpiryTooShort()` `0xf7a0748c`** (bukan truncation!). Tepat `type(uint48).max` (281474976710655) SUKSES, `2**48` revert,
+  `type(uint256).max` revert. Guard yang sama juga menolak `expiredAt <= now + 300`.
+- `createJob` punya guard identitas: `msg.sender == provider` → `ClientIsProvider()` `0x332ff0f9`;
+  `evaluator != 0 && evaluator == provider` → `EvaluatorIsProvider()` `0xc7b4e9eb`. Keduanya dibuktikan di fork 2026-09-03.
+- `createJob` — URUTAN CEK APA ADANYA (source terverifikasi, dikuatkan per-cabang di fork 2026-09-03):
+  `ExpiryTooShort` → `ClientIsProvider` → `EvaluatorIsProvider` → `HookNotWhitelisted` → (bila hook != 0) ERC165 `InvalidJob`.
+  **Guard expiry MENANG** bila dilanggar bersamaan dengan guard identitas: `expiredAt = now+100` DAN `msg.sender == provider`
+  → revert **`ExpiryTooShort()` `0xf7a0748c`** (BUKAN `0x332ff0f9`). Sama untuk expiry pendek + `evaluator == provider`
+  (`0xf7a0748c`), untuk `expiredAt = 2**48` + `msg.sender == provider` (`0xf7a0748c`), dan untuk tiga pelanggaran sekaligus
+  expiry+clientIsProvider+hook tak-whitelist (`0xf7a0748c`). Kontrol satu-cabang: expiry saja `0xf7a0748c`, clientIsProvider
+  saja `0x332ff0f9`, evaluatorIsProvider saja `0xc7b4e9eb`; clientIsProvider + hook tak-whitelist → `0x332ff0f9`
+  (identitas menang atas hook).
+- (dari sumber terverifikasi + bytecode, BUKAN dari eksekusi — tidak ada jalur reentrancy tanpa hook untuk diuji)
+  kontrak asli mewarisi **`ReentrancyGuardTransient` OpenZeppelin**; `createJob`, `setBudget`, `fund`, `submit`,
+  `complete`, `reject`, `claimRefund` semuanya `nonReentrant` (satu slot transient bersama → guard berlaku LINTAS fungsi
+  dalam satu tx). Selector `ReentrancyGuardReentrantCall()` `0x3ee5aeb5` memang ada di bytecode implementasi:
+  `cast code 0xc4E95dBc7E8C99c114FF9C8299A3E4851e1530fF | grep -o 3ee5aeb5` → 1 kecocokan. Konsekuensi: vault kita tidak
+  boleh memanggil balik ACP dari dalam callback yang berasal dari ACP.
+- Kontrak `Pausable` oleh admin Virtuals: `cast call <ACP> "paused()(bool)"` → `false` (3 Sep 2026). Menurut sumber
+  terverifikasi semua fungsi alur job memakai `whenNotPaused`, jadi saat dipause `complete`/`claimRefund` pun revert
+  `EnforcedPause()`. Risiko liveness di luar kendali kita. **Kini DIUJI di fork** (ADMIN_ROLE dipalsukan lewat `vm.store`,
+  lihat §A.1): `complete` DAN `claimRefund` memang keduanya revert saat paused. `setProvider` juga `whenNotPaused`;
+  `claimRefund` TIDAK hookable (docstring `:599`) tapi tetap `whenNotPaused`.
+- Tidak ada pembayaran parsial. Tidak ada dispute/bond/timeout evaluator.
+
+### A.1 Permukaan ADMIN (bukan kita) — model ancaman "operator jahat", watcher 2.2 harus melihatnya
+Semua dari source terverifikasi Sourcify; keempat selector dikonfirmasi ADA di bytecode implementasi
+(`grep -o <selector>` atas `cast code 0xc4E95dBc…30fF` → 1 kecocokan masing-masing); perilaku dibuktikan di fork
+Base Sepolia 2026-09-03 dengan ADMIN_ROLE dipalsukan lewat `vm.store` ke slot ERC-7201 AccessControl
+(`keccak(account, keccak(role, 0x02dd7bc7…6800))`) — kontraknya sendiri bytecode ASLI.
+```
+emergencyWithdraw(address token, address to, uint256 amount)  0xe63ea408  ADMIN_ROLE + whenPaused
+batchDetachHook(uint256[] jobIds)                             0x4c4911c4  ADMIN_ROLE, TANPA whenPaused
+pause()                                                       0x8456cb59  ADMIN_ROLE
+unpause()                                                     0x3f4ba83a  ADMIN_ROLE
+setHookWhitelist(address,bool) / setPlatformFee(uint256,address) / setEvaluatorFee(uint256)  ADMIN_ROLE
+upgradeToAndCall(address,bytes)                                          DEFAULT_ADMIN_ROLE (`_authorizeUpgrade` :203)
+ADMIN_ROLE = keccak256("ADMIN_ROLE") = 0xa49807205ce4d355092ef5a8a18f56e8913cf4a201fbe287825b095693c21775
+  (dikonfirmasi live: cast call <ACP> "ADMIN_ROLE()(bytes32)" --rpc-url https://sepolia.base.org)
+```
+topic0 event admin (`cast sig-event`, 2026-09-03; `EmergencyWithdraw` + `HookDetached` juga TERLIHAT di log nyata pada fork):
+```
+EmergencyWithdraw(address indexed token, address indexed to, uint256 amount)
+                     0xf24ef89f38eadc1bde50701ad6e4d6d11a2dc24f7cf834a486991f3883328504
+HookDetached(uint256 indexed jobId, address indexed hook)
+                     0xcde6a24b3e1e5d23bc4d45609905c64b3516b23478ba2f7fdada3ab2bae3812d
+HookWhitelistUpdated(address indexed hook, bool status)
+                     0x7ee54953080e392a475a25b6acacb85417ca4e1953293c90934233ca13612510
+PlatformFeeUpdated(uint256 feeBP, address indexed treasury)   <- feeBP TIDAK indexed, treasury indexed
+                     0xf0c09f5238364083d828870e877edaebb364d9f19f4093fdbf24e486bbdca484
+EvaluatorFeeUpdated(uint256 feeBP)                            <- tanpa argumen indexed
+                     0x24fe03678743d8fe5f3d39d760da9fc7a5f3feea46847d91688ba8ef9e400d14
+```
+Fakta ancaman yang DIEKSEKUSI di fork (bukan dibaca saja):
+- **`emergencyWithdraw` benar-benar bisa menyedot escrow job yang sedang hidup.** Skenario: job Submitted berescrow
+  10 USDC → admin `pause()` → `emergencyWithdraw(paymentToken, penyerang, 10e6)` → saldo ACP **0**, saldo penyerang
+  **10.000.000**. Fungsi ini TIDAK memeriksa pembukuan job sama sekali; `token = address(0)` berarti ETH native.
+  Kontrol: `pause()` oleh non-admin ditolak, dan `emergencyWithdraw` tanpa `pause` ditolak (`ExpectedPause`).
+- **Saat paused, jalur pemulihan kita mati**: `complete()` DAN `claimRefund()` sama-sama revert (`EnforcedPause`).
+  Sesudah `unpause`, `complete()` tetap gagal karena escrow sudah kosong (transfer gagal). Jadi pause+withdraw = kerugian
+  permanen untuk client, dan vault kita tidak punya mitigasi on-chain. Risiko diterima, harus disebut di README/pitch.
+- **`batchDetachHook` TIDAK butuh `paused`** dan berlaku ke job yang sedang berjalan: hook yang aktif memblokir `setBudget`
+  dilepas oleh admin (event `HookDetached`, `job.hook` → `address(0)`), lalu `setBudget` yang sama LOLOS. Artinya setiap
+  jaminan yang kita gantungkan pada `MemoryGateHook` bisa dimatikan sepihak kapan saja tanpa sinyal `Paused`.
+  Watcher 2.2 WAJIB memantau `HookDetached` bila kita pernah memasang hook.
+
+### A.2 `IACPHook` — TERVERIFIKASI (menggantikan baris "BELUM diverifikasi" yang lama)
+Sumber: `contracts/interfaces/IACPHook.sol` di paket Sourcify `exact_match` yang sama. Signature APA ADANYA:
+```solidity
+interface IACPHook is IERC165 {
+    function beforeAction(uint256 jobId, bytes4 selector, bytes calldata data) external;  // 0xdc08fb1d
+    function afterAction(uint256 jobId, bytes4 selector, bytes calldata data) external;   // 0xa3fe4783
+}
+// type(IACPHook).interfaceId = 0x7ff6bc9e  (dihitung compiler solc 0.8.36, BUKAN tulisan tangan:
+//   = 0xdc08fb1d ^ 0xa3fe4783; TIDAK menyertakan supportsInterface 0x01ffc9a7 milik IERC165 yang diwarisi)
+```
+Dibuktikan lewat EKSEKUSI di fork (bytecode ACP asli, hook di-whitelist dengan `vm.store` ke `whitelistedHooks`
+= slot mapping **6**, layout dikonfirmasi live: slot0 `paymentToken`, 1 `platformFeeBP`, 2 `platformTreasury`,
+3 `evaluatorFeeBP`, 4 `jobs`, 5 `jobCounter`, 6 `whitelistedHooks`):
+- `createJob` dengan hook non-nol menuntut ERC-165 (source `:335-343`): hook yang tidak mendukungnya → revert
+  **`InvalidJob()` `0x71c8f460`** (bukan `HookNotWhitelisted`). Urutannya: whitelist DULU — hook ber-ERC165 benar tapi
+  belum di-whitelist → `HookNotWhitelisted()` `0xa04b28ec`; sesudah di-whitelist, hook tanpa ERC165 → `InvalidJob()`.
+- Cek itu memakai `ERC165Checker.supportsInterface` (OZ), yang menuntut TIGA hal sekaligus:
+  `supportsInterface(0x01ffc9a7) == true` **DAN** `supportsInterface(0xffffffff) == false` **DAN**
+  `supportsInterface(0x7ff6bc9e) == true`. Hook yang mengembalikan `true` untuk semua id akan DITOLAK.
+- `_beforeHook`/`_afterHook` (`:293-301` / `:305-314`) no-op saat `hook == address(0)`, selain itu memanggil
+  `IACPHook(hook).beforeAction/afterAction(jobId, msg.sig, data)` TANPA try/catch → **hook yang revert membatalkan
+  seluruh transaksi ACP** (dibuktikan: hook yang revert di `beforeAction` membuat `setBudget` gagal).
+- Urutan log satu `setBudget` berhook (fork, `vm.getRecordedLogs()`): event hook `beforeAction`, lalu `BudgetSet`
+  dari ACP, lalu event hook `afterAction`. `data` = `abi.encode(...)` khas per fungsi (mis. `setBudget` →
+  `abi.encode(msg.sender, amount, optParams)`, `fund` → `abi.encode(msg.sender, optParams)`).
+- `submit` tanpa evaluator memanggil `_afterHook` DUA KALI: sekali dengan `msg.sig` = `submit` (`:485`), lalu sekali lagi
+  dengan `this.complete.selector` dan `abi.encode(address(0), deliverable, optParams)` (`:491-496`) — sentinel `address(0)`
+  menandai auto-complete. Hook yang menghitung penyelesaian harus menangani pemanggilan ganda ini.
+- `whitelistedHooks[address(0)] = true` diset di `initialize` (`:199`) dan DIKONFIRMASI LIVE:
+  `cast call <ACP> "whitelistedHooks(address)(bool)" 0x00…00 --rpc-url https://sepolia.base.org` → `true`.
+  Itulah sebabnya `hook = address(0)` lolos guard whitelist.
+- **PERINGATAN dari docstring `setHookWhitelist` (source `:255-262`, kutipan): whitelist punya DUA arti —**
+  (1) alamat itu boleh dipasang sebagai hook di job baru, dan (2) *"They can call beforeAction/afterAction on OTHER
+  whitelisted hooks (checked in BaseACPHook.onlyACP) … every whitelisted address gains cross-invocation power over all
+  other hooks. Only whitelist contracts you fully trust and have audited."* Ini ancaman LANGSUNG bagi `MemoryGateHook`
+  (task 1.4): setiap hook lain yang di-whitelist Virtuals bisa memanggil `beforeAction`/`afterAction` milik kita dengan
+  `jobId`/`selector`/`data` karangan. `MemoryGateHook` TIDAK boleh mempercayai `msg.sender` hanya karena ia whitelisted —
+  batasi ke alamat ACP saja, dan jangan menulis memori dari data yang tidak diverifikasi ulang ke `jobs(jobId)`.
+  Catatan: `BaseACPHook` TIDAK termasuk dalam paket Sourcify (hanya `AgenticCommerceV3.sol` + `interfaces/IACPHook.sol`),
+  jadi klaim `onlyACP` di atas berasal dari docstring, BELUM dari kode `BaseACPHook` — jangan mewarisi kelas itu.
 
 ## B. SDK `@virtuals-protocol/acp-node-v2` — sumber: README repo di atas
 ```ts
@@ -217,5 +554,10 @@ fresh-session recall, README, 2 post build-in-public. Gate: "Delete the memory l
 claims, it is a wrapper and does not qualify."
 
 ## E. Jaringan
-Base Sepolia chainId 84532, RPC publik `https://sepolia.base.org`. USDC Base Sepolia & mainnet: lihat `docs/versions.md`
-(diverifikasi dari Circle). Explorer: https://sepolia.basescan.org
+Base Sepolia chainId 84532, RPC publik `https://sepolia.base.org`. Explorer: https://sepolia.basescan.org
+RPC publik itu membatasi `eth_getLogs` ke rentang **10.000 blok** (`{"code":-32614,"message":"eth_getLogs is limited to a
+10,000 range"}`, diuji 2026-09-03) → watcher (2.2) dan setiap `cast logs` WAJIB memecah rentang; pemindaian 100k blok
+sekaligus akan gagal HTTP 413, bukan mengembalikan hasil kosong.
+Token: **escrow ACP Base Sepolia memakai `0xECc22a8F6fD62388498fBa19813E214605a2BDb3`, BUKAN USDC Circle
+`0x036CbD53842c5426634e7929541eC2318f3dCF7e`** (keduanya `symbol() == "USDC"`, 6 desimal — mudah tertukar). Lihat §A.
+USDC Circle tetap dicatat di `docs/versions.md` untuk rujukan, tetapi TIDAK dipakai jalur escrow kita.

@@ -11,7 +11,7 @@ Kolom **Dipin** = versi yang disepakati (pin; hanya berubah lewat ADR). Kolom **
 | Python | **3.13** (`.python-version`) | `3.13.15` (uv-managed) | patch di major line 3.13 → OK tanpa ADR | bugfix (security-only ~Okt 2026) | 3.14.x = ganti major line → WAJIB ADR. Awas: `/usr/bin/python3` sistem = 3.12.3, jadi selalu jalankan lewat `uv run` |
 | uv | 0.12.5 | `0.12.7` | patch di major line 0.12 → OK tanpa ADR | stabil | pengelola env & lock Python |
 | Foundry | **v1.7.1** (`foundryup` stable) | `forge 1.7.1` (commit 4072e487, build 2026-05-08) | cocok | stabil | default `evm_version` = osaka (cocok Base pasca-Azul) |
-| Solidity | **0.8.36** | belum terpasang | belum bisa dinilai | stabil | `contracts/` & `foundry.toml` belum ada (Fase 1); verifikasi solc aktual saat direktori itu dibuat. Repo resmi kini github.com/argotorg/solidity; ACP Virtuals pakai ^0.8.28 |
+| Solidity | **0.8.36** | `0.8.36+commit.8a079791.Linux.g++` | cocok | stabil | diverifikasi 2026-09-03: `~/.svm/0.8.36/solc-0.8.36 --version` (svm mengunduhnya saat `forge build` pertama di `contracts/`, `foundry.toml` baris 9 `solc = "0.8.36"`). Repo resmi kini github.com/argotorg/solidity; implementasi ACP Base Sepolia sendiri dikompilasi dengan **0.8.28** (metadata CBOR di ekor bytecode proxy DAN implementasi: `…736f6c634300081c0033` = solc 0.8.28) — beda compiler dari mock kita, jadi jangan bandingkan bytecode, bandingkan ABI |
 
 ### Ambang ADR untuk perubahan versi
 - **Drift patch/minor di dalam major line yang sudah dipin** (mis. Node tetap di major line 24, uv tetap di 0.12.x): TIDAK butuh ADR. Cukup `@agent-api-verifier` memperbarui kolom "Aktual" di tabel ini + tanggal + perintah verifikasi.
@@ -63,15 +63,20 @@ ditemukan; hanya `uv` yang selamat (lewat `~/.profile`). Diverifikasi 2026-09-02
 | x402 (server/facilitator lib) | **BELUM DIVERIFIKASI** | cari paket resmi Coinbase x402 untuk Python/Node, verifikasi terhadap registry resmi sebelum server x402 dibuat |
 
 ## Jaringan & alamat (diverifikasi on-chain + docs.base.org + circlefin/skills)
+Baris token & fee diverifikasi ulang 2026-09-03 dengan `cast call <ACP> "paymentToken()(address)"`, `"platformFeeBP()(uint256)"`, `"evaluatorFeeBP()(uint256)"`, `"platformTreasury()(address)"`, `cast call <token> "symbol()(string)"` (RPC https://sepolia.base.org). Rincian perilaku: `docs/api-facts.md` §A.
 | Item | Nilai |
 |---|---|
 | Base Sepolia | chainId 84532 (0x14a34), RPC https://sepolia.base.org, explorer https://sepolia.basescan.org |
 | Base mainnet | chainId 8453, RPC https://mainnet.base.org |
 | EVM version Base | osaka (Azul: Sepolia 2026-04-20, mainnet 2026-05-28); gas cap per-tx 16,777,216 (EIP-7825) |
-| USDC Base Sepolia | 0x036CbD53842c5426634e7929541eC2318f3dCF7e (6 desimal) |
-| USDC Base mainnet | 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 (6 desimal) |
-| ACP Base Sepolia | 0x0b93793923CD5De81850aF8604a233f3f24d461e |
+| USDC Circle Base Sepolia | 0x036CbD53842c5426634e7929541eC2318f3dCF7e (6 desimal) — **TIDAK dipakai escrow ACP**, lihat baris berikutnya |
+| **Token escrow ACP Base Sepolia** | **0xECc22a8F6fD62388498fBa19813E214605a2BDb3** (`symbol()` = "USDC", `name()` = "USD Coin", 6 desimal). Nilai `paymentToken()` kontrak ACP; `mint(address,uint256)` terbuka untuk siapa pun → tidak butuh faucet Circle |
+| USDC Base mainnet | 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 (6 desimal) — di mainnet ACP memang memakai USDC Circle |
+| ACP Base Sepolia | 0x0b93793923CD5De81850aF8604a233f3f24d461e (proxy ERC-1967; implementasi 0xc4E95dBc7E8C99c114FF9C8299A3E4851e1530fF) |
 | ACP Base mainnet | 0x238E541BfefD82238730D00a2208E5497F1832E0 |
+| Fee ACP Base Sepolia | `platformFeeBP()` = 100 (1%), `evaluatorFeeBP()` = 500 (5%), `platformTreasury()` = 0xb3bdEdda2050a3615B73bB9a2684946eC38B5375 |
+| Tenggang evaluator ACP | `EVALUATOR_GRACE_PERIOD()` = **900** detik (15 menit) — dibaca 2026-09-03 via `cast call <ACP> "EVALUATOR_GRACE_PERIOD()(uint256)"`. Setelah `expiredAt + 900`, SIAPA PUN boleh `claimRefund` job berstatus Submitted dan membatalkan verdict evaluator. Konstanta ini membatasi anggaran waktu vault; lihat `docs/api-facts.md` §A |
+| Batas RPC publik | `eth_getLogs` maksimum rentang 10.000 blok (error `-32614`) |
 
 ## Model Claude (API) — platform.claude.com/docs/en/about-claude/models/overview
 `claude-sonnet-5` (default rubric LLM; 1M ctx), `claude-opus-5`, `claude-fable-5`, `claude-haiku-4-5`. ID tanpa akhiran tanggal.
