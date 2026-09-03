@@ -156,6 +156,9 @@ contract AgenticCommerceTest is Test {
     bytes32 internal constant T_REFUNDED = 0x7ca5472b7ea78c2c0141c5a12ee6d170cf4ce8ed06be3d22c8252ddfc7a6a2c4;
     bytes32 internal constant T_BUDGET_SET = 0x869e2577b006bf47ee981cf6fec2e25583548081c14b98deab587f77b5068038;
     bytes32 internal constant T_PROVIDER_SET = 0x9a87df076ea1725aba8ba29d32517ce37c9597d88cbf16ec6707892cc330ab69;
+    /// @dev topic0 ERC-20 `Transfer(address,address,uint256)` (`cast sig-event`). Bukan event ACP:
+    ///      dipakai tes urutan log MENTAH, yang justru mengunci posisi transfer relatif terhadap event ACP.
+    bytes32 internal constant T_ERC20_TRANSFER = 0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef;
 
     event JobCreated(
         uint256 indexed jobId,
@@ -221,6 +224,17 @@ contract AgenticCommerceTest is Test {
         for (uint256 i; i < all.length; ++i) {
             if (all[i].emitter == address(acp)) out[k++] = all[i];
         }
+    }
+
+    /// @dev Assert satu log adalah `Transfer` ERC-20 dari escrow ACP ke `to` sebesar `amount`.
+    ///      Sengaja memeriksa `emitter`: `Transfer` dipancarkan TOKEN, bukan ACP — konsumen yang
+    ///      menyaring per-alamat ACP tidak akan melihatnya sama sekali.
+    function _assertErc20Transfer(Vm.Log memory log, address to, uint256 amount, string memory label) internal view {
+        assertEq(log.emitter, address(usdc), string.concat(label, ": emitter = paymentToken"));
+        assertEq(log.topics[0], T_ERC20_TRANSFER, string.concat(label, ": topic0 Transfer"));
+        assertEq(address(uint160(uint256(log.topics[1]))), address(acp), string.concat(label, ": from = escrow ACP"));
+        assertEq(address(uint160(uint256(log.topics[2]))), to, string.concat(label, ": to"));
+        assertEq(abi.decode(log.data, (uint256)), amount, string.concat(label, ": amount"));
     }
 
     // ====================================================================
@@ -441,9 +455,23 @@ contract AgenticCommerceTest is Test {
     }
 
     /// api-facts §A: fungsi yang MENGUBAH state pada id tak dikenal → `InvalidJob()`.
+    /// Diuji pada DUA id: id jauh di luar rentang (999_999) DAN id TEPAT DI BATAS (`nextJobId`,
+    /// yakni id job berikutnya yang belum dibuat). Batas itu wajib diuji terpisah: dengan hanya
+    /// 999_999, guard yang keliru longgar (`jobId > nextJobId` alih-alih `>=`) tetap lolos, dan
+    /// `claimRefund(nextJobId)` akan menulis `jobs[nextJobId].status = Expired` + memancarkan
+    /// `JobExpired(id)` SEBELUM `JobCreated(id)` untuk id yang sama — racun bagi watcher.
     function test_stateChanging_unknownId_revertsInvalidJob() public {
-        uint256 unknownId = 999_999;
+        _assertStateChangingRevertsInvalidJob(999_999);
+        _assertStateChangingRevertsInvalidJob(acp.nextJobId());
 
+        // id 0 tidak pernah dipakai (job pertama = 1).
+        vm.expectRevert(AgenticCommerce.InvalidJob.selector);
+        acp.claimRefund(0);
+    }
+
+    /// @dev Ketujuh fungsi pengubah state pada satu id tak dikenal. Semuanya revert, jadi tidak ada
+    ///      state yang berubah dan helper ini aman dipanggil berkali-kali dalam satu tes.
+    function _assertStateChangingRevertsInvalidJob(uint256 unknownId) private {
         vm.expectRevert(AgenticCommerce.InvalidJob.selector);
         acp.claimRefund(unknownId);
 
@@ -470,10 +498,6 @@ contract AgenticCommerceTest is Test {
         vm.prank(client);
         vm.expectRevert(AgenticCommerce.InvalidJob.selector);
         acp.reject(unknownId, REASON, "");
-
-        // id 0 tidak pernah dipakai (job pertama = 1).
-        vm.expectRevert(AgenticCommerce.InvalidJob.selector);
-        acp.claimRefund(0);
     }
 
     // ====================================================================
@@ -2013,6 +2037,69 @@ contract AgenticCommerceTest is Test {
         assertEq(token.balanceOf(client), 100_000_000, "kontrol: refund 100% ke client");
     }
 
+    // ====================================================================
+    // Urutan log MENTAH (tanpa filter emitter)
+    //
+    // `_acpLogs()` membuang `Transfer` ERC-20, jadi ia TIDAK bisa membedakan permutasi yang
+    // urutan event ACP-nya sama tetapi posisi transfernya berbeda. Konsumen yang mengaitkan
+    // `Transfer` ke event ACP lewat kedekatan log-index (indexer/penjelajah blok) bergantung
+    // pada urutan mentah, jadi mock harus setia pada source terverifikasi — bukan sekadar
+    // "urutan event ACP benar".
+    // ====================================================================
+
+    /// Urutan log MENTAH `complete`, APA ADANYA dari source terverifikasi Sourcify
+    /// `AgenticCommerceV3.sol` (sha256 `3b47cdbc…cddb`) `:530-542`:
+    ///   0 `Transfer(ACP→treasury, platformFee)` `:531`
+    ///   1 `Transfer(ACP→evaluator, evalFee)`    `:534`
+    ///   2 `EvaluatorFeePaid`                    `:535`
+    ///   3 `Transfer(ACP→provider, net)`         `:538`
+    ///   4 `JobCompleted`                        `:541`
+    ///   5 `PaymentReleased`                     `:542`
+    /// Dua hal yang dikunci dan TIDAK terlihat oleh tes ber-`_acpLogs()`: (a) KETIGA transfer terjadi
+    /// SEBELUM `JobCompleted`; (b) treasury dibayar SEBELUM evaluator.
+    function test_complete_rawLogOrder_matchesSource() public {
+        uint256 jobId = _submittedJob(evaluator);
+
+        vm.recordLogs();
+        vm.prank(evaluator);
+        acp.complete(jobId, REASON, "");
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        assertEq(logs.length, 6, "3 Transfer ERC-20 + 3 event ACP");
+        _assertErc20Transfer(logs[0], treasury, PLATFORM_FEE, "log0 (source :531)");
+        _assertErc20Transfer(logs[1], evaluator, EVALUATOR_FEE, "log1 (source :534)");
+        assertEq(logs[2].emitter, address(acp), "log2 dipancarkan ACP");
+        assertEq(logs[2].topics[0], T_EVALUATOR_FEE_PAID, "log2 = EvaluatorFeePaid (source :535)");
+        _assertErc20Transfer(logs[3], provider, PROVIDER_AMOUNT, "log3 (source :538)");
+        assertEq(logs[4].emitter, address(acp), "log4 dipancarkan ACP");
+        assertEq(logs[4].topics[0], T_JOB_COMPLETED, "log4 = JobCompleted (source :541)");
+        assertEq(logs[5].emitter, address(acp), "log5 dipancarkan ACP");
+        assertEq(logs[5].topics[0], T_PAYMENT_RELEASED, "log5 = PaymentReleased (source :542)");
+    }
+
+    /// Urutan log MENTAH jalur auto-complete (`submit` saat `evaluator == 0`), source `:469-483`:
+    ///   0 `JobSubmitted` `:469`, 1 `Transfer(ACP→treasury)` `:476`, 2 `Transfer(ACP→provider)` `:479`,
+    ///   3 `JobCompleted` `:482`, 4 `PaymentReleased` `:483`.
+    /// KEDUA transfer berada di antara `JobSubmitted` dan `JobCompleted`; tidak ada fee evaluator.
+    function test_autoComplete_rawLogOrder_matchesSource() public {
+        uint256 jobId = _fundedJob(address(0));
+
+        vm.recordLogs();
+        vm.prank(provider);
+        acp.submit(jobId, DELIVERABLE, "");
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        assertEq(logs.length, 5, "2 Transfer ERC-20 + 3 event ACP");
+        assertEq(logs[0].emitter, address(acp), "log0 dipancarkan ACP");
+        assertEq(logs[0].topics[0], T_JOB_SUBMITTED, "log0 = JobSubmitted (source :469)");
+        _assertErc20Transfer(logs[1], treasury, PLATFORM_FEE, "log1 (source :476)");
+        _assertErc20Transfer(logs[2], provider, 9_900_000, "log2 (source :479)");
+        assertEq(logs[3].emitter, address(acp), "log3 dipancarkan ACP");
+        assertEq(logs[3].topics[0], T_JOB_COMPLETED, "log3 = JobCompleted (source :482)");
+        assertEq(logs[4].emitter, address(acp), "log4 dipancarkan ACP");
+        assertEq(logs[4].topics[0], T_PAYMENT_RELEASED, "log4 = PaymentReleased (source :483)");
+    }
+
     /// Source `:431`: `fund` mentransfer HANYA bila `budget > 0`; `reject`/`claimRefund` juga tidak
     /// memindahkan apa pun saat budget nol. Tes ini melihat log MENTAH (tidak difilter emitter) supaya
     /// `Transfer` ERC-20 beramount nol — yang tidak pernah ada di ACP asli dan menuntut allowance yang
@@ -2046,5 +2133,39 @@ contract AgenticCommerceTest is Test {
         Vm.Log[] memory rejected = vm.getRecordedLogs();
         assertEq(rejected.length, 1, "reject budget 0: hanya JobRejected, tanpa Transfer");
         assertEq(rejected[0].topics[0], T_JOB_REJECTED, "topic0 JobRejected");
+
+        // `complete` berbudget nol. Source `:530-539` menjaga `platformFee > 0`, `evalFee > 0` dan
+        // `net > 0` satu per satu, jadi TIDAK ada satu pun `Transfer`. `EvaluatorFeePaid` berada di
+        // DALAM guard `evalFee > 0` (`:533-536`) → juga tidak diemit. Jalur masuknya nyata dan gratis:
+        // Open + budget 0 + evaluator != 0 boleh langsung di-`submit` (api-facts §A).
+        uint256 zeroComplete = _createJob(evaluator);
+        vm.prank(provider);
+        acp.submit(zeroComplete, DELIVERABLE, "");
+        vm.recordLogs();
+        vm.prank(evaluator);
+        acp.complete(zeroComplete, REASON, "");
+        Vm.Log[] memory completed = vm.getRecordedLogs();
+        assertEq(completed.length, 2, "complete budget 0: JobCompleted + PaymentReleased saja");
+        assertEq(completed[0].emitter, address(acp), "tanpa Transfer ERC-20 hantu");
+        assertEq(completed[0].topics[0], T_JOB_COMPLETED, "urutan 1: JobCompleted");
+        assertEq(completed[1].emitter, address(acp), "tanpa Transfer ERC-20 hantu");
+        assertEq(completed[1].topics[0], T_PAYMENT_RELEASED, "urutan 2: PaymentReleased");
+        assertEq(abi.decode(completed[1].data, (uint256)), 0, "PaymentReleased.amount = 0");
+
+        // Auto-complete berbudget nol (source `:475-480`): kedua transfer dijaga `> 0`, jadi jalur ini
+        // hanya memancarkan tiga event ACP.
+        vm.prank(client);
+        uint256 zeroAuto = acp.createJob(provider, address(0), block.timestamp + 1 hours, "tanpa evaluator", address(0));
+        vm.recordLogs();
+        vm.prank(provider);
+        acp.submit(zeroAuto, DELIVERABLE, "");
+        Vm.Log[] memory autoDone = vm.getRecordedLogs();
+        assertEq(autoDone.length, 3, "auto-complete budget 0: 3 event ACP, tanpa Transfer");
+        assertEq(autoDone[0].emitter, address(acp), "tanpa Transfer ERC-20 hantu");
+        assertEq(autoDone[0].topics[0], T_JOB_SUBMITTED, "urutan 1: JobSubmitted");
+        assertEq(autoDone[1].emitter, address(acp), "tanpa Transfer ERC-20 hantu");
+        assertEq(autoDone[1].topics[0], T_JOB_COMPLETED, "urutan 2: JobCompleted");
+        assertEq(autoDone[2].emitter, address(acp), "tanpa Transfer ERC-20 hantu");
+        assertEq(autoDone[2].topics[0], T_PAYMENT_RELEASED, "urutan 3: PaymentReleased");
     }
 }

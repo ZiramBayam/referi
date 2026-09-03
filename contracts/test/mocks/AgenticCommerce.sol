@@ -25,6 +25,15 @@ interface IERC20Minimal {
 ///      - AccessControl/UUPS/ERC1967: kontrak asli adalah proxy upgradeable; mock tidak, dan tidak perlu.
 ///      - Pausable: kontrak asli `whenNotPaused` di seluruh alur job (admin Virtuals). Mock tidak punya
 ///        `pause()`; konsekuensinya mock TIDAK bisa dipakai menguji cabang `EnforcedPause()`.
+/// @dev URUTAN LOG MENTAH. `docs/api-facts.md` §A hanya mencatat urutan event ACP-SAJA (hasil
+///      `vm.recordLogs` di fork yang disaring per emitter); ia TIDAK mengikat posisi `Transfer` ERC-20
+///      di antara event ACP. Untuk itu mock mengikuti source terverifikasi Sourcify `AgenticCommerceV3.sol`
+///      (sha256 `3b47cdbc…cddb`, `match=exact_match`): `complete` `:530-542` = Transfer→treasury,
+///      Transfer→evaluator, EvaluatorFeePaid, Transfer→provider, JobCompleted, PaymentReleased;
+///      auto-complete `:469-483` = JobSubmitted, Transfer→treasury, Transfer→provider, JobCompleted,
+///      PaymentReleased. Dikunci `test_complete_rawLogOrder_matchesSource` dan
+///      `test_autoComplete_rawLogOrder_matchesSource` atas log MENTAH (tanpa filter emitter).
+///      Konsumen yang mengaitkan `Transfer` ke event ACP lewat kedekatan log-index bergantung pada ini.
 /// @dev REENTRANCY: kontrak asli mewarisi `ReentrancyGuardTransient` OpenZeppelin (api-facts §A) — SATU slot
 ///      transient dipakai bersama, jadi guard-nya berlaku LINTAS FUNGSI dalam satu transaksi, dan
 ///      `createJob/setBudget/fund/submit/complete/reject/claimRefund` semuanya `nonReentrant`.
@@ -300,10 +309,12 @@ contract AgenticCommerce {
 
             job.status = Status.Completed;
 
+            // Urutan log MENTAH source `:469-483`: JobSubmitted, Transfer→treasury, Transfer→provider,
+            // JobCompleted, PaymentReleased. KEDUA transfer mendahului `JobCompleted`.
             emit JobSubmitted(jobId, job.provider, deliverable);
             _push(treasury, platformFee);
-            emit JobCompleted(jobId, address(0), deliverable);
             _push(job.provider, providerAmount);
+            emit JobCompleted(jobId, address(0), deliverable);
             emit PaymentReleased(jobId, job.provider, providerAmount);
             return;
         }
@@ -314,7 +325,10 @@ contract AgenticCommerce {
 
     /// @notice Evaluator meluluskan: Submitted→Completed. 100% budget cair dikurangi kedua fee; tidak ada
     ///         pembayaran parsial. TIDAK ada guard expiry — terbukti sukses pada `expiredAt + 1`.
-    /// @dev Urutan emit terbukti (`vm.recordLogs` di fork): EvaluatorFeePaid, JobCompleted, PaymentReleased.
+    /// @dev Urutan event ACP terbukti di fork (`vm.recordLogs`): EvaluatorFeePaid, JobCompleted,
+    ///      PaymentReleased. Itu urutan ACP-SAJA dan TIDAK menentukan posisi `Transfer` ERC-20 di
+    ///      antaranya; urutan log MENTAH diambil dari source terverifikasi `:530-542` dan dikunci
+    ///      `test_complete_rawLogOrder_matchesSource`.
     /// @dev URUTAN CEK: STATUS DULU, BARU OTORISASI (dibuktikan di fork 2026-09-03).
     ///      `complete(non-evaluator, status=Funded)` → `WrongStatus()`, BUKAN `Unauthorized()`;
     ///      `complete(evaluator, status=Funded)` → `WrongStatus()`;
@@ -333,13 +347,20 @@ contract AgenticCommerce {
 
         job.status = Status.Completed;
 
-        _push(job.evaluator, evaluatorFee);
-        // Apakah kontrak asli tetap mengemit EvaluatorFeePaid saat fee = 0 (budget 0) BELUM diverifikasi;
-        // mock melewatinya. Tidak ada job kita yang berbudget 0 di jalur nyata.
-        if (evaluatorFee != 0) emit EvaluatorFeePaid(jobId, job.evaluator, evaluatorFee);
+        // Urutan log MENTAH source `:530-542`: Transfer→treasury, Transfer→evaluator, EvaluatorFeePaid,
+        // Transfer→provider, JobCompleted, PaymentReleased. Treasury dibayar DULU, dan KETIGA transfer
+        // mendahului `JobCompleted`.
         _push(treasury, platformFee);
-        emit JobCompleted(jobId, job.evaluator, reason);
+        // TERVERIFIKASI (source `:533-536`): transfer fee evaluator DAN `EvaluatorFeePaid` berada di
+        // dalam guard `evalFee > 0` yang SAMA — pada budget nol keduanya dilewati, jadi tidak ada
+        // event fee beramount nol. Jalur berbudget nol NYATA (Open+budget 0+evaluator != 0 boleh
+        // langsung di-`submit`), jadi ini bukan cabang teoretis.
+        if (evaluatorFee != 0) {
+            _push(job.evaluator, evaluatorFee);
+            emit EvaluatorFeePaid(jobId, job.evaluator, evaluatorFee);
+        }
         _push(job.provider, providerAmount);
+        emit JobCompleted(jobId, job.evaluator, reason);
         emit PaymentReleased(jobId, job.provider, providerAmount);
     }
 
@@ -474,6 +495,11 @@ contract AgenticCommerce {
         if (amount != 0 && !paymentToken.transferFrom(from, address(this), amount)) revert MockTransferFailed();
     }
 
+    /// @dev Guard `amount != 0` bukan optimasi: source menjaga SETIAP transfer keluar dengan
+    ///      `platformFee > 0` / `evalFee > 0` / `net > 0` (`:475-480`, `:530-539`), jadi job berbudget
+    ///      nol tidak memancarkan `Transfer` sama sekali. Tanpa guard ini mock akan memancarkan
+    ///      `Transfer(..., 0)` hantu yang meracuni watcher. Sama seperti `_pull`; dikunci
+    ///      `test_zeroAmountPaths_emitNoErc20Transfer`.
     function _push(address to, uint256 amount) private {
         if (amount != 0 && !paymentToken.transfer(to, amount)) revert MockTransferFailed();
     }
