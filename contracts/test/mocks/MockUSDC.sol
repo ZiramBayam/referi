@@ -2,8 +2,11 @@
 pragma solidity 0.8.36;
 
 /// @title MockUSDC — ERC-20 minimal 6 desimal untuk tes escrow ACP.
-/// @notice Hanya untuk tes. Escrow ACP memakai USDC (6 desimal), bukan ETH
-///         (docs/versions.md: USDC Base Sepolia 0x036CbD53842c5426634e7929541eC2318f3dCF7e).
+/// @notice Hanya untuk tes. Escrow ACP memakai token ERC-20 6 desimal, bukan ETH.
+/// @dev Sengaja TIDAK menyebut alamat token mana pun: di Base Sepolia ada DUA token yang sama-sama
+///      menjawab `symbol()` = "USDC" dan `decimals()` = 6, dan yang dipakai escrow adalah nilai
+///      `paymentToken()` kontrak ACP — bukan USDC Circle. Satu-satunya sumber alamat yang sah ada di
+///      docs/versions.md §Jaringan & alamat; menyalinnya ke mock hanya mengabadikan jebakan itu.
 contract MockUSDC {
     string public constant name = "Mock USD Coin";
     string public constant symbol = "USDC";
