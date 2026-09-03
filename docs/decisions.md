@@ -167,3 +167,42 @@ Konsekuensi:
 (-) `FinalizeFailed` BUKAN terminal: watcher 2.2 dan UI DILARANG memperlakukannya sebagai selesai, dan
     siapa pun bisa menyemprotnya pada job mati dengan biaya gasnya sendiri.
 Mengaktifkan kembali penggugur eksplisit menuntut ADR baru dengan bukti deadlock konkret.
+
+
+## ADR-016 Kunci deploy pindah dari `AGENT_PRIVATE_KEY` (.env) ke keystore terenkripsi Foundry
+Konteks: `contracts/script/Deploy.s.sol` menyerahkan kunci sebagai ARGUMEN cheatcode — `vm.addr(pk)`
+dan `vm.startBroadcast(pk)`. Foundry menyensor trace TEKS (`VM::addr(<pk>)`, `VM::envString(...) ->
+<env var value>`) tetapi TIDAK menyensor `forge script --json`, yang mendump calldata mentah:
+`"data":"0xffa18649<kunci>"` dan `"data":"0xce817d47<kunci>"` — kunci privat UTUH, 2x per run, di
+stdout, pada jalur SUKSES, di verbositas DEFAULT. `--json` bukan flag eksotis: ia cara kanonik
+mengambil alamat vault secara terprogram untuk mengisi `deployments/84532.json`.
+@agent-security-reviewer membuktikan ini BUKAN batas Foundry: di sandbox, skrip dengan
+`vm.startBroadcast()` TANPA argumen menghasilkan nol kemunculan kunci pada `--json`.
+Belum ada kebocoran nyata: nol `--json` di Makefile/scripts/docs, artefak `broadcast/84532` bersih,
+kunci asli tidak pernah tercetak. Rotasi kunci TIDAK diperlukan.
+
+Opsi `--private-key <nilai>` di CLI DITOLAK: ia memindahkan kunci ke `argv` proses (terlihat lewat
+`ps`) dan memaksa shell membaca `.env` yang justru diblokir `scripts/guard.sh` dengan sengaja —
+menukar satu kebocoran dengan kebocoran lain.
+
+Keputusan, dua tahap:
+1. **Jangka pendek (task 1.3a, sekarang):** tutup KANAL dan MOTIF secara mekanis, tanpa menyentuh
+   logika deploy — `make deploy` menolak `--json`, `scripts/guard.sh` memblokir `forge script --json`,
+   alamat vault diambil dari `broadcast/.../run-latest.json` memakai `python3` (artefak itu sudah ada
+   dan terbukti bersih), dan NatSpec dikoreksi karena sempat mengklaim kunci tidak pernah terekspos.
+2. **Jangka menengah (task 1.2c, deploy berikutnya):** WAJIB keystore terenkripsi. `cast wallet import
+   agent --interactive` sekali oleh user, `forge script --account agent --sender $AGENT_ADDRESS`,
+   `vm.startBroadcast()` tanpa argumen, `deployer` dari `msg.sender`. Parser kunci
+   (`_envPrivateKey`/`_parsePrivateKey`, ~120 baris + tesnya) DIHAPUS. `AGENT_PRIVATE_KEY` tetap di
+   `.env` HANYA untuk `agent/vault_client.py` (web3.py), tidak lagi untuk deploy.
+
+Konsekuensi:
+(+) Kunci berhenti menjadi argumen cheatcode, sehingga seluruh kelas kanal ini tertutup di akarnya,
+    bukan per-flag.
+(+) Utang tes yang diketahui (mutan D1-D7: menghapus seluruh panggilan `_validate` dari `run()`, dan
+    mengganti tiap `vm.envOr` dengan nilai default, SEMUANYA lolos 137/137 hari ini) diselesaikan
+    sekali terhadap bentuk final, bukan dua kali.
+(-) Satu aksi manual USER sebelum 1.2c — bukan sebelum 1.3d, jadi rantai pipa tidak tertahan.
+(-) `.env.example`, README (4.3b), dan `Makefile` berubah.
+Selama tahap 1 berlaku, `--json` DILARANG dipakai dengan skrip deploy, dan larangan itu ditegakkan
+mesin (Makefile + guard), bukan sekadar komentar.
