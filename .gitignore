@@ -3,6 +3,7 @@ node_modules/
 data/
 contracts/out/
 contracts/cache/
+contracts/broadcast/
 .venv/
 __pycache__/
 .next/

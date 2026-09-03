@@ -43,4 +43,23 @@ test:
 demo:
 	@echo "Belum tersedia."
 
+# Satu-satunya entrypoint deploy yang sah (ADR-016).
+# `--json` DILARANG: forge mendump calldata cheatcode MENTAH tanpa sensor, dan Deploy.s.sol
+# menyerahkan kunci sebagai argumen cheatcode (vm.addr, vm.startBroadcast), sehingga kunci privat
+# UTUH tercetak 2x per run ke stdout — pada jalur SUKSES, di verbositas DEFAULT.
+# Alamat vault TIDAK butuh --json: pakai target `deploy-address` di bawah.
+deploy:
+	@case " $(ARGS) " in \
+	  *" --json"*|*"--json "*|*"--json="*) \
+	    echo "DITOLAK: --json membocorkan private key lewat calldata cheatcode (ADR-016)." >&2; \
+	    echo "Alamat vault: jalankan 'make deploy-address'." >&2; \
+	    exit 1;; \
+	esac; \
+	cd contracts && forge script script/Deploy.s.sol:Deploy --rpc-url $${RPC_URL:-https://sepolia.base.org} --broadcast $(ARGS)
+
+# Baca alamat hasil deploy dari artefak broadcast (berisi transaksi, bukan calldata cheatcode).
+deploy-address:
+	@python3 -c "import json;d=json.load(open('contracts/broadcast/Deploy.s.sol/84532/run-latest.json'));\
+print([t['contractAddress'] for t in d['transactions'] if t.get('contractName')=='EvaluatorVault'][0])"
+
 -include Makefile.local

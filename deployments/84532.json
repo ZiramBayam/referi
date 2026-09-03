@@ -1,0 +1,35 @@
+{
+  "network": "base-sepolia",
+  "chainId": 84532,
+  "rpcUrl": "https://sepolia.base.org",
+  "explorer": "https://sepolia.basescan.org",
+  "EvaluatorVault": "0x5c6EE4586ACABcb6326069c229E58091B21ef384",
+  "AgenticCommerce": "0x0b93793923CD5De81850aF8604a233f3f24d461e",
+  "AgenticCommerceImplementation": "0xc4E95dBc7E8C99c114FF9C8299A3E4851e1530fF",
+  "paymentToken": "0xECc22a8F6fD62388498fBa19813E214605a2BDb3",
+  "agent": "0xfa5AF5BAeB4aC500267D7189fa1f0AA923eCA894",
+  "arbiter": "0xfa5AF5BAeB4aC500267D7189fa1f0AA923eCA894",
+  "minBondWei": "0",
+  "txHash": "0xfcf339e2732f60809bd8c86232ccc386e9cb5285edb285e355fb2ca1fe98b601",
+  "deployedAtBlock": 46350667,
+  "gasUsed": 816969,
+  "effectiveGasPriceWei": "6000000",
+  "deployedAt": "2026-09-03T21:07:02Z",
+  "solc": "0.8.36",
+  "evmVersion": "osaka",
+  "optimizerRuns": 200,
+  "constants": {
+    "CHALLENGE_WINDOW": 120,
+    "MIN_ACP_GAS": 300000,
+    "KIND_COMPLETE": 1,
+    "KIND_REJECT": 2
+  },
+  "notes": [
+    "paymentToken adalah nilai paymentToken() kontrak ACP dan BUKAN USDC Circle 0x036CbD53842c5426634e7929541eC2318f3dCF7e; keduanya sama-sama bersimbol USDC, jadi bandingkan ALAMAT, bukan symbol().",
+    "arbiter == agent pada deploy ini. Aman selama ADR-013 berlaku (resolve() stub revert NotImplemented, arbiter tanpa wewenang on-chain), tetapi WAJIB dipisah sebelum 1.2c (sweepToken onlyArbiter) atau sebelum challenge/resolve diaktifkan.",
+    "minBondWei = 0 disengaja: vault belum punya jalur ETH keluar (ADR-013), jadi bond yang disetor akan terkunci permanen.",
+    "Bytecode runtime on-chain identik dengan out/EvaluatorVault.sol/EvaluatorVault.json kecuali di slot immutable (acp, agent, arbiter, MIN_BOND)."
+  ],
+  "deployedAtTimestamp": 1788469622,
+  "deployer": "0xfa5AF5BAeB4aC500267D7189fa1f0AA923eCA894"
+}
