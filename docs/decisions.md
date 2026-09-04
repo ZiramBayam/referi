@@ -250,3 +250,47 @@ Konsekuensi:
 (-) Satu rahasia baru di `.env` yang tidak pernah boleh di-commit atau tercetak.
 (-) Dua transaksi tambahan (danai ETH, mint) dan satu alamat lagi untuk dilacak di artefak demo.
 (-) `arbiter() == agent()` tetap utang pengakuan terpisah (1.2c/4.3b); ADR ini tidak menutupnya.
+
+## ADR-018 Redeploy vault: arbiter terpisah, 50.000 token vault v1 dilepas sadar, dan jalur mundur
+Tanggal: 2026-09-04. Status: diterima.
+
+Konteks: vault immutable, jadi redeploy = alamat baru. Vault v1
+`0x5c6EE4586ACABcb6326069c229E58091B21ef384` MEMEGANG 50.000 token escrow hasil job 417
+(evaluatorFee 5% dari budget 1.000.000) dan tidak akan pernah punya `sweepToken` — dibuktikan
+langsung: `cast call` ke selector `sweepToken(address,address)` di v1 → `execution reverted`.
+`deployments/pipeline-84532.md` adalah bahan video/README dan menunjuk v1. ADR-016 tahap 2
+memindahkan kunci keluar dari jalur DEPLOY saja; `AGENT_PRIVATE_KEY` tetap di `.env` untuk
+`agent/vault_client.py`, jadi ini pengurangan permukaan, BUKAN penghapusan kunci dari repo —
+README wajib mengklaim persis itu, tidak lebih.
+
+Keputusan:
+1. Redeploy dilakukan SEBELUM perekaman demo §7, karena biaya membatalkan artefak naik monoton
+   terhadap waktu: hari ini satu file, pekan depan video + README + artefak demo.
+2. 50.000 token di v1 DILEPAS. Tanpa upaya pemulihan, tanpa proxy/upgradeable (PRD §5 "tidak
+   dikerjakan"). Nilainya 0,05 USDC testnet. Dicatat terbuka di `deployments/pipeline-84532.md`
+   dan README, bukan disembunyikan.
+3. `arbiter` diisi EOA BARU `0xC9CF30c8aB471fD22536B955b5CFb79D26672cF1`, dan
+   `ALLOW_ARBITER_EQ_AGENT` WAJIB kosong. Alasannya berubah sejak `sweepToken` ada: sebelumnya
+   arbiter tidak punya wewenang on-chain apa pun (`resolve` stub, ADR-013) sehingga
+   `arbiter == agent` tidak berbahaya; sekarang arbiter adalah pemegang TUNGGAL seluruh saldo
+   ERC-20 vault, tanpa timelock, two-step, maupun allowlist penerima (temuan SEDANG
+   @agent-security-reviewer).
+4. Pipa 1.3d DIPUTAR ULANG di dalam task `1.2c-deploy`, bukan dengan membuka ulang 1.3d. 1.3d
+   tetap `[x]` sebagai bukti pipa hidup PERTAMA; yang diganti hanya artefak yang menunjuk alamat.
+   Aturannya: siapa yang membuat alamat baru, dia yang membereskan seluruh jejak alamat lama —
+   dalam satu task, supaya tidak pernah ada jendela di mana artefak juri menunjuk kontrak yang
+   bukan kontrak submission.
+5. Timebox internal 6 Sep 18:00 (angka internal, BUKAN tenggat hackathon). Lewat itu berlaku
+   JALUR MUNDUR: redeploy dibatalkan, vault v1 dipertahankan untuk submission, `sweepToken`
+   mendarat sebagai kode + tes saja, dan README (4.3b) menyatakan eksplisit "kontrak yang
+   terdeploy belum punya `sweepToken`".
+
+Konsekuensi:
+(+) Kontrak submission punya jalan keluar dana, dan kunci deploy bukan lagi argumen cheatcode.
+(+) Satu alamat vault konsisten di seluruh artefak juri.
+(+) Peran terpisah penuh: client, provider, agent, arbiter adalah empat EOA berbeda.
+(-) 0,05 USDC testnet hangus permanen dan WAJIB disebut di README — juri yang bertanya harus
+    mendapat jawaban yang sudah siap, bukan improvisasi.
+(-) Alamat vault muncul di `sim/`, `agent/`, `deployments/`, `docs/`; AC (h) task 1.2c-deploy
+    (`grep` alamat lama nol hit di jalur eksekusi) adalah satu-satunya penjaga mekanisnya.
+(-) Bergantung pada satu aksi user yang tidak bisa diotomasi (`cast wallet import`).
