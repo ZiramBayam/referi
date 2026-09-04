@@ -76,6 +76,17 @@ SELFTEST_MEMORY_ROOT = bytes.fromhex("5ff921fda73362d23f66dcac204d1ace7a287fa0a2
 # reasonHash uji TETAP = keccak256("the-evaluator/selftest/reason/v1").
 SELFTEST_REASON_HASH = bytes.fromhex("a5bd14a91be2154eef37dbc7ef79f1fca1ec71454832bce0e16a82807085e87e")
 
+# ----------------------------------------------------------------------
+# Konstanta pipa hidup (task 1.3d)
+# ----------------------------------------------------------------------
+
+# SENGAJA BERBEDA dari konstanta selftest supaya jejak on-chain job NYATA tidak tertukar
+# dengan jejak jobId sintetis. 1.3d mengizinkan verdict hardcoded + memori kosong.
+# LIVE_MEMORY_ROOT = keccak256("the-evaluator/live/memory-root/v1")
+LIVE_MEMORY_ROOT = bytes.fromhex("1fa62c3db5c16f4c831ee1d9ee4c083745b8c8bae86bda3587b8b02ba52f7bf0")
+# LIVE_REASON_HASH = keccak256("the-evaluator/live/reason/v1")
+LIVE_REASON_HASH = bytes.fromhex("6478e788a7953cf990091291d8d1b4f3f046567a915e5158d4dcf57d9fd845b0")
+
 # Ambang gas `finalize` di vault (MIN_ACP_GAS = 300000) + kepala untuk sisa eksekusi.
 FINALIZE_GAS_FLOOR = 420_000
 TX_RECEIPT_TIMEOUT_SECONDS = 180
@@ -469,6 +480,95 @@ def run_selftest(client: VaultClient) -> int:
     return 0
 
 
+def run_live(client: VaultClient, job_id: int, kind: int) -> int:
+    """Pipa atas jobId ACP NYATA: postVerdict -> tunggu CHALLENGE_WINDOW -> finalize.
+
+    Jalur dan penjaganya sama persis dengan selftest; yang berbeda hanya asal jobId dan
+    hasil yang diharapkan: `Finalized` ADA dan `FinalizeFailed` TIDAK ADA.
+    """
+    kind_name = "complete" if kind == KIND_COMPLETE else "reject"
+    log.info("LIVE jobId ACP NYATA=%d kind=%d (%s)", job_id, kind, kind_name)
+    log.info("memory_root live (TETAP)=0x%s", LIVE_MEMORY_ROOT.hex())
+    log.info("reason_hash live (TETAP)=0x%s", LIVE_REASON_HASH.hex())
+
+    existing = client.verdict(job_id)
+    if existing.finalized:
+        log.error(
+            "verdict jobId=%d SUDAH finalized (kind=%d) — tidak ada yang dikerjakan",
+            job_id,
+            existing.kind,
+        )
+        return 1
+
+    post_receipt = None
+    if existing.kind != 0:
+        # VerdictAlreadyPosted: lanjut ke finalize, jangan gagal total (jalur diminta 1.3d).
+        log.info(
+            "verdict jobId=%d SUDAH ADA (kind=%d, readyAt=%d) — melewati postVerdict, lanjut finalize",
+            job_id,
+            existing.kind,
+            existing.ready_at,
+        )
+        ready_at = existing.ready_at
+        post_hash = "(sudah ada sebelumnya)"
+    else:
+        post_hash = client.post_verdict(job_id, kind, LIVE_REASON_HASH, LIVE_MEMORY_ROOT)
+        post_receipt = client.wait_receipt(post_hash)
+        log.info(
+            "TX 1 postVerdict = 0x%s (status=%d, blok=%d)",
+            post_hash,
+            post_receipt.status,
+            post_receipt.blockNumber,
+        )
+        if post_receipt.status != 1:
+            raise RuntimeError(f"postVerdict gagal on-chain: 0x{post_hash}")
+        # readyAt dari event di receipt (RPC publik bisa tertinggal di belakang receipt).
+        ready_at = read_ready_at(client, job_id, post_receipt)
+
+    log.info("menunggu jendela challenge sampai readyAt=%d", ready_at)
+    while True:
+        now = client.w3.eth.get_block("latest")["timestamp"]
+        if now > ready_at:
+            break
+        log.info("  block.timestamp=%d, sisa %d detik", now, ready_at - now + 1)
+        time.sleep(min(20, max(2, ready_at - now + 1)))
+
+    final_hash = client.finalize(job_id)
+    final_receipt = client.wait_receipt(final_hash)
+    log.info(
+        "TX 2 finalize    = 0x%s (status=%d, blok=%d)",
+        final_hash,
+        final_receipt.status,
+        final_receipt.blockNumber,
+    )
+    if final_receipt.status != 1:
+        log.error("finalize REVERT on-chain: 0x%s", final_hash)
+        return 1
+
+    failed = client.vault.events.FinalizeFailed().process_receipt(final_receipt, errors=DISCARD)
+    finalized = client.vault.events.Finalized().process_receipt(final_receipt, errors=DISCARD)
+    log.info("log receipt finalize: FinalizeFailed=%d, Finalized=%d", len(failed), len(finalized))
+    for event in finalized:
+        log.info("  Finalized(jobId=%d, kind=%d)", int(event["args"]["jobId"]), int(event["args"]["kind"]))
+    for event in failed:
+        log.info("  FinalizeFailed(jobId=%d)", int(event["args"]["jobId"]))
+
+    if finalized and not failed:
+        log.info("PIPA HIDUP SELESAI. postVerdict=%s finalize=0x%s", post_hash, final_hash)
+        return 0
+
+    log.error(
+        "HASIL TIDAK SESUAI HARAPAN untuk jobId NYATA %d: FinalizeFailed=%d Finalized=%d "
+        "(acp.complete() ditolak dan ditangkap catch vault). receipt finalize=0x%s blok=%d",
+        job_id,
+        len(failed),
+        len(finalized),
+        final_hash,
+        final_receipt.blockNumber,
+    )
+    return 1
+
+
 # ----------------------------------------------------------------------
 # CLI
 # ----------------------------------------------------------------------
@@ -478,11 +578,20 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="vault_client", description="Klien EvaluatorVault minimal")
     parser.add_argument("--selftest", action="store_true", help="postVerdict + finalize atas jobId sintetis")
     parser.add_argument("--guard", type=int, metavar="JOB_ID", help="hanya pra-baca status job di ACP")
+    parser.add_argument(
+        "--job-id", type=int, metavar="JOB_ID", help="jalankan pipa penuh atas jobId ACP NYATA"
+    )
+    parser.add_argument(
+        "--kind",
+        choices=("complete", "reject"),
+        default="complete",
+        help="verdict untuk --job-id (default: complete)",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
 
-    if not args.selftest and args.guard is None:
+    if not args.selftest and args.guard is None and args.job_id is None:
         parser.print_usage(sys.stdout)
         return 2
 
@@ -493,6 +602,14 @@ def main(argv: list[str] | None = None) -> int:
         if args.guard is not None:
             client.guard(args.guard, "guard-only")
             return 0
+        if args.job_id is not None:
+            kind = KIND_COMPLETE if args.kind == "complete" else KIND_REJECT
+            try:
+                return run_live(client, args.job_id, kind)
+            except JobVoidedError as exc:
+                # Job NYATA yang sudah terminal = verdict yatim: kegagalan pipa, bukan hasil normal.
+                log.error("%s", voided_message(exc.job_id, exc.status))
+                return 1
         return run_selftest(client)
     except JobVoidedError as exc:
         # Penjaga: tidak ada tx yang dikirim, keluar 0 (bukan kegagalan).
