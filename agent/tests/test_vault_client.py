@@ -6,7 +6,7 @@ Rejected=4, Expired=5". Tidak ada jaringan, tidak ada kunci, tidak ada memori.
 
 import pytest
 
-from vault_client import (
+from agent.vault_client import (
     JOB_STATUS_NAMES,
     TERMINAL_JOB_STATUSES,
     is_terminal_status,

@@ -360,6 +360,7 @@ name = "evaluator-agent"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "sibyl-memory-client" },
     { name = "web3" },
 ]
 
@@ -370,7 +371,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "web3", specifier = "==7.16.0" }]
+requires-dist = [
+    { name = "sibyl-memory-client", specifier = "==0.7.0" },
+    { name = "web3", specifier = "==7.16.0" },
+]
 
 [package.metadata.requires-dev]
 dev = [
@@ -766,6 +770,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/5e/e5/9e274e24eeb027640ffc7442f21239f16d17f47acec15ae34f32e03a5c79/ruff-0.16.6-py3-none-win32.whl", hash = "sha256:0b87d9d16fcb63e8018423ca1d50b7260f15cb2da33e30db4baad4183a948c25", size = 10049212, upload-time = "2026-09-03T16:57:20.55Z" },
     { url = "https://files.pythonhosted.org/packages/22/31/72472449414223ed1a2da236b992adbb1a2ae59e34794574810f60ce068e/ruff-0.16.6-py3-none-win_amd64.whl", hash = "sha256:10d21c51c3495d8eaea7b703a16592117ea6eb1d649e36335aa965ff1173eb39", size = 10556402, upload-time = "2026-09-03T16:57:23.501Z" },
     { url = "https://files.pythonhosted.org/packages/fc/07/d781f8f8e1ac24bef9f3269cf62ffb1407ca24c3a8f12e5e22874f90528c/ruff-0.16.6-py3-none-win_arm64.whl", hash = "sha256:7a976c79b958f94e50a022a19f0f8c87387448020935ec14fc74331bd0a7f2c5", size = 10412850, upload-time = "2026-09-03T16:57:26.416Z" },
+]
+
+[[package]]
+name = "sibyl-memory-client"
+version = "0.7.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/90/df/8f20ed4c9d3c8045cb6c5dc1cf062db3d9ed761ad0bd094d6097d0ee277e/sibyl_memory_client-0.7.0.tar.gz", hash = "sha256:38eab39c5915df50a4c6dd2ebd76af82b8ec10d1f52ab9930bcebd0d2d4e9e16", size = 179987, upload-time = "2026-08-22T23:32:07.052Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/55/7e/2bb17f90ffd529026df5f0b1488ddece0b7695adf6dd2056d6f8706fa34e/sibyl_memory_client-0.7.0-py3-none-any.whl", hash = "sha256:de4c39569e9dfaeb62cf1be790992b7c8ea024a0c3df417da38659ff27b34a52", size = 110441, upload-time = "2026-08-22T23:32:06.11Z" },
 ]
 
 [[package]]

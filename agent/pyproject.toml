@@ -1,10 +1,11 @@
 [project]
 name = "evaluator-agent"
 version = "0.1.0"
-description = "The Evaluator — klien vault minimal (task 1.3b)"
+description = "The Evaluator — agen evaluator ERC-8183 dengan memori provider yang bisa diaudit"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "web3==7.16.0",
+    "sibyl-memory-client==0.7.0",
 ]
 
 # Dependensi pengembangan. Ruff WAJIB ada: scripts/gate.sh menjalankannya begitu
@@ -15,7 +16,8 @@ dev = [
     "ruff",
 ]
 
-# Scaffold minimal: belum ada paket yang dibangun/di-install, hanya skrip + tes.
+# LAYOUT PAKET (task 2.0/T13): satu paket datar `agent/agent/`, diimpor sebagai `agent.<modul>`
+# lewat `pythonpath` di bawah — tanpa `src/`, tanpa build backend, tanpa manipulasi sys.path.
 [tool.uv]
 package = false
 
