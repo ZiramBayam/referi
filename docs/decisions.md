@@ -206,3 +206,33 @@ Konsekuensi:
 (-) `.env.example`, README (4.3b), dan `Makefile` berubah.
 Selama tahap 1 berlaku, `--json` DILARANG dipakai dengan skrip deploy, dan larangan itu ditegakkan
 mesin (Makefile + guard), bukan sekadar komentar.
+
+## ADR-017 Wallet client simulator terpisah dari wallet agen; `submit()` milik `sim/client_min.ts`
+Tanggal: 2026-09-04. Status: diterima.
+
+Konteks: task 1.3c/1.3d butuh EOA yang memegang token escrow
+`0xECc22a8F6fD62388498fBa19813E214605a2BDb3`, sementara satu-satunya kunci privat yang dipegang
+otomasi adalah `AGENT_PRIVATE_KEY` — yang juga `agent` DAN `arbiter` immutable di vault. Saldo token
+alamat itu nol, dan task 0.4b (danai wallet client) blocked pada user sejak 3 Sep, sedangkan 1.3d
+bertenggat keras 5 Sep. `mint(address,uint256)` pada token escrow terbukti TANPA kontrol akses
+(api-facts §A, selector `0x40c10f19`) tetapi baru diuji di fork, belum lewat tx nyata.
+
+Keputusan:
+1. Buat `CLIENT_PRIVATE_KEY` baru. Kunci HANYA di `.env`; di `.env.example` ia baris KOSONG berkomentar.
+   DILARANG dicetak, di-log, atau di-commit.
+2. Danai wallet itu ETH secukupnya dari wallet agen, lalu 2 USDC lewat `mint` terbuka (task 0.4b-min).
+   0.4b tetap milik user HANYA untuk top-up 100 USDC yang dibutuhkan skenario 3.1.
+3. Client dan provider BOLEH satu EOA; evaluator TIDAK PERNAH. Yang harus independen adalah wasitnya,
+   bukan client-vs-provider. Task 3.1 tetap wajib memisahkan tiga provider.
+4. `submit(jobId, deliverable, optParams)` dieksekusi `sim/client_min.ts` di 1.3c, bukan 1.3d: tanpa
+   status Submitted, `complete()` di 1.3d pasti revert `WrongStatus()` (api-facts §A).
+5. Bila (1) gagal, fallback client == wallet agen HANYA dengan pengakuan tertulis di
+   `deployments/pipeline-84532.md` dan README (4.3b), dan artefak fallback DILARANG masuk video.
+
+Konsekuensi:
+(+) Klaim "wasit pihak ketiga" (PRD §5, spec §7 langkah 5) bertahan di panel juri: client, provider,
+    dan evaluator bukan satu alamat.
+(+) 0.4b lepas dari jalur kritis Fase 1, sehingga tenggat 5 Sep tidak bergantung pada aksi user.
+(-) Satu rahasia baru di `.env` yang tidak pernah boleh di-commit atau tercetak.
+(-) Dua transaksi tambahan (danai ETH, mint) dan satu alamat lagi untuk dilacak di artefak demo.
+(-) `arbiter() == agent()` tetap utang pengakuan terpisah (1.2c/4.3b); ADR ini tidak menutupnya.
