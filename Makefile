@@ -44,9 +44,18 @@ demo:
 	@echo "Belum tersedia."
 
 # Satu-satunya entrypoint deploy yang sah (ADR-016).
-# `--json` DILARANG: forge mendump calldata cheatcode MENTAH tanpa sensor, dan Deploy.s.sol
-# menyerahkan kunci sebagai argumen cheatcode (vm.addr, vm.startBroadcast), sehingga kunci privat
-# UTUH tercetak 2x per run ke stdout — pada jalur SUKSES, di verbositas DEFAULT.
+#
+# WAJIB diberi wallet lewat ARGS, contoh:
+#   make deploy ARGS="--account agent --sender 0xfa5AF5BAeB4aC500267D7189fa1f0AA923eCA894"
+# Keystore dibuat sekali oleh user: `cast wallet import agent --interactive`.
+# Tanpa flag wallet, forge berhenti di default sender SEBELUM broadcast (nol transaksi terkirim),
+# jadi lupa memberinya tidak bisa berakhir jadi deploy yang salah.
+#
+# `--json` tetap DILARANG sebagai pertahanan BERLAPIS. Catatan: sejak ADR-016 tahap 2 skrip TIDAK
+# lagi menyerahkan kunci sebagai argumen cheatcode (`_envPrivateKey`/`_parsePrivateKey` dihapus,
+# `vm.startBroadcast()` tanpa argumen, `deployer` dari `msg.sender`), jadi MOTIF kebocoran sudah
+# hilang di akarnya — larangan ini dipertahankan supaya kanalnya tetap tertutup bila kelak ada
+# cheatcode pembawa rahasia yang masuk lagi. JANGAN dicabut hanya karena akarnya sudah ditambal.
 # Alamat vault TIDAK butuh --json: pakai target `deploy-address` di bawah.
 deploy:
 	@case " $(ARGS) " in \

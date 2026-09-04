@@ -10,61 +10,63 @@ import {IACP} from "../src/IACP.sol";
 /// @notice Semua alamat dibaca dari environment; TIDAK ADA alamat hardcode di file ini.
 ///         Nilai yang sah untuk `ACP_ADDRESS` ada di `docs/versions.md`
 ///         (Base Sepolia 84532: 0x0b93793923CD5De81850aF8604a233f3f24d461e).
-/// @dev Jalankan:
-///      `forge script script/Deploy.s.sol:Deploy --rpc-url $RPC_URL --broadcast`
+/// @dev Jalankan (ADR-016 tahap 2 — keystore terenkripsi, BUKAN kunci di `.env`):
+///        forge script script/Deploy.s.sol:Deploy --rpc-url $RPC_URL --broadcast \
+///            --account agent --sender 0xfa5AF5BAeB4aC500267D7189fa1f0AA923eCA894
+///      (`--sender` WAJIB alamat LITERAL: `scripts/guard.sh` memblokir argumen hasil substitusi
+///      perintah. Keystore dibuat sekali dengan `cast wallet import agent --interactive`.)
 ///
-///      JANGAN menambahkan `--json` pada perintah itu, dan jangan menaruh `--json` di
-///      Makefile/skrip/CI yang memanggil skrip ini (ADR-016). Skrip ini meneruskan
-///      `AGENT_PRIVATE_KEY` sebagai ARGUMEN cheatcode (`vm.addr`, `vm.startBroadcast`), dan
-///      keluaran `--json` mendump calldata cheatcode mentah TANPA sensor — kunci privat utuh
-///      tercetak 2x per run, pada jalur SUKSES dan di verbositas DEFAULT. Bukti & rincian ada di
-///      `_envPrivateKey`. Alamat vault hasil deploy TIDAK butuh `--json`: pakai baris
-///      `EvaluatorVault …` dari `console.log`, atau baca artefak broadcast
-///      `contracts/broadcast/Deploy.s.sol/84532/run-latest.json` dengan `python3` (artefak itu
-///      berisi transaksi, bukan calldata cheatcode, jadi bersih dari kunci).
+///      KUNCI PRIVAT TIDAK PERNAH MASUK KE SKRIP INI. Tidak ada `vm.envString("AGENT_PRIVATE_KEY")`,
+///      tidak ada cheatcode `vm.addr`, dan `vm.startBroadcast()` dipanggil TANPA argumen — kunci tidak
+///      pernah menjadi argumen cheatcode. Itu menutup kebocoran `--json` di AKARNYA (ADR-016): keluaran
+///      `--json` mendump calldata cheatcode MENTAH tanpa sensor, sehingga bentuk lama — `vm.addr` dan
+///      `vm.startBroadcast` yang menerima kunci sebagai ARGUMEN — mencetak kunci utuh 2x per run, pada
+///      jalur SUKSES dan di verbositas DEFAULT.
+///      `AGENT_PRIVATE_KEY` TETAP ada di `.env` untuk `agent/vault_client.py` (web3.py),
+///      tetapi ia sudah keluar dari jalur deploy. Larangan `--json` di `Makefile`/`scripts/guard.sh`
+///      sengaja DIPERTAHANKAN sebagai lapis kedua, bukan sebagai satu-satunya pertahanan.
+///
+///      Alamat vault hasil deploy dibaca dari baris `EvaluatorVault …` (`console.log`) atau dari
+///      artefak `contracts/broadcast/Deploy.s.sol/84532/run-latest.json`.
+///
+///      `deployer` = `msg.sender`, yaitu alamat `--sender`. Nilai itu HANYA dipakai sebagai
+///      pembanding guard (`AgentMismatch`) dan sebagai default `AGENT_ADDRESS`.
+///
 ///      Env yang dibaca:
 ///        ACP_ADDRESS       (wajib) kontrak ACP di jaringan target; WAJIB punya kode.
-///        ARBITER_ADDRESS   (wajib) arbiter sengketa (perannya belum aktif, ADR-013)
-///        AGENT_PRIVATE_KEY (wajib) wallet agen evaluator; juga dipakai sebagai deployer.
-///                          Diterima DENGAN maupun TANPA prefiks `0x` (lihat `_envPrivateKey`).
-///        AGENT_ADDRESS     (opsional) bila di-set WAJIB sama dengan alamat turunan
-///                          `AGENT_PRIVATE_KEY`; vault menyimpan `agent` sebagai immutable, jadi
-///                          salah alamat = vault yang tidak akan pernah bisa `postVerdict`.
+///        ARBITER_ADDRESS   (wajib) arbiter sengketa. Sejak task 1.2c ia pemegang satu-satunya kunci
+///                          `sweepToken`, jadi salah alamat = fee evaluator tidak bisa dikeluarkan.
+///        AGENT_ADDRESS     (opsional, default `msg.sender`) bila di-set WAJIB sama dengan `--sender`;
+///                          vault menyimpan `agent` sebagai immutable, jadi salah alamat = vault yang
+///                          tidak akan pernah bisa `postVerdict`.
 ///        CHAIN_ID          (opsional, default 84532) jaringan yang diharapkan. Deploy menolak
 ///                          jalan bila `block.chainid` berbeda — salah ketik `--rpc-url` tidak
 ///                          boleh berakhir jadi deploy ke jaringan lain.
 ///        MIN_BOND_WEI      (opsional, default 0) bond minimum sebelum agen boleh `postVerdict`.
 ///                          Default 0 dipilih sadar: selama ADR-013 berlaku vault belum punya jalur
-///                          ETH keluar, jadi bond yang disetor akan terkunci. Naikkan hanya setelah
-///                          `resolve`/penarikan bond ada.
+///                          ETH keluar (`sweepToken` HANYA ERC-20), jadi bond yang disetor terkunci.
+///                          Naikkan hanya setelah `resolve`/penarikan bond ada.
 ///        ALLOW_ARBITER_EQ_AGENT (opsional, default false) escape hatch eksplisit untuk
 ///                          `arbiter == agent`. Default MENOLAK: arbiter yang sama dengan agen
-///                          meniadakan pemisahan peran, dan nilainya immutable.
+///                          meniadakan pemisahan peran, nilainya immutable, dan sejak `sweepToken`
+///                          ada ia juga menyerahkan fee evaluator ke pihak yang memutus verdict.
+///                          Sesudah task 1.2c-arb jalur ini seharusnya tidak dipakai lagi; guardnya
+///                          tetap ada supaya deploy lama tetap bisa direproduksi.
 contract Deploy is Script {
     /// @dev Base Sepolia (docs/versions.md §Jaringan & alamat). Dipakai hanya bila `CHAIN_ID` kosong.
     uint256 internal constant DEFAULT_CHAIN_ID = 84532;
 
-    /// @dev `AGENT_PRIVATE_KEY` kosong atau hanya spasi.
-    error MissingPrivateKey();
-    /// @dev `AGENT_PRIVATE_KEY` bukan 64 digit heksadesimal (dengan atau tanpa prefiks `0x`).
-    ///      Sengaja TANPA parameter: memasukkan nilainya ke pesan revert = membocorkannya ke
-    ///      stdout/stderr dan ke setiap log yang menyimpan keluaran perintah.
-    error InvalidPrivateKeyFormat();
-    /// @dev `AGENT_PRIVATE_KEY` tanpa prefiks dan seluruhnya digit 0-9 → tidak bisa dibedakan
-    ///      antara heksadesimal dan desimal. Tambahkan `0x` bila memang heksadesimal.
-    error AmbiguousPrivateKeyFormat();
     /// @dev `block.chainid` bukan jaringan yang diharapkan (`CHAIN_ID`).
     error WrongChain();
     /// @dev `ACP_ADDRESS` tidak punya kode di jaringan ini.
     error AcpNotContract();
     /// @dev `arbiter == agent` tanpa `ALLOW_ARBITER_EQ_AGENT=true`.
     error ArbiterEqualsAgent();
-    /// @dev `AGENT_ADDRESS` di-set tetapi berbeda dari alamat turunan `AGENT_PRIVATE_KEY`.
+    /// @dev `AGENT_ADDRESS` di-set tetapi berbeda dari `--sender`.
     error AgentMismatch();
 
     function run() external returns (EvaluatorVault vault) {
-        uint256 deployerKey = _envPrivateKey();
-        address deployer = vm.addr(deployerKey);
+        address deployer = msg.sender;
 
         address acp = vm.envAddress("ACP_ADDRESS");
         address arbiter = vm.envAddress("ARBITER_ADDRESS");
@@ -81,7 +83,7 @@ contract Deploy is Script {
         console.log("arbiter   ", arbiter);
         console.log("minBondWei", minBond);
 
-        vm.startBroadcast(deployerKey);
+        vm.startBroadcast();
         vault = new EvaluatorVault(IACP(acp), agent, arbiter, minBond);
         vm.stopBroadcast();
 
@@ -93,7 +95,9 @@ contract Deploy is Script {
     ///         kekeliruan berikut masih bisa dicegat. Semua revert, bukan warning.
     /// @dev Sengaja terpisah dari pembacaan env supaya bisa diuji tanpa menyentuh environment proses
     ///      (`vm.setEnv` bersifat global untuk seluruh proses `forge test` yang menjalankan fungsi
-    ///      tes secara paralel — tes yang saling menimpa env satu sama lain jadi flaky).
+    ///      tes secara paralel — tes yang saling menimpa env satu sama lain jadi flaky). SAMBUNGAN
+    ///      env → guard ini sendiri diuji `test_deployFromEnv_everyEnvVarIsWired`, satu-satunya
+    ///      fungsi penulis env di `test/Deploy.t.sol`.
     function _validate(
         address acp,
         address agent,
@@ -106,85 +110,5 @@ contract Deploy is Script {
         if (acp.code.length == 0) revert AcpNotContract();
         if (agent != deployer) revert AgentMismatch();
         if (arbiter == agent && !allowArbiterEqAgent) revert ArbiterEqualsAgent();
-    }
-
-    /// @notice Membaca `AGENT_PRIVATE_KEY` dan menerima KEDUA bentuk penyimpanan yang lazim di
-    ///         berkas `.env`: dengan prefiks `0x` maupun tanpa prefiks.
-    /// @dev Aturan: spasi/tab/CR/LF di ujung dipangkas, prefiks `0x`/`0X` opsional, sisanya WAJIB
-    ///      tepat 64 karakter `[0-9a-fA-F]`. Nilai tanpa prefiks yang seluruhnya digit 0-9 ditolak
-    ///      (`AmbiguousPrivateKeyFormat`): kunci desimal 64 digit akan diam-diam terbaca sebagai
-    ///      heksadesimal lain dan menghasilkan vault dengan `agent` yang salah — dan `agent`
-    ///      immutable. Tulis `0x…` bila memang heksadesimal.
-    ///
-    ///      KENAPA konversi hex ditulis sendiri, bukan `vm.parseUint`/`vm.parseBytes32`:
-    ///      `vm.parseUint(string.concat("0x", kunci))` menyerahkan kunci sebagai argumen STRING
-    ///      BIASA, dan argumen string biasa tidak pernah disensor Foundry: kunci tampil apa adanya
-    ///      di trace `-vvvv` dan — pada nilai cacat — di pesan revert
-    ///      `failed parsing "0x…" as type uint256` yang muncul pada verbositas DEFAULT, di stdout
-    ///      MAUPUN stderr. Parser di bawah menutup dua kanal itu: kunci tidak pernah masuk
-    ///      `console.log`, dan semua error di file ini tanpa parameter sehingga kunci tidak pernah
-    ///      masuk pesan revert.
-    ///
-    ///      YANG BELUM TERTUTUP — `--json` DILARANG dipakai dengan skrip ini (ADR-016):
-    ///      kunci TETAP menjadi argumen cheatcode di `run()`, yaitu `vm.addr(deployerKey)` dan
-    ///      `vm.startBroadcast(deployerKey)`. Foundry menyensor trace TEKS
-    ///      (`VM::addr(<pk>)`, `VM::startBroadcast(<pk>)`, `VM::envString(...) → <env var value>`)
-    ///      TETAPI TIDAK menyensor keluaran `--json`, yang mendump calldata cheatcode mentah.
-    ///      Pada jalur SUKSES, verbositas DEFAULT, kunci utuh karena itu tercetak 2x per run ke
-    ///      stdout — 32 byte sesudah selector pada tiap `data:` adalah kuncinya:
-    ///        "data":"0xffa18649<kunci 32 byte>"   // addr(uint256)
-    ///        "data":"0xce817d47<kunci 32 byte>"   // startBroadcast(uint256)
-    ///      (Direproduksi dengan kunci uji Anvil #0 yang publik; jangan ulangi dengan kunci asli.)
-    ///      `vm.startBroadcast()` TANPA argumen terbukti menghasilkan nol kemunculan kunci di
-    ///      `--json`, tetapi bentuk broadcast di sini sengaja TIDAK diubah dulu; perombakan ke
-    ///      keystore/`--account` dijadwalkan terpisah. Sampai itu terjadi, larangan `--json` di
-    ///      atas adalah satu-satunya mitigasi (ADR-016).
-    function _envPrivateKey() internal view returns (uint256) {
-        return _parsePrivateKey(bytes(vm.envString("AGENT_PRIVATE_KEY")));
-    }
-
-    /// @notice Parser murni dari `_envPrivateKey`, dipisah agar bisa diuji tanpa menyentuh
-    ///         environment proses (lihat catatan paralelisme di `_validate`).
-    function _parsePrivateKey(bytes memory raw) internal pure returns (uint256) {
-        uint256 start = 0;
-        uint256 end = raw.length;
-        while (start < end && _isSpace(raw[start])) {
-            start++;
-        }
-        while (end > start && _isSpace(raw[end - 1])) {
-            end--;
-        }
-        if (end == start) revert MissingPrivateKey();
-
-        bool hasPrefix = end - start >= 2 && raw[start] == bytes1("0")
-            && (raw[start + 1] == bytes1("x") || raw[start + 1] == bytes1("X"));
-        if (hasPrefix) start += 2;
-
-        if (end - start != 64) revert InvalidPrivateKeyFormat();
-
-        uint256 key = 0;
-        bool anyLetter = false;
-        for (uint256 i = start; i < end; i++) {
-            (uint256 nibble, bool isLetter) = _nibble(raw[i]);
-            key = (key << 4) | nibble;
-            anyLetter = anyLetter || isLetter;
-        }
-        if (!hasPrefix && !anyLetter) revert AmbiguousPrivateKeyFormat();
-
-        return key;
-    }
-
-    /// @dev Nilai nibble sebuah karakter hex + apakah karakter itu huruf `a-f`/`A-F`.
-    ///      Revert TANPA parameter pada karakter non-hex (termasuk byte UTF-8 dari NBSP 0xC2 0xA0).
-    function _nibble(bytes1 c) private pure returns (uint256 value, bool isLetter) {
-        uint8 b = uint8(c);
-        if (b >= 0x30 && b <= 0x39) return (b - 0x30, false); // '0'-'9'
-        if (b >= 0x61 && b <= 0x66) return (b - 0x57, true); // 'a'-'f'
-        if (b >= 0x41 && b <= 0x46) return (b - 0x37, true); // 'A'-'F'
-        revert InvalidPrivateKeyFormat();
-    }
-
-    function _isSpace(bytes1 c) private pure returns (bool) {
-        return c == 0x20 || c == 0x09 || c == 0x0a || c == 0x0d;
     }
 }
