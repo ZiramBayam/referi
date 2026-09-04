@@ -368,6 +368,44 @@ Dibuktikan lewat EKSEKUSI di fork (bytecode ACP asli, hook di-whitelist dengan `
 - `whitelistedHooks[address(0)] = true` diset di `initialize` (`:199`) dan DIKONFIRMASI LIVE:
   `cast call <ACP> "whitelistedHooks(address)(bool)" 0x00…00 --rpc-url https://sepolia.base.org` → `true`.
   Itulah sebabnya `hook = address(0)` lolos guard whitelist.
+- **`complete` MEMANG hookable — DIVERIFIKASI 2026-09-04 (menutup tiga "BELUM DIVERIFIKASI" task 1.2d).**
+  Sumber: source terverifikasi Sourcify `exact_match` yang sama, diambil ulang & sha256 dicocokkan hari ini
+  (`curl -s "https://sourcify.dev/server/v2/contract/84532/0xc4e95dbc7e8c99c114ff9c8299a3e4851e1530ff?fields=sources"`
+  → `contracts/AgenticCommerceV3.sol` sha256 `3b47cdbc…8cddb`, 631 baris — identik dengan yang dicatat di kepala §A).
+  Badan `complete` APA ADANYA (`:510-545`), dikutip verbatim:
+```solidity
+function complete(uint256 jobId, bytes32 reason, bytes calldata optParams)
+    external whenNotPaused nonReentrant {
+    Job storage job = jobs[jobId];
+    if (jobId == 0 || jobId > jobCounter) revert InvalidJob();   // :515
+    if (job.status != JobStatus.Submitted) revert WrongStatus(); // :516
+    if (msg.sender != job.evaluator) revert Unauthorized();      // :517
+
+    bytes memory data = abi.encode(msg.sender, reason, optParams); // :520
+    _beforeHook(job.hook, jobId, msg.sig, data);                   // :521
+    ...
+    _afterHook(job.hook, jobId, msg.sig, data);                    // :544
+}
+```
+  Tiga fakta yang mengikat:
+  (1) **`complete` termasuk fungsi hookable.** Daftar LENGKAP titik hook di kontrak (`grep -n "_beforeHook\|_afterHook"`,
+      2026-09-04): definisi `:293`/`:305`; pemanggilan `:402`,`:407` (`setBudget`), `:428`,`:440` (`fund`),
+      `:464`,`:485`,`:491`,`:501` (`submit`, termasuk jalur auto-complete), **`:521`,`:544` (`complete`)**,
+      `:579`,`:594` (`reject`). Jadi lima fungsi alur job hookable; hanya `createJob` dan `claimRefund` yang tidak.
+  (2) **`data` untuk `complete` = `abi.encode(msg.sender, reason, optParams)`** — ini BUKAN analogi dari `setBudget`,
+      melainkan teks `:520` apa adanya. `reject` (`:578`) memakai encoding yang persis sama. `msg.sender` di sini
+      SELALU `job.evaluator` (auth sudah lolos di `:517`); satu-satunya tempat `data` `complete`-selector membawa
+      `address(0)` di posisi pertama adalah jalur auto-complete `submit` (`:491-496`).
+  (3) **`_beforeHook` dipanggil SESUDAH ketiga cek** (`InvalidJob` → `WrongStatus` → `Unauthorized`) dan SEBELUM
+      `job.status = Completed` serta sebelum transfer apa pun. Jadi panggilan `complete` yang ditolak TIDAK PERNAH
+      menyentuh hook, dan hook `beforeAction` melihat status yang MASIH `Submitted(2)`. `_afterHook` (`:544`) dipanggil
+      paling akhir, sesudah semua transfer dan sesudah `JobCompleted`+`PaymentReleased`.
+  Selector dikonfirmasi ulang 2026-09-04 dengan `cast sig`: `beforeAction(uint256,bytes4,bytes)` → `0xdc08fb1d`,
+  `afterAction(uint256,bytes4,bytes)` → `0xa3fe4783`, dan `msg.sig` yang diteruskan =
+  `complete(uint256,bytes32,bytes)` → **`0xd75bbdf3`**. Hook yang merutekan per-selector harus memakai `0xd75bbdf3`.
+  Catatan pembanding untuk mock: source menjaga SETIAP transfer di `complete` (`:527-537`) —
+  `if (platformFee > 0)`, `if (evalFee > 0)` (transfer + `EvaluatorFeePaid` di guard yang SAMA), `if (net > 0)`.
+  Ketiganya, bukan hanya fee evaluator. Pada job berbudget nol `complete` TIDAK mengemit satu pun ERC-20 `Transfer`.
 - **PERINGATAN dari docstring `setHookWhitelist` (source `:255-262`, kutipan): whitelist punya DUA arti —**
   (1) alamat itu boleh dipasang sebagai hook di job baru, dan (2) *"They can call beforeAction/afterAction on OTHER
   whitelisted hooks (checked in BaseACPHook.onlyACP) … every whitelisted address gains cross-invocation power over all
@@ -568,3 +606,38 @@ sekaligus akan gagal HTTP 413, bukan mengembalikan hasil kosong.
 Token: **escrow ACP Base Sepolia memakai `0xECc22a8F6fD62388498fBa19813E214605a2BDb3`, BUKAN USDC Circle
 `0x036CbD53842c5426634e7929541eC2318f3dCF7e`** (keduanya `symbol() == "USDC"`, 6 desimal — mudah tertukar). Lihat §A.
 USDC Circle tetap dicatat di `docs/versions.md` untuk rujukan, tetapi TIDAK dipakai jalur escrow kita.
+
+### E.1 RPC publik TIDAK menjamin read-your-writes — dicatat 2026-09-04 setelah 4 kegagalan berbayar gas
+`https://sepolia.base.org` adalah endpoint publik gratis. https://docs.base.org/chain/network-information (dibaca
+2026-09-04) HANYA mencantumkan URL-nya dan **tidak menjanjikan konsistensi apa pun** — tidak ada jaminan read-your-writes
+di sana, jadi jangan berasumsi ada. (Kalimat "rate-limited / not suitable for production" yang beredar TIDAK berhasil
+ditemukan verbatim di halaman mana pun yang kami baca; jangan mengutipnya.) Endpoint ini menjawab
+`web3_clientVersion` → `reth/v2.5.1-2fa11e6/x86_64-unknown-linux-gnu/base/v1.3.0` (6 panggilan, identik), dan **`eth_call` bisa
+dilayani node yang TERTINGGAL di belakang receipt yang baru saja endpoint yang sama kembalikan.** Akibatnya: baca-sesudah-tulis
+mengembalikan nilai LAMA (nol), kode menyimpulkan tx gagal padahal sukses, lalu mengirim tx lanjutan yang REVERT.
+Empat kejadian terukur 2026-09-04 (semua di endpoint ini):
+1. `verdicts(jobId).readyAt` = `0` tepat sesudah receipt `postVerdict` sukses → `finalize` dikirim terlalu dini dan
+   **revert on-chain**: tx `0x12673d199582081656747caba9c5316f0d642fb6aae1e7a9663db9fd289247ba`, blok 46355038,
+   **status 0 (failed)**, `to` = vault `0x5c6EE4586ACABcb6326069c229E58091B21ef384` (dicek ulang `cast receipt`).
+2. `balanceOf` = `0` sesudah `mint` sukses: tx `0x17c15c0264a3141c980f9aeaa6e3656582f522ca883656817f50a9891e48774c`,
+   blok 46375962, **status 1**, log `Transfer(0x0 → 0xbe2c…02c2)` bernilai `0x1e8480` = **2000000** dari token escrow
+   `0xECc22a8F…2BDb3` (dicek ulang `cast receipt --json`). Nilai on-chain nyata ada; pembacaannya yang salah.
+3. `balanceOf` ETH terbaca `0` sesudah transfer sukses (pola identik, tanpa hash tercatat).
+4. `fund` job 415 revert saat **SIMULASI** dengan returndata **KOSONG** (bukan custom error!) karena node simulasi belum
+   melihat receipt `approve` yang baru dikembalikannya; `cast call` beberapa detik kemudian SUKSES. Job 415 sampai kini
+   masih `status 0 (Open)`, budget 1000000, evaluator = vault (`cast call <ACP> "getJob(uint256)(...)" 415`).
+**Status bukti:** keempat receipt/state di atas diverifikasi ulang langsung ke chain 2026-09-04 dan cocok dengan laporan;
+mekanismenya (load balancer ke node yang lag) adalah INFERENSI dari gejala + arsitektur multi-node — pembacaan mundur
+tidak berhasil direproduksi dalam jendela pengamatan singkat (20 sampel `eth_blockNumber` berurutan monoton naik).
+Perlakukan sebagai fakta OPERASIONAL, bukan fakta protokol.
+**Aturan mengikat untuk semua kode kita (agent, skrip deploy, demo):**
+- JANGAN pernah menyimpulkan hasil sebuah tx dari `eth_call` sesudahnya. Sumber kebenaran = **event di receipt tx itu**
+  (`Transfer`, `JobFunded`, `VerdictPosted`, …). Receipt bersifat self-contained dan tidak bisa "tertinggal".
+- Bila sebuah nilai HARUS dibaca lewat `eth_call` sesudah tulis (mis. `readyAt` sebelum `finalize`), bungkus dengan
+  **retry + backoff sampai nilainya masuk akal**, jangan sekali baca. Nol/kosong = "belum terlihat", BUKAN "tidak ada".
+- `eth_call` yang revert dengan **returndata kosong** sesudah tx tulis yang baru saja sukses hampir selalu artefak lag,
+  bukan bug kontrak — retry dulu sebelum mengubah kode.
+- Jangan mengirim tx yang bergantung pada prasyarat on-chain tanpa simulasi yang LULUS pada percobaan ulang; simulasi
+  gagal satu kali bukan alasan mengirim, dan bukan alasan menyerah.
+Catatan alat: `urllib`/`requests` polos ke endpoint ini bisa dijawab **HTTP 403** sementara `cast` di detik yang sama
+lolos (diamati 2026-09-04) → jangan menafsirkan 403 sebagai "node down" atau sebagai bukti rate limit kita sendiri.
