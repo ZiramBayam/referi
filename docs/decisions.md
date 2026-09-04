@@ -217,17 +217,31 @@ alamat itu nol, dan task 0.4b (danai wallet client) blocked pada user sejak 3 Se
 bertenggat keras 5 Sep. `mint(address,uint256)` pada token escrow terbukti TANPA kontrol akses
 (api-facts §A, selector `0x40c10f19`) tetapi baru diuji di fork, belum lewat tx nyata.
 
+KOREKSI 4 Sep: versi pertama ADR ini menyatakan "client dan provider boleh satu EOA". Itu SALAH dan
+terbukti mustahil di kontrak (`ClientIsProvider()` `0x332ff0f9`, api-facts §A:276-279); poin 3-5 di
+bawah menggantikannya.
+
 Keputusan:
 1. Buat `CLIENT_PRIVATE_KEY` baru. Kunci HANYA di `.env`; di `.env.example` ia baris KOSONG berkomentar.
    DILARANG dicetak, di-log, atau di-commit.
 2. Danai wallet itu ETH secukupnya dari wallet agen, lalu 2 USDC lewat `mint` terbuka (task 0.4b-min).
    0.4b tetap milik user HANYA untuk top-up 100 USDC yang dibutuhkan skenario 3.1.
-3. Client dan provider BOLEH satu EOA; evaluator TIDAK PERNAH. Yang harus independen adalah wasitnya,
-   bukan client-vs-provider. Task 3.1 tetap wajib memisahkan tiga provider.
-4. `submit(jobId, deliverable, optParams)` dieksekusi `sim/client_min.ts` di 1.3c, bukan 1.3d: tanpa
-   status Submitted, `complete()` di 1.3d pasti revert `WrongStatus()` (api-facts §A).
-5. Bila (1) gagal, fallback client == wallet agen HANYA dengan pengakuan tertulis di
-   `deployments/pipeline-84532.md` dan README (4.3b), dan artefak fallback DILARANG masuk video.
+3. TIGA EOA terpisah WAJIB, bukan pilihan gaya: api-facts §A:276-279 (fork 2026-09-03) membuktikan
+   `createJob` merevert `ClientIsProvider()` `0x332ff0f9` bila `msg.sender == provider`, dan
+   `EvaluatorIsProvider()` `0xc7b4e9eb` bila `evaluator != 0 && evaluator == provider`; guard yang sama
+   ada di `setProvider`. Karena `setBudget` dan `submit` juga provider-only (§A:207-210), provider WAJIB
+   memegang kunci privat + ETH gas sendiri. Peran: CLIENT `0xbe2c447e577F95ed2D5cD20C75cF7633FA0602C2`
+   (pemegang token escrow), PROVIDER = `PROVIDER_PRIVATE_KEY` baru (ETH saja, tanpa token), EVALUATOR =
+   alamat VAULT `0x5c6EE4586ACABcb6326069c229E58091B21ef384` yang digerakkan wallet agen
+   `0xfa5AF5BAeB4aC500267D7189fa1f0AA923eCA894`. Wallet agen DILARANG jadi provider walau kontrak
+   mengizinkannya (evaluator on-chain adalah vault, bukan EOA agen): pada `complete` ia akan menerima
+   payout provider sementara vault menerima `evaluatorFeeBP` 500 dan `arbiter()` masih mungkin == `agent()`.
+4. `submit(jobId, deliverable, optParams)` dieksekusi `sim/client_min.ts` memakai `PROVIDER_PRIVATE_KEY`
+   di 1.3c, dalam run yang sama dengan createJob/setBudget/fund — bukan 1.3d: tanpa status Submitted,
+   `complete()` di 1.3d pasti revert `WrongStatus()` (api-facts §A).
+5. Fallback "satu EOA merangkap" TIDAK TERSEDIA untuk pasangan client/provider — kontrak yang menolaknya,
+   bukan keputusan produk. Fallback hanya berlaku untuk hal lain yang tidak diblokir kontrak, dan tetap
+   menuntut pengakuan tertulis di `deployments/pipeline-84532.md` + README (4.3b).
 
 Konsekuensi:
 (+) Klaim "wasit pihak ketiga" (PRD §5, spec §7 langkah 5) bertahan di panel juri: client, provider,
