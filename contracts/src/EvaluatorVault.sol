@@ -85,8 +85,13 @@ contract EvaluatorVault is ReentrancyGuardTransient {
     ///      `0x0000000071727De2…7da032`, jadi angkanya mengukur bundler + validasi smart account,
     ///      bukan `complete`. Vault memanggil ACP LANGSUNG, tanpa bundler. Bila angka itu tetap ingin
     ///      dipakai, konstanta ini menjadi 600.000 (ubah satu baris + `assertLe` di tes).
-    ///      Faktor 3 menutup aturan 63/64, slot dingin, dan hook masa depan. Dikunci
-    ///      `test_minAcpGas_isAtLeastThreeTimesMeasuredCost`.
+    ///      Faktor 3 menutup aturan 63/64 dan slot dingin. Ia TIDAK menutup hook: `complete`/`reject`
+    ///      ACP nyata hookable (api-facts §A.2) dan hook dijalankan TANPA try/catch, jadi biaya ACP
+    ///      bisa sebesar apa pun yang ditulis pemilik job. Ambang ini karena itu HANYA melindungi jalur
+    ///      bebas-hook dari pemanggil pelit; perlindungan terhadap job berhook datang dari ADR-015
+    ///      (verdict tidak pernah tertutup oleh kegagalan, `finalize` boleh diulang dengan gas lebih
+    ///      besar). Dikunci `test_minAcpGas_isAtLeastThreeTimesMeasuredCost` +
+    ///      `test/HookReentrancy.t.sol` (hook pembakar gas, hook yang selalu revert).
     ///
     ///      Ambang ini adalah pertahanan BERLAPIS, bukan satu-satunya: sejak ADR-015 kegagalan ACP
     ///      apa pun — termasuk kehabisan gas — tidak lagi menutup verdict, jadi ambang yang meleset
@@ -363,8 +368,15 @@ contract EvaluatorVault is ReentrancyGuardTransient {
         if (block.timestamp < v.readyAt) revert ChallengeWindowOpen();
         if (!knownRoots[v.memoryRoot]) revert UnknownMemoryRoot();
 
-        // Ambang gas dicek SEBELUM `try`: dengan begini panggilan ke ACP tidak mungkin kehabisan
-        // gas, jadi `catch` hanya bisa berarti "ACP menolak", bukan "pemanggil pelit".
+        // Ambang gas dicek SEBELUM `try` supaya pemanggil tidak bisa memangkas gas sampai jalur ACP
+        // yang BEBAS HOOK kehabisan gas. Ambang ini TIDAK membuat kehabisan gas mustahil, dan `catch`
+        // TIDAK boleh dibaca sebagai "ACP menolak": `complete` dan `reject` di ACP nyata hookable
+        // (api-facts §A.2), hook dipanggil TANPA try/catch, dan kodenya arbitrer — biaya ACP karena itu
+        // TAK TERBATAS dari sudut pandang vault, sehingga gas apa pun di atas ambang masih bisa habis
+        // di dalam hook milik job. Yang menutup dampaknya adalah ADR-015, bukan ambang ini: kegagalan
+        // apa pun (OOG, hook revert, pause, expired) hanya mengemit `FinalizeFailed` dan MEMBUKA lagi
+        // verdict, jadi siapa pun boleh mengulang `finalize` dengan gas lebih besar. Dikunci
+        // `test/HookReentrancy.t.sol`: hook pembakar gas dan hook yang selalu revert.
         if (gasleft() < MIN_ACP_GAS) revert InsufficientGasForAcpCall();
 
         bytes32 reasonHash = v.reasonHash;

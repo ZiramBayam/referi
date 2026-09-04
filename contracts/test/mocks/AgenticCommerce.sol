@@ -8,6 +8,15 @@ interface IERC20Minimal {
     function balanceOf(address account) external view returns (uint256);
 }
 
+/// @dev Hook job ACP. Signature APA ADANYA dari `docs/api-facts.md` §A.2, yang mengutip
+///      `contracts/interfaces/IACPHook.sol` di paket Sourcify `exact_match` (sha256
+///      `4491e3ab…77d3`): `beforeAction` selector `0xdc08fb1d`, `afterAction` `0xa3fe4783`,
+///      `type(IACPHook).interfaceId` = `0x7ff6bc9e`. JANGAN mengarang metode tambahan di sini.
+interface IACPHook {
+    function beforeAction(uint256 jobId, bytes4 selector, bytes calldata data) external;
+    function afterAction(uint256 jobId, bytes4 selector, bytes calldata data) external;
+}
+
 /// @title AgenticCommerce — mock ACP (implementasi ERC-8183 milik Virtuals) untuk tes lokal.
 /// @notice Signature, struct, event (termasuk `indexed`), custom error, urutan emit, aritmetika fee dan
 ///         semua batas status/waktu MENGIKUT `docs/api-facts.md` §A, yang diverifikasi dengan MENJALANKAN
@@ -16,10 +25,19 @@ interface IERC20Minimal {
 ///         `expectedBudget`.
 /// @dev Cakupan sengaja dibatasi ke task 1.1: siklus Open→Funded→Submitted→Completed plus jalur
 ///      Rejected/Expired. Yang TIDAK ada di sini dan memang tidak dipanggil kode kita:
-///      - Pemanggilan hook `beforeAction/afterAction`. Alamat hook disimpan dan divalidasi terhadap
-///        `whitelistedHooks`, tetapi tidak pernah di-invoke: signature interface hook belum tercatat di
-///        api-facts §A (eksplisit "BELUM diverifikasi"), dan mengarangnya = halusinasi. MemoryGateHook
-///        adalah task 1.4 (di luar jalur kritis).
+///      - Pemanggilan hook `beforeAction/afterAction` DI LUAR `complete`. Sejak `docs/api-facts.md` §A.2
+///        berubah dari "BELUM diverifikasi" menjadi TERVERIFIKASI (interface `IACPHook` dari paket
+///        Sourcify `exact_match`), alasan lama untuk tidak pernah meng-invoke hook GUGUR. Yang di-invoke
+///        di sini baru `complete` (lihat catatan di fungsi itu), karena di situlah kanal masuk-ulang yang
+///        menyentuh vault berada. Fungsi hookable di kontrak asli ada LIMA (api-facts §A.2): `setBudget`,
+///        `fund`, `submit`, `complete`, `reject` — `createJob` dan `claimRefund` TIDAK hookable. Empat
+///        sisanya di mock menyimpan `hook` tanpa memanggilnya —
+///        MENYIMPANG dari kontrak asli, dan disengaja: mock TIDAK punya guard ERC-165 `createJob` milik
+///        kontrak asli, jadi ia menerima alamat hook TANPA kode, dan meng-invoke alamat tanpa kode akan
+///        merevert (solc menyisipkan cek `extcodesize` untuk panggilan tanpa return data). Menambahkan
+///        guard ERC-165 + invocation penuh adalah perubahan tersendiri, bukan bagian task tes ini.
+///      - Guard ERC-165 di `createJob` (kontrak asli: hook non-nol WAJIB `supportsInterface(0x7ff6bc9e)`,
+///        kalau tidak `InvalidJob()`). Mock hanya mengecek `whitelistedHooks` → LEBIH PERMISIF dari asli.
 ///      - `setHookWhitelist/setEvaluatorFee/setPlatformFee` milik admin Virtuals. Parameternya tidak tercatat
 ///        di api-facts, jadi mock memakai setter bernama `mockSet*` supaya tidak bisa tertukar dengan ABI asli.
 ///      - AccessControl/UUPS/ERC1967: kontrak asli adalah proxy upgradeable; mock tidak, dan tidak perlu.
@@ -334,11 +352,31 @@ contract AgenticCommerce {
     ///      `complete(evaluator, status=Funded)` → `WrongStatus()`;
     ///      `complete(non-evaluator, status=Submitted)` → `Unauthorized()` (kontrol: sama di kedua urutan).
     ///      Mock yang mengecek otorisasi lebih dulu akan menyimpang dari ACP asli di kasus pertama.
+    /// @dev HOOK. `_beforeHook`/`_afterHook` di-invoke DI DALAM badan ber-`nonReentrant`, jadi hook
+    ///      berjalan SELAGI kunci transient ACP dipegang — persis kontrak asli (api-facts §A.2:
+    ///      `_beforeHook`/`_afterHook` `:293-301`/`:305-314` memanggil `IACPHook(hook).beforeAction/
+    ///      afterAction(jobId, msg.sig, data)` TANPA try/catch; §A: semua fungsi alur job `nonReentrant`
+    ///      dengan SATU slot transient bersama). Inilah kanal yang membuat "vault memanggil balik ACP dari
+    ///      dalam eksekusi ACP" bisa diuji lokal. Nilainya BUKAN "satu-satunya tes yang menggigit mutan
+    ///      `nonReentrant`" — `test_sweepToken_reentrantTokenIsRejected` (1.2c) juga menggigitnya —
+    ///      melainkan bahwa kanal ACP→hook TIDAK butuh aksi arbiter: siapa pun yang memasang hook
+    ///      whitelisted pada job-nya sendiri sudah cukup, jauh lebih realistis daripada arbiter yang
+    ///      menyapu token jahat lewat `sweepToken`.
+    ///      Tiga detail berikut TERVERIFIKASI (api-facts §A.2, source Sourcify `exact_match`
+    ///      `AgenticCommerceV3.sol`), bukan tebakan:
+    ///      (1) `complete` MEMANG hookable — `:521` (`_beforeHook`) dan `:544` (`_afterHook`).
+    ///          Daftar lengkap fungsi hookable ada LIMA: `setBudget`, `fund`, `submit`, `complete`,
+    ///          `reject`; `createJob` dan `claimRefund` TIDAK hookable;
+    ///      (2) isi `data` = `abi.encode(msg.sender, reason, optParams)` — `:520` verbatim;
+    ///      (3) `_beforeHook` berada SESUDAH cek status & otorisasi: `:515` InvalidJob → `:516`
+    ///          WrongStatus → `:517` Unauthorized → `:520-521`. Panggilan yang ditolak tidak pernah
+    ///          menyentuh hook. Selector rute hook untuk `complete` = `0xd75bbdf3`.
     function complete(uint256 jobId, bytes32 reason, bytes calldata optParams) external nonReentrant {
         Job storage job = _job(jobId);
         if (job.status != Status.Submitted) revert WrongStatus();
         if (msg.sender != job.evaluator) revert Unauthorized();
-        optParams;
+
+        _beforeHook(job.hook, jobId, msg.sig, abi.encode(msg.sender, reason, optParams));
 
         uint256 budget = job.budget;
         uint256 evaluatorFee = (budget * evaluatorFeeBP) / BP_DENOMINATOR;
@@ -350,6 +388,11 @@ contract AgenticCommerce {
         // Urutan log MENTAH source `:530-542`: Transfer→treasury, Transfer→evaluator, EvaluatorFeePaid,
         // Transfer→provider, JobCompleted, PaymentReleased. Treasury dibayar DULU, dan KETIGA transfer
         // mendahului `JobCompleted`.
+        // Source `:527-537` menjaga KETIGA transfer dengan `> 0`; di sini guard itu ada SATU kali, di
+        // dalam `_push` — jadi `platformFee == 0` dan `net == 0` sama-sama tidak memancarkan `Transfer`.
+        // Hanya cabang evaluator yang butuh `if` EKSPLISIT, karena yang dijaga bukan cuma transfernya
+        // melainkan juga `emit EvaluatorFeePaid` (source `:533-536`, satu guard yang sama).
+        // Dikunci `test_zeroAmountPaths_emitNoErc20Transfer` + `FundConservation.t.sol` (budget nol).
         _push(treasury, platformFee);
         // TERVERIFIKASI (source `:533-536`): transfer fee evaluator DAN `EvaluatorFeePaid` berada di
         // dalam guard `evalFee > 0` yang SAMA — pada budget nol keduanya dilewati, jadi tidak ada
@@ -362,6 +405,8 @@ contract AgenticCommerce {
         _push(job.provider, providerAmount);
         emit JobCompleted(jobId, job.evaluator, reason);
         emit PaymentReleased(jobId, job.provider, providerAmount);
+
+        _afterHook(job.hook, jobId, msg.sig, abi.encode(msg.sender, reason, optParams));
     }
 
     /// @notice Menolak job. Refund 100% ke client (fee evaluator 0). TIDAK ada guard expiry — terbukti
@@ -381,15 +426,26 @@ contract AgenticCommerce {
     ///      terverifikasi `:584-590`. Jalur berbudget nol NYATA karena `fund(jobId, 0, "")` sah, jadi
     ///      mengemit `Refunded(jobId, client, 0)` tanpa syarat akan melatih indexer pada event hantu.
     ///      Ini aturan yang SAMA dengan `claimRefund`.
+    /// @dev HOOK. `reject` termasuk LIMA fungsi hookable kontrak asli (api-facts §A.2): `_beforeHook`
+    ///      `:579`, `_afterHook` `:594`. Ini KANAL VAULT KEDUA — `EvaluatorVault.finalize` dengan
+    ///      `kind = KIND_REJECT` menempuh jalur ini di produksi, jadi ia butuh cakupan masuk-ulang yang
+    ///      sama dengan `complete`. Payload mengikuti bentuk yang diverifikasi untuk `complete` (`:520`
+    ///      verbatim `abi.encode(msg.sender, reason, optParams)`); hook dipanggil SESUDAH cek
+    ///      status/otorisasi dan DI DALAM badan ber-`nonReentrant`, sama seperti `complete`.
     function reject(uint256 jobId, bytes32 reason, bytes calldata optParams) external nonReentrant {
         Job storage job = _job(jobId);
-        optParams;
+        bytes memory hookData = abi.encode(msg.sender, reason, optParams);
 
         Status status = job.status;
         if (status == Status.Open) {
             if (msg.sender != job.client && msg.sender != job.provider) revert Unauthorized();
+
+            _beforeHook(job.hook, jobId, msg.sig, hookData);
+
             job.status = Status.Rejected;
             emit JobRejected(jobId, msg.sender, reason);
+
+            _afterHook(job.hook, jobId, msg.sig, hookData);
             return;
         }
 
@@ -400,6 +456,8 @@ contract AgenticCommerce {
             revert Unauthorized();
         }
 
+        _beforeHook(job.hook, jobId, msg.sig, hookData);
+
         uint256 amount = job.budget;
         job.status = Status.Rejected;
 
@@ -408,6 +466,8 @@ contract AgenticCommerce {
             emit Refunded(jobId, job.client, amount);
         }
         emit JobRejected(jobId, msg.sender, reason);
+
+        _afterHook(job.hook, jobId, msg.sig, hookData);
     }
 
     /// @notice SIAPA PUN boleh mengakhiri job yang lewat waktu: Open/Funded/Submitted → Expired.
@@ -502,5 +562,18 @@ contract AgenticCommerce {
     ///      `test_zeroAmountPaths_emitNoErc20Transfer`.
     function _push(address to, uint256 amount) private {
         if (amount != 0 && !paymentToken.transfer(to, amount)) revert MockTransferFailed();
+    }
+
+    /// @dev No-op saat `hook == address(0)` (api-facts §A.2 `:293-301`), selain itu memanggil hook
+    ///      TANPA try/catch: hook yang revert MEMBATALKAN seluruh transaksi ACP.
+    function _beforeHook(address hook, uint256 jobId, bytes4 selector, bytes memory data) private {
+        if (hook == address(0)) return;
+        IACPHook(hook).beforeAction(jobId, selector, data);
+    }
+
+    /// @dev Pasangan `_beforeHook` (api-facts §A.2 `:305-314`), aturan revert sama.
+    function _afterHook(address hook, uint256 jobId, bytes4 selector, bytes memory data) private {
+        if (hook == address(0)) return;
+        IACPHook(hook).afterAction(jobId, selector, data);
     }
 }
