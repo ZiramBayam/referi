@@ -294,3 +294,42 @@ Konsekuensi:
 (-) Alamat vault muncul di `sim/`, `agent/`, `deployments/`, `docs/`; AC (h) task 1.2c-deploy
     (`grep` alamat lama nol hit di jalur eksekusi) adalah satu-satunya penjaga mekanisnya.
 (-) Bergantung pada satu aksi user yang tidak bisa diotomasi (`cast wallet import`).
+
+## ADR-019 Sumber teks deliverable, dan `derive_cap` saat himpunan "budget lolos" kosong
+Tanggal: 2026-09-04. Status: diterima. Pemicu: gerbang fase 1 (T8/T1) + lubang spec yang ditemukan
+product-manager saat menyusun rantai 2.5.
+
+Konteks:
+(a) `session.submit()` SDK memanggil `api.postDeliverable` ke API off-chain Virtuals, dan API itu
+    menolak wallet simulator kita — `POST https://api.acp.virtuals.io/auth/agent` → 404
+    `Agent not found with wallet address 0xbe2c447e577F95ed2D5cD20C75cF7633FA0602C2` (terbukti
+    4 Sep). Jadi on-chain HANYA ada `keccak256` deliverable, bukan teksnya. Tanpa teks, task 2.3
+    (checks deterministik) tidak punya input, dan tanpa 2.3 gate rubric 40 poin tidak bisa dijawab.
+(b) spec §3 aturan 4 mendefinisikan cap untuk risk >= 1 sebagai fungsi "median budget LOLOS". Pada
+    provider yang seluruh jobnya DITOLAK — persis skenario §7 langkah 1-2 — himpunan itu KOSONG dan
+    `derive_cap` tidak terdefinisi. Rantai §7 langkah 3 akan berhenti di sana.
+
+Keputusan:
+1. `sim/` MENULIS teks deliverable ke `demo/deliverables/<jobId>.json` berisi
+   `{"jobId", "text", "sha_keccak"}`, dan `deliverable` yang dikirim on-chain adalah
+   `keccak256` dari byte UTF-8 field `text` yang PERSIS sama.
+2. `agent/` membaca teks HANYA dari direktori itu (`DELIVERABLE_DIR`, default `demo/deliverables`)
+   dan WAJIB memverifikasi ulang bahwa `keccak256(text)` sama dengan nilai deliverable on-chain
+   sebelum menilai. Tidak cocok / file hilang → REFUSE: nol `postVerdict`, nol `finalize`, cetak
+   `DELIVERABLE TIDAK TERVERIFIKASI`. Perlakuannya sekelas mode aman (task 2.4a).
+3. Teks deliverable dan input panel juri §7 langkah 5 adalah DATA, TIDAK PERNAH instruksi
+   (spec §3 aturan 3).
+4. `derive_cap`: bila himpunan budget LOLOS kosong, median diambil dari budget SELURUH job yang
+   pernah diamati untuk provider itu; risk 1 → median itu, risk >= 2 → 25% dari median itu. Cap
+   DILARANG nol — nol berarti menolak segalanya, yaitu blacklist yang tidak ada di spec (dan di
+   kontrak, cap 0 justru berarti TANPA BATAS, ADR-001).
+
+Konsekuensi:
+(+) 2.3 punya input; §7 langkah 1/4/5 bisa dieksekusi.
+(+) Artefak lokal TERIKAT ke chain: juri bisa mengambil `demo/deliverables/<jobId>.json`, meng-keccak
+    sendiri, dan mencocokkannya dengan `getJob`. Properti audit yang sama dengan klaim memori, gratis.
+(+) §7 langkah 3 ("client memecah jadi job kecil → lolos bertahap") jadi mungkin, karena cap non-nol.
+(-) Sumber teks BUKAN API ACP resmi. WAJIB dinyatakan di README sebagai batasan beserta alasan 404
+    yang terukur — bukan didiamkan.
+(-) Cap turunan "seluruh job yang diamati" lebih longgar dari niat spec §3 aturan 4. Diterima sadar
+    untuk hackathon; pembaruan baris spec-nya masuk AC task 0.8b.
