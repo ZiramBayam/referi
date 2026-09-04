@@ -7,3 +7,5 @@ contracts/broadcast/
 .venv/
 __pycache__/
 .next/
+.pytest_cache/
+.ruff_cache/

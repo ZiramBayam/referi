@@ -1,0 +1,31 @@
+[project]
+name = "evaluator-agent"
+version = "0.1.0"
+description = "The Evaluator — klien vault minimal (task 1.3b)"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "web3==7.16.0",
+]
+
+# Dependensi pengembangan. Ruff WAJIB ada: scripts/gate.sh menjalankannya begitu
+# agent/pyproject.toml muncul.
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "ruff",
+]
+
+# Scaffold minimal: belum ada paket yang dibangun/di-install, hanya skrip + tes.
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
