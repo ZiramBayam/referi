@@ -333,3 +333,74 @@ Konsekuensi:
     yang terukur — bukan didiamkan.
 (-) Cap turunan "seluruh job yang diamati" lebih longgar dari niat spec §3 aturan 4. Diterima sadar
     untuk hackathon; pembaruan baris spec-nya masuk AC task 0.8b.
+
+## ADR-020 Cap tidak boleh diturunkan dari budget yang dikendalikan provider; root menjangkar seluruh memori yang dibaca
+Tanggal: 2026-09-05. Status: diterima. Menggantikan ADR-019 keputusan 4 (cabang "median-all-observed").
+Pemicu: @agent-security-reviewer memblokir task 2.1 dengan 2 KRITIS + 4 TINGGI; dua di antaranya
+menyentuh ADR-019 dan definisi root, jadi keduanya butuh putusan produk, bukan tambalan engineer.
+
+Konteks:
+(a) ADR-019 keputusan 4 memberi cap dari median SELURUH budget yang pernah diamati saat himpunan budget
+    LOLOS kosong. `record_job_outcome` memasukkan budget job yang DITOLAK ke himpunan itu, sehingga tiap
+    penolakan MENAIKKAN cap yang menyebabkan penolakan itu. Reviewer mengeksekusi rantainya:
+    cap 500.000 -> 750.000 -> 12.750.000 -> 24.750.000, tiga ronde, dan job 20 JUTA akhirnya LOLOS.
+    Biaya penyerang NOL: `reject` mengembalikan 100% budget ke client dan fee evaluator 0 (api-facts §A),
+    dan token escrow Base Sepolia punya `mint()` tanpa kontrol akses (ADR-017, 0.4b-min). Provider
+    mendanai job raksasa sendiri, ditolak, uangnya utuh, capnya naik 50x. Ini membatalkan spec §7
+    langkah 3 justru pada provider paling jahat — satu-satunya artefak yang menjawab gate rubric 40 poin.
+(b) `MIN_CAP_USDC = 1` (1 unit = 0,000001 USDC) aman hasilnya tetapi menyamarkan "blokir segalanya"
+    sebagai angka. Spec §3 tidak punya blacklist dan ADR-019 melarang cap nol.
+(c) Root saat ini TIDAK mengikat isi memori: field asing di body tidak mengubah root; dua entity provider
+    berbeda bisa runtuh jadi satu kunci sehingga satu entity hilang dari audit tanpa mengubah root; dan
+    preimage-nya memakai int presisi-arbitrer Python sehingga TIDAK bisa direkonstruksi di TS/JS
+    (budget > 2^53 pecah diam-diam) — padahal 2.1b dan `web/` justru alat audit publiknya. Juri fase-1
+    sudah menghancurkan klaim root sekali dengan satu `cast keccak`.
+(d) Mode aman (spec §3 aturan 5) menahan `finalize`; ADR-011 membuat `finalize` bergantung `knownRoots`
+    dan `postVerdict`-lah yang mendaftarkan root. Mengumumkan root dari memori rusak = persis yang
+    ADR-011 klaim dicegah.
+
+Keputusan:
+1. Cabang "median-all-observed" (ADR-019 keputusan 4) DICABUT. Budget yang dikendalikan provider DILARANG
+   masuk rumus cap dalam bentuk apa pun. `all_budgets` sebagai input `derive_cap` DIHAPUS, bukan disaring.
+2. `record_job_outcome` hanya memasukkan budget ke `passed_budgets` bila job berakhir Completed. Job
+   Rejected/Expired hanya menaikkan `stats.reject`. Fungsi itu WAJIB idempoten per `job_id`.
+3. Himpunan budget LOLOS kosong -> cap dari KONSTANTA, bukan statistik:
+   `BASELINE_CAP_USDC = 1_000_000` (1 USDC, 6 desimal); risk 1 -> `BASELINE_CAP_USDC`;
+   risk >= 2 -> `BASELINE_CAP_USDC // 4` = 250.000. Angka dipilih agar §7 langkah 3 muat di 2 USDC yang
+   sudah dimiliki wallet client (0.4b-min): job C 2 USDC > cap 0,25 USDC -> REJECT; pecahan 0,2 USDC lolos.
+   Jadi 0.4b (top-up 100 USDC) TETAP di luar jalur kritis.
+4. `derive_cap` monoton TIDAK-NAIK per provider: `cap = min(kandidat, provider.cap_usdc sebelumnya)` bila
+   field itu sudah ada. Pertahanan berlapis; §7 tidak pernah menuntut cap naik.
+5. "Blokir total" BUKAN keluaran sah `derive_cap`. Tidak ada `CapDecision.block`, tidak ada cap 0
+   (di kontrak cap 0 justru berarti TANPA BATAS, ADR-001). `MIN_CAP_USDC = 1` diganti lantai bermakna
+   `MIN_CAP_USDC = 250_000` (0,25 USDC). Jalur "agen berhenti total" hanya ada satu dan sudah benar:
+   mode aman (task 2.4a) yang menahan transaksi, bukan cap yang menyamar jadi angka.
+6. Encoding `memory_root` BELUM DIBEKUKAN. Ia baru boleh dibekukan (dan baru boleh dipakai di jalur
+   produksi `postVerdict`) setelah: preimage dihitung dari body MENTAH yang tersimpan (bukan proyeksi
+   lossy), setiap int di-encode sebagai string desimal, dan kunci entity di-encode dengan pemisah yang
+   tidak bisa ditabrak (panjang-berprefiks atau escaping), sehingga dua kunci berbeda mustahil runtuh
+   jadi satu. Sampai itu mendarat, DILARANG ada root turunan-memori yang diumumkan on-chain.
+7. Cakupan root: `memory_root` menjangkar SELURUH memori yang BOLEH dibaca pengambil keputusan — semua
+   entity `provider`, semua `reference:pattern:*`, dan semua `reference:rubric:*` — termasuk pattern
+   YATIM yang tidak dirujuk provider mana pun. BUKAN irisan yang dirujuk. Aturannya satu kalimat:
+   root menjangkar persis himpunan yang boleh dibaca pengambil keputusan. Itu otomatis mengecualikan
+   `suspicion` (ADR-002) dan membuat keadaan "saya membacanya tapi tidak menjangkarnya" mustahil.
+8. Mode aman menahan `postVerdict` DAN `finalize` DAN `setProviderCap`. Konsekuensinya dinyatakan apa
+   adanya: agen berhenti total, job MENGGANTUNG sampai `expiredAt`, lalu siapa pun boleh `claimRefund`
+   (ADR-014) dan client menerima refund penuh. Itu perilaku yang diinginkan, bukan kegagalan yang
+   disembunyikan, dan WAJIB diucapkan begitu di §7 langkah 4 varian B, di 3.3b, dan di README 4.3c.
+
+Konsekuensi:
+(+) Cap berhenti menjadi permukaan serang: satu-satunya masukan yang tersisa adalah hasil cek deterministik
+    agen sendiri (spec §3 aturan 3) dan konstanta.
+(+) §7 langkah 3 tetap bisa dieksekusi pada provider yang SEMUA jobnya ditolak — masalah yang melahirkan
+    ADR-019 keputusan 4 tetap tertutup, tanpa memberi provider kendali atas capnya.
+(+) Klaim "siapa pun bisa merekonstruksi root" (spec §3 baris 124) menjadi benar di TS maupun Python.
+(+) Penghapusan pattern yatim tidak bisa lolos audit tanpa mengubah root.
+(-) Cap awal kini angka pilihan tim, bukan turunan data; WAJIB disebut di README sebagai parameter, bukan
+    disamarkan sebagai hasil pembelajaran. Kalibrasi dari riwayat baru hidup setelah ada job LOLOS.
+(-) Monoton-tidak-naik berarti provider yang membaik tidak pernah memulihkan capnya dalam satu garis
+    memori. Diterima sadar untuk hackathon; pemulihan reputasi adalah v2 dan DILARANG diklaim hidup.
+(-) 2.1b dan 2.4b diblokir sampai 2.1r (encoding kanonik) hijau. Urutannya tidak boleh dibalik.
+(-) Spec §3 baris 113 (rumus `derive_cap`) dan baris 123 (definisi root) berubah; pembaruannya masuk AC
+    task 0.8b. Baris 123 WAJIB menyebut ketiga prefiks dan kata "termasuk pattern yatim".
