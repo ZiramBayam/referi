@@ -43,6 +43,81 @@ contract GasBurnerACP {
     }
 }
 
+/// @dev ERC-20 yang MENGEMBALIKAN `false` alih-alih revert saat transfer gagal — pola lama yang
+///      membuat `transfer` tanpa `SafeERC20` gagal DIAM-DIAM (fee dianggap keluar padahal masih di
+///      vault). Hanya `transfer` yang berbohong; `balanceOf` jujur.
+contract FalseReturningToken {
+    mapping(address => uint256) public balanceOf;
+
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+    }
+
+    function transfer(address, uint256) external pure returns (bool) {
+        return false;
+    }
+}
+
+/// @dev ERC-20 gaya USDT: `transfer` TIDAK mengembalikan apa pun. Dengan `IERC20.transfer` biasa
+///      pemanggilan ini revert saat mendekode return; `safeTransfer` OZ menerimanya.
+contract NoReturnToken {
+    mapping(address => uint256) public balanceOf;
+
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+    }
+
+    function transfer(address to, uint256 amount) external {
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to] += amount;
+    }
+}
+
+/// @dev ERC-20 dengan hook: `transfer` memanggil balik vault dari DALAM `sweepToken`. Dipakai untuk
+///      membuktikan dua lapis pertahanan sekaligus terhadap token yang bertingkah (ERC-777 dsb.):
+///      (1) `finalize` yang PERMISSIONLESS — satu-satunya fungsi vault yang bisa dipanggil siapa pun,
+///          jadi satu-satunya jalur masuk-ulang yang nyata — ditolak guard transient OZ;
+///      (2) `sweepToken` itu sendiri ditolak lebih awal lagi oleh `onlyArbiter`, karena pemanggil
+///          masuk-ulang adalah kontrak token, bukan arbiter.
+contract ReentrantToken {
+    mapping(address => uint256) public balanceOf;
+
+    EvaluatorVault public vault;
+    address public target;
+    uint256 public jobId;
+    bytes public finalizeRevertData;
+    bytes public sweepRevertData;
+    bool public reentered;
+
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+    }
+
+    function arm(EvaluatorVault vault_, address target_, uint256 jobId_) external {
+        vault = vault_;
+        target = target_;
+        jobId = jobId_;
+    }
+
+    function transfer(address to, uint256 amount) external returns (bool) {
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to] += amount;
+        if (address(vault) != address(0) && !reentered) {
+            reentered = true;
+            (bool okFinalize, bytes memory dataFinalize) =
+                address(vault).call(abi.encodeCall(EvaluatorVault.finalize, (jobId)));
+            require(!okFinalize, "masuk-ulang finalize seharusnya ditolak");
+            finalizeRevertData = dataFinalize;
+
+            (bool okSweep, bytes memory dataSweep) =
+                address(vault).call(abi.encodeCall(EvaluatorVault.sweepToken, (address(this), target)));
+            require(!okSweep, "masuk-ulang sweepToken seharusnya ditolak");
+            sweepRevertData = dataSweep;
+        }
+        return true;
+    }
+}
+
 contract EvaluatorVaultTest is Test {
     /// @dev `acp` menunjuk ke ALAMAT PROXY (seperti ACP nyata), diketik sebagai mock supaya view-nya
     ///      bisa dibaca. `acpImpl` = alamat implementasi di baliknya.
@@ -84,6 +159,7 @@ contract EvaluatorVaultTest is Test {
     event MemoryRootUpdated(bytes32 indexed memoryRoot, uint256 indexed jobId);
     event Finalized(uint256 indexed jobId, uint8 kind, bytes32 reasonHash);
     event FinalizeFailed(uint256 indexed jobId);
+    event TokenSwept(address indexed token, address indexed to, uint256 amount);
 
     // Event ACP (untuk membuktikan finalize benar-benar mengeksekusi ke ACP).
     event JobCompleted(uint256 indexed jobId, address indexed evaluator, bytes32 reason);
@@ -917,6 +993,169 @@ contract EvaluatorVaultTest is Test {
             vm.prank(who[i]);
             vault.finalize(jobId);
             assertEq(_status(jobId), 3);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // sweepToken — jalan keluar fee evaluator (task 1.2c)
+    // ------------------------------------------------------------------
+
+    /// @dev Jalur yang menjadi SEBAB fungsi ini ada: job Completed mengirim 5% budget ke vault
+    ///      (job 417 di Base Sepolia: 50.000 unit), dan sebelum `sweepToken` tidak ada jalan keluar.
+    function test_sweepToken_arbiter_withdrawsFull() public {
+        uint256 jobId = _submittedJob();
+        _post(jobId, 1, ROOT_A);
+        vm.warp(_readyAt(jobId));
+        vault.finalize(jobId);
+
+        uint256 fee = (BUDGET * 500) / 10_000;
+        assertEq(usdc.balanceOf(address(vault)), fee, "prasyarat: fee evaluator ada di vault");
+        uint256 beforeBal = usdc.balanceOf(TREASURY);
+
+        vm.expectEmit(true, true, false, true, address(vault));
+        emit TokenSwept(address(usdc), TREASURY, fee);
+        vm.prank(ARBITER);
+        uint256 swept = vault.sweepToken(address(usdc), TREASURY);
+
+        assertEq(swept, fee, "return value = jumlah yang dipindahkan");
+        assertEq(usdc.balanceOf(address(vault)), 0, "vault harus kosong");
+        assertEq(usdc.balanceOf(TREASURY) - beforeBal, fee, "penerima menerima penuh");
+    }
+
+    /// @dev Matriks per-peran: siapa pun selain arbiter ditolak, dan saldo TIDAK bergerak sedikit pun.
+    function test_sweepToken_nonArbiter_reverts() public {
+        usdc.mint(address(vault), 500_000);
+
+        address[3] memory who = [AGENT, CHALLENGER, STRANGER];
+        for (uint256 i = 0; i < who.length; i++) {
+            vm.expectRevert(EvaluatorVault.NotArbiter.selector);
+            vm.prank(who[i]);
+            vault.sweepToken(address(usdc), who[i]);
+            assertEq(usdc.balanceOf(address(vault)), 500_000, "saldo vault tidak boleh bergerak");
+            assertEq(usdc.balanceOf(who[i]), 0, "pemanggil non-arbiter tidak menerima apa pun");
+        }
+
+        // Kontrol positif: token yang sama BISA keluar, jadi kegagalan di atas benar karena peran.
+        vm.prank(ARBITER);
+        vault.sweepToken(address(usdc), TREASURY);
+        assertEq(usdc.balanceOf(address(vault)), 0);
+    }
+
+    function test_sweepToken_zeroRecipientReverts() public {
+        usdc.mint(address(vault), 1);
+        vm.expectRevert(EvaluatorVault.ZeroAddress.selector);
+        vm.prank(ARBITER);
+        vault.sweepToken(address(usdc), address(0));
+    }
+
+    function test_sweepToken_toVaultItselfReverts() public {
+        usdc.mint(address(vault), 1);
+        vm.expectRevert(EvaluatorVault.ZeroAddress.selector);
+        vm.prank(ARBITER);
+        vault.sweepToken(address(usdc), address(vault));
+    }
+
+    function test_sweepToken_nothingToSweepReverts() public {
+        assertEq(usdc.balanceOf(address(vault)), 0);
+        vm.expectRevert(EvaluatorVault.NothingToSweep.selector);
+        vm.prank(ARBITER);
+        vault.sweepToken(address(usdc), TREASURY);
+    }
+
+    /// @dev Alamat tanpa kode (salah ketik / EOA): ditolak dengan error bernama, bukan revert kosong.
+    function test_sweepToken_tokenWithoutCodeReverts() public {
+        vm.expectRevert(EvaluatorVault.TokenNotContract.selector);
+        vm.prank(ARBITER);
+        vault.sweepToken(STRANGER, TREASURY);
+    }
+
+    /// @dev ETH bond TIDAK boleh punya jalur keluar (ADR-013): `sweepToken` hanya memindahkan ERC-20.
+    function test_sweepToken_doesNotTouchEthBond() public {
+        usdc.mint(address(vault), 250_000);
+        uint256 bondBefore = vault.bond();
+        uint256 ethBefore = address(vault).balance;
+        assertEq(bondBefore, MIN_BOND);
+        assertEq(ethBefore, MIN_BOND);
+
+        vm.prank(ARBITER);
+        vault.sweepToken(address(usdc), ARBITER);
+
+        assertEq(vault.bond(), bondBefore, "bond tidak boleh berubah");
+        assertEq(address(vault).balance, ethBefore, "saldo ETH vault tidak boleh berubah");
+        assertEq(usdc.balanceOf(ARBITER), 250_000);
+    }
+
+    /// @dev Token yang mengembalikan `false` alih-alih revert: tanpa `SafeERC20` sapuan akan tampak
+    ///      SUKSES padahal tidak ada yang pindah. Harus revert.
+    function test_sweepToken_falseReturningTokenReverts() public {
+        FalseReturningToken bad = new FalseReturningToken();
+        bad.mint(address(vault), 1_000);
+
+        vm.expectRevert(abi.encodeWithSignature("SafeERC20FailedOperation(address)", address(bad)));
+        vm.prank(ARBITER);
+        vault.sweepToken(address(bad), TREASURY);
+
+        assertEq(bad.balanceOf(address(vault)), 1_000, "saldo tetap di vault");
+    }
+
+    /// @dev Token gaya USDT tanpa nilai balik tetap harus bisa disapu.
+    function test_sweepToken_noReturnValueTokenSucceeds() public {
+        NoReturnToken quirky = new NoReturnToken();
+        quirky.mint(address(vault), 7_777);
+
+        vm.prank(ARBITER);
+        uint256 swept = vault.sweepToken(address(quirky), TREASURY);
+
+        assertEq(swept, 7_777);
+        assertEq(quirky.balanceOf(address(vault)), 0);
+        assertEq(quirky.balanceOf(TREASURY), 7_777);
+    }
+
+    /// @dev Token dengan hook yang memanggil balik vault dari DALAM `transfer`. Jalur masuk-ulang
+    ///      yang nyata adalah `finalize` (permissionless): ia ditolak `nonReentrant`. `sweepToken`
+    ///      sendiri ditolak lebih dulu oleh `onlyArbiter`. Sapuan luar tetap tuntas satu kali.
+    function test_sweepToken_reentrantTokenIsRejected() public {
+        uint256 jobId = _submittedJob();
+        _post(jobId, 1, ROOT_A);
+        vm.warp(_readyAt(jobId));
+
+        ReentrantToken evil = new ReentrantToken();
+        evil.mint(address(vault), 3_000);
+        evil.arm(vault, TREASURY, jobId);
+
+        vm.prank(ARBITER);
+        vault.sweepToken(address(evil), TREASURY);
+
+        assertTrue(evil.reentered(), "hook token harus benar-benar dieksekusi");
+        assertEq(
+            bytes4(evil.finalizeRevertData()),
+            bytes4(keccak256("ReentrancyGuardReentrantCall()")),
+            "finalize masuk-ulang harus ditolak guard transient"
+        );
+        assertEq(bytes4(evil.sweepRevertData()), EvaluatorVault.NotArbiter.selector, "sweep masuk-ulang ditolak peran");
+        assertEq(evil.balanceOf(address(vault)), 0);
+        assertEq(evil.balanceOf(TREASURY), 3_000);
+        assertFalse(_finalizedFlag(jobId), "verdict tetap terbuka: masuk-ulang tidak mengeksekusi apa pun");
+
+        // Sesudah sapuan selesai, finalize normal tetap jalan.
+        vault.finalize(jobId);
+        assertTrue(_finalizedFlag(jobId));
+    }
+
+    /// @dev Sapuan berulang: setiap job Completed menambah fee baru, dan tiap kali bisa dikeluarkan.
+    function test_sweepToken_repeatedSweepsAfterMoreJobs() public {
+        uint256 fee = (BUDGET * 500) / 10_000;
+        bytes32[3] memory roots = [ROOT_A, ROOT_B, ROOT_C];
+        for (uint256 i = 0; i < roots.length; i++) {
+            uint256 jobId = _submittedJob();
+            _post(jobId, 1, roots[i]);
+            vm.warp(_readyAt(jobId));
+            vault.finalize(jobId);
+
+            assertEq(usdc.balanceOf(address(vault)), fee);
+            vm.prank(ARBITER);
+            assertEq(vault.sweepToken(address(usdc), TREASURY), fee);
+            assertEq(usdc.balanceOf(address(vault)), 0);
         }
     }
 }

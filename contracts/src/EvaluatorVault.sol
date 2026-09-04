@@ -2,6 +2,8 @@
 pragma solidity 0.8.36;
 
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IACP} from "./IACP.sol";
 
 /// @title EvaluatorVault — wasit ERC-8183 dengan memori provider yang bisa diaudit
@@ -16,8 +18,13 @@ import {IACP} from "./IACP.sol";
 /// (selector `ReentrancyGuardReentrantCall()` `0x3ee5aeb5`), jadi memanggil balik ACP dari dalam
 /// eksekusi ACP PASTI revert di jaringan nyata dan TIDAK akan pernah tertangkap tes lokal. Karena
 /// itu `finalize` (satu-satunya jalur keluar) dan `deposit` (satu-satunya jalur ETH masuk) memakai
-/// `nonReentrant` OZ 5.7.0.
+/// `nonReentrant` OZ 5.7.0. `sweepToken` menambah SATU panggilan keluar lagi — ke kontrak ERC-20
+/// sembarang yang dipilih arbiter — jadi ia memakai guard yang SAMA: selama sapuan berlangsung,
+/// token yang bertingkah (hook transfer, ERC-777) tidak bisa masuk kembali ke `finalize`,
+/// `deposit`, maupun `sweepToken`.
 contract EvaluatorVault is ReentrancyGuardTransient {
+    using SafeERC20 for IERC20;
+
     // ------------------------------------------------------------------
     // Tipe
     // ------------------------------------------------------------------
@@ -145,6 +152,11 @@ contract EvaluatorVault is ReentrancyGuardTransient {
     ///         boleh diulang siapa pun kapan pun (ADR-015). Tidak ada state yang deadlock karena
     ///         dananya ada di escrow ACP, bukan di vault.
     event FinalizeFailed(uint256 indexed jobId);
+    /// @notice Fee evaluator (ERC-20) dikeluarkan dari vault oleh arbiter.
+    /// @param token  kontrak ERC-20 yang disapu (token escrow ACP pada praktiknya).
+    /// @param to     penerima; dipilih arbiter, tidak dibatasi kontrak.
+    /// @param amount SELURUH saldo token itu pada saat sapuan.
+    event TokenSwept(address indexed token, address indexed to, uint256 amount);
 
     // ------------------------------------------------------------------
     // Error
@@ -163,6 +175,12 @@ contract EvaluatorVault is ReentrancyGuardTransient {
     error ChallengeWindowOpen();
     error UnknownMemoryRoot();
     error InsufficientGasForAcpCall();
+    /// @dev `sweepToken` dipanggil dengan alamat token yang tidak punya kode (EOA / salah ketik).
+    ///      Tanpa cek ini `balanceOf` pada EOA merevert tanpa data sama sekali.
+    error TokenNotContract();
+    /// @dev Saldo token nol: tidak ada yang bisa disapu, jadi tx dibatalkan alih-alih mengemit
+    ///      event sapuan palsu senilai 0.
+    error NothingToSweep();
     /// @dev ADR-013: `challenge`/`resolve` sengaja belum diimplementasikan, tetapi TETAP ada di ABI
     ///      agar permukaan fungsi & otorisasinya terkunci tes sejak sekarang.
     error NotImplemented();
@@ -205,6 +223,54 @@ contract EvaluatorVault is ReentrancyGuardTransient {
         uint256 newBond = bond + msg.value;
         bond = newBond;
         emit Deposited(msg.sender, msg.value, newBond);
+    }
+
+    // ------------------------------------------------------------------
+    // Fee evaluator (ERC-20)
+    // ------------------------------------------------------------------
+
+    /// @notice Mengeluarkan SELURUH saldo sebuah token ERC-20 dari vault ke `to`. HANYA arbiter.
+    /// @dev SEBABNYA TERUKUR, bukan antisipasi: `evaluatorFeeBP()` ACP di Base Sepolia = 500, jadi
+    ///      setiap job yang `Completed` mengirim 5% budget ke alamat evaluator — yaitu vault ini
+    ///      (ADR-003). Job 417 memindahkan 50.000 unit token escrow ke vault dan `docs/spec.md` §4
+    ///      tidak punya satu pun jalur keluar untuknya; tiap job berikutnya menambah tumpukan itu.
+    ///
+    ///      HANYA ERC-20. `bond` adalah ETH, dan selama ADR-013 berlaku TIDAK BOLEH ada jalur ETH
+    ///      keluar dari vault (bond evaluator harus tetap tersandera). Fungsi ini karena itu tidak
+    ///      `payable`, tidak pernah menyentuh `bond`, tidak memakai `call`/`transfer` ETH, dan tidak
+    ///      bisa dipakai untuk menyentuh saldo ETH vault dengan cara apa pun: satu-satunya panggilan
+    ///      keluarnya adalah `transfer(address,uint256)` ke kontrak token.
+    ///
+    ///      Yang bisa disapu HANYA yang bukan bond: vault tidak menyimpan ERC-20 milik pihak lain —
+    ///      escrow job ada di ACP, bukan di sini — jadi saldo ERC-20 vault menurut definisi adalah
+    ///      fee evaluator (plus token nyasar, yang juga sah dikeluarkan). Karena itu tidak ada
+    ///      "akuntansi fee" terpisah untuk dikurangi; saldo penuh yang disapu, dan ia dibaca dari
+    ///      `balanceOf` pada saat panggilan, bukan dari angka yang disimpan dan bisa basi.
+    ///
+    ///      `onlyArbiter`, bukan `onlyAgent`: agen adalah pihak yang mengumumkan verdict, jadi
+    ///      memberinya kunci ke hasil finansial dari verdictnya sendiri meniadakan pemisahan peran
+    ///      yang justru dijaga guard `ArbiterEqualsAgent` di skrip deploy.
+    ///
+    ///      `safeTransfer` OZ 5.7.0 dipakai karena token escrow ACP tidak dijamin standar: token yang
+    ///      MENGEMBALIKAN `false` alih-alih revert membuat tx revert `SafeERC20FailedOperation`,
+    ///      sedangkan token gaya USDT yang tidak mengembalikan apa pun tetap diterima.
+    /// @param token Kontrak ERC-20 yang disapu. WAJIB punya kode: tanpa cek itu `balanceOf` pada EOA
+    ///              merevert tanpa data dan salah ketik alamat jadi sulit didiagnosis.
+    /// @param to    Penerima. `address(0)` ditolak (banyak ERC-20 menerimanya = fee terbakar), begitu
+    ///              pula vault sendiri (sapuan yang tidak memindahkan apa pun).
+    /// @return amount Jumlah yang dipindahkan = seluruh saldo token itu sebelum sapuan.
+    function sweepToken(address token, address to) external onlyArbiter nonReentrant returns (uint256 amount) {
+        if (to == address(0)) revert ZeroAddress();
+        if (to == address(this)) revert ZeroAddress();
+        if (token.code.length == 0) revert TokenNotContract();
+
+        amount = IERC20(token).balanceOf(address(this));
+        if (amount == 0) revert NothingToSweep();
+
+        // Checks-Effects-Interactions: vault tidak punya state akuntansi untuk token ini, jadi
+        // "effects" yang ada hanyalah event — dan ia diemit SEBELUM panggilan keluar.
+        emit TokenSwept(token, to, amount);
+        IERC20(token).safeTransfer(to, amount);
     }
 
     // ------------------------------------------------------------------
