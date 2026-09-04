@@ -1,0 +1,12 @@
+packages:
+  - sim
+  - web
+# esbuild WAJIB boleh menjalankan skrip build-nya: ia mengunduh binari platform yang dipakai tsx,
+# dan tanpa itu `pnpm --filter sim run job:min` tidak jalan sama sekali.
+# Sisanya sengaja false: bufferutil & utf-8-validate hanya addon performa opsional milik `ws`
+# (fungsionalitasnya ada versi JS murni), dan es5-ext hanya menampilkan pesan postinstall.
+allowBuilds:
+  bufferutil: false
+  es5-ext: false
+  esbuild: true
+  utf-8-validate: false
