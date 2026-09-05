@@ -86,6 +86,7 @@ Acuan:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -207,6 +208,27 @@ VERDICT_EVIDENCE_VERSION = "evaluator-verdict-evidence/v2"
 # gagalnya senyap (`SafeModeStop` → exit 0, nol tx). Itu persis klaim inti PRD.
 EVIDENCE_KIND_EVALUATION = "evaluation"      # ada deliverable: skor cek deterministik
 EVIDENCE_KIND_GATE_REJECTION = "gate-rejection"  # belum ada deliverable: budget > cap
+
+# BENTUK KETIGA (temuan TINGGI-A review putaran-2). Job yang capnya dilanggar TIDAK selalu
+# ditemukan saat masih `Funded`: di `sim/` provider `submit()` lebih dulu, jadi ketika
+# operator menjalankan agen job itu sudah `Submitted` dan `Evaluation` SUDAH ADA. Bentuk
+# lama memilih bundel `evaluation` begitu `Evaluation` ada, sehingga pelanggaran cap —
+# satu-satunya sebab verdict ini lahir — TIDAK muncul sama sekali di bukti yang di-hash
+# ke `reasonHash`, dan TASKS 2.5 AC (c) gagal setiap kali job C sempat di-`submit`.
+# Karena itu penolakan gerbang atas job yang sudah dinilai membawa KEDUA bagian.
+EVIDENCE_KIND_GATE_REJECTION_WITH_EVALUATION = "gate-rejection+evaluation"
+
+# Bentuk bukti yang HANYA sah bersama verdict REJECT (spec §5 langkah 2).
+EVIDENCE_KINDS_REQUIRING_REJECT: frozenset[str] = frozenset(
+    {EVIDENCE_KIND_GATE_REJECTION, EVIDENCE_KIND_GATE_REJECTION_WITH_EVALUATION}
+)
+
+# Nama direktori bundel bukti, DI SAMPING `memory.db` (task 2.5 AC (c): bundel yang
+# di-hash ke `reasonHash` disimpan lokal). Bukan hiasan: ia satu-satunya cara membuktikan
+# bahwa `reasonHash` yang SUDAH ada on-chain punya preimage yang kita kenal ketika memori
+# sudah bergerak maju (spec §5 langkah 5 menulis memori SESUDAH `postVerdict`).
+VERDICT_BUNDLE_DIRNAME = "verdicts"
+VERDICT_BUNDLE_DIR_ENV = "VERDICT_BUNDLE_DIR"
 
 # ----------------------------------------------------------------------
 # Konstanta mode aman (task 2.4a)
@@ -431,6 +453,13 @@ VAULT_ABI = [
 # ----------------------------------------------------------------------
 # Fungsi murni (diuji unit)
 # ----------------------------------------------------------------------
+
+
+def verdict_kind_name(kind: int) -> str:
+    """Nama `kind` verdict vault (1=complete, 2=reject). 0 = belum ada verdict."""
+    return {0: "belum ada", KIND_COMPLETE: "complete", KIND_REJECT: "reject"}.get(
+        int(kind), f"tidak dikenal ({int(kind)})"
+    )
 
 
 def status_name(status: int) -> str:
@@ -693,6 +722,21 @@ class MemoryRootMismatch(SafeModeStop):
     """
 
 
+class VerdictMismatch(SafeModeStop):
+    """Verdict yang akan diumumkan/dieksekusi TIDAK cocok dengan buktinya sendiri.
+
+    Turunan `SafeModeStop` dengan alasan yang sama seperti `MemoryRootMismatch`: akibatnya
+    identik (nol transaksi, `EXIT_REFUSED`), dan `main()` sudah membedakan berhenti bersih
+    dari berhenti di tengah pipa. Dipakai untuk tiga keadaan: rencana milik job lain,
+    memori yang berubah antara rencana dan pengiriman, dan verdict on-chain yang berbeda
+    dari hitungan hari ini.
+    """
+
+
+class UnlimitedCapRefused(SafeModeStop):
+    """`setProviderCap` dengan nilai 0 = TANPA BATAS (ADR-001) tanpa jalur sadar."""
+
+
 # Nama fungsi vault yang membawa `memory_root` + posisi argumennya. Diambil dari
 # `contracts/src/EvaluatorVault.sol`: `postVerdict(uint256 jobId, uint8 kind,
 # bytes32 reasonHash, bytes32 memoryRoot)` → indeks 3.
@@ -731,6 +775,88 @@ GATE_REJECTION_KIND_TEMPLATE = (
     "BUKTI PENOLAKAN GERBANG TIDAK COCOK DENGAN VERDICT: jobId={job_id} kind={kind} "
     "({kind_name}) sementara buktinya adalah penolakan cap; hanya reject yang sah; "
     "nol postVerdict/finalize/setProviderCap"
+)
+# Cermin aturan di atas untuk bukti CEK DETERMINISTIK (temuan TINGGI-B). Bundel yang
+# menyatakan `passed=false` di sebelah verdict `complete` adalah verdict yang membantah
+# buktinya sendiri — dan ia MEMBAYAR provider atas pekerjaan yang gagal cek agen sendiri.
+FAILED_CHECKS_KIND_TEMPLATE = (
+    "BUKTI CEK GAGAL TIDAK COCOK DENGAN VERDICT: jobId={job_id} kind={kind} ({kind_name}) "
+    "sementara cek deterministik yang GAGAL adalah {failed}; hanya reject yang sah; "
+    "nol postVerdict/finalize/setProviderCap"
+)
+# Rencana WAJIB milik job yang sedang diumumkan (temuan RENDAH review putaran-2:
+# `postVerdict(777, …)` terkirim membawa bundel job 43).
+PLAN_JOB_MISMATCH_TEMPLATE = (
+    "RENCANA MILIK JOB LAIN: run_live dipanggil untuk jobId={job_id} sementara rencananya "
+    "disusun untuk jobId={planned}; bukti dan verdict akan menunjuk dua job berbeda; "
+    "nol postVerdict/finalize/setProviderCap"
+)
+# Rencana WAJIB terikat pada ROOT yang dibacanya (temuan SEDANG-1 putaran-2). Nama mode
+# saja TIDAK cukup: penulis `memory.db` yang mendarat SESUDAH `plan_job` (kunci memori
+# kooperatif — ancaman MINJA yang diakui `memory_lock.py`) membiarkan mode tetap `normal`
+# sementara `derived_memory_root()` sudah mengambil root DB BARU, lalu root itu ditempelkan
+# pada `gate`/`cap`/`incident_jobs` hasil DB LAMA. Auditor yang merekonstruksi memori pada
+# root yang diumumkan mendapat cap yang berbeda.
+ROOT_DRIFT_TEMPLATE = (
+    "MEMORI BERUBAH DI TENGAH PIPA: rencana jobId={job_id} dibaca dari memori ber-root "
+    "{planned} sementara root {db} saat mengirim {current}; bundel bukti dan root yang "
+    "diumumkan akan berasal dari dua keadaan berbeda; "
+    "nol postVerdict/finalize/setProviderCap"
+)
+PLAN_WITHOUT_ROOT_TEMPLATE = (
+    "RENCANA TIDAK TERIKAT ROOT: rencana jobId={job_id} tidak membawa root memori yang "
+    "melahirkannya, jadi tidak ada yang bisa dibandingkan dengan root yang akan diumumkan; "
+    "nol postVerdict/finalize/setProviderCap"
+)
+# Verdict yang SUDAH ADA on-chain WAJIB sama dengan yang baru dihitung (temuan SEDANG-2).
+# Cabang ini dulu memfinalisasi apa pun: verdict `complete` yang terlanjur diumumkan tetap
+# dieksekusi walau gerbang SEKARANG menolak, dan run melaporkan exit 0 `PIPA HIDUP SELESAI`.
+ONCHAIN_KIND_DRIFT_TEMPLATE = (
+    "VERDICT ON-CHAIN BERBEDA DARI HITUNGAN SEKARANG: jobId={job_id} sudah diumumkan "
+    "kind={onchain} ({onchain_name}) sementara bukti hari ini menuntut kind={fresh} "
+    "({fresh_name}); menolak finalize verdict yang bukan hasil cek sendiri; "
+    "nol postVerdict/finalize/setProviderCap"
+)
+# `reasonHash`/`memoryRoot` on-chain yang tidak punya preimage yang kita kenal: jejak audit
+# akan menunjuk bundel yang BUKAN yang terikat on-chain. Satu-satunya pengecualian yang sah
+# adalah bundel tersimpan milik run yang mengumumkannya — dibuktikan dengan keccak, bukan
+# dengan kepercayaan.
+ONCHAIN_EVIDENCE_DRIFT_TEMPLATE = (
+    "BUKTI ON-CHAIN TIDAK BISA DIREPRODUKSI: jobId={job_id} terikat reasonHash={onchain_hash} "
+    "memoryRoot={onchain_root} sementara run ini menghitung reasonHash={fresh_hash} "
+    "memoryRoot={fresh_root}, dan tidak ada bundel tersimpan di {store} yang keccak-nya "
+    "sama dengan reasonHash on-chain; menolak finalize bukti yang tidak bisa ditunjukkan; "
+    "nol postVerdict/finalize/setProviderCap"
+)
+# Jalur SAH untuk perbedaan di atas: memori maju SESUDAH `postVerdict` (spec §5 langkah 5),
+# jadi root hari ini memang lebih baru. Yang mengikat tetap bundel on-chain, dan ia
+# DITUNJUKKAN — bukan diklaim.
+ONCHAIN_BUNDLE_REPRODUCED_TEMPLATE = (
+    "bundel bukti on-chain jobId={job_id} DIREPRODUKSI dari {path}: reasonHash={hash} "
+    "memoryRoot={root}. Memori sudah maju sejak verdict itu diumumkan (spec §5 langkah 5), "
+    "jadi root hari ini ({fresh_root}) berbeda dan BUKAN yang mengikat verdict ini"
+)
+# `setProviderCap(provider, 0)` berarti TANPA BATAS di kontrak (ADR-001), dan ia MENIMPA
+# cap yang sudah ketat tanpa syarat (`EvaluatorVault.sol:287-291`). Peracun cukup MENGHAPUS
+# satu entity `provider` dari `memory.db` — DB tetap ada, mode tetap NORMAL — untuk membuat
+# `derive_cap` melihat profil kosong (`risk=0`, `previous=None`) dan mengembalikan `NO_CAP`.
+# Penjaganya ada DI BATAS KIRIM, bukan di `derive_cap`: monoton-tidak-naik di sana bersandar
+# pada `previous` yang ikut terhapus.
+UNLIMITED_CAP_TEMPLATE = (
+    "CAP TANPA BATAS DITOLAK: setProviderCap({provider}, {cap}) — nilai 0 berarti TANPA "
+    "BATAS di kontrak (ADR-001) dan MENIMPA cap yang sudah ada; memori di {db} mungkin "
+    "kehilangan profil provider ini. Kirim hanya lewat jalur sadar "
+    "(set_provider_cap(..., allow_unlimited=True)); nol setProviderCap"
+)
+NEGATIVE_CAP_TEMPLATE = (
+    "CAP NEGATIF DITOLAK: setProviderCap({provider}, {cap}) bukan uint256; nol setProviderCap"
+)
+# `--kind` TIDAK punya default (temuan TINGGI-B). Default `complete` berarti baris perintah
+# terpendek adalah baris yang MEMBAYAR provider; verdict adalah milik cek, dan pilihan
+# operator di atasnya harus diketik.
+KIND_REQUIRED_MESSAGE = (
+    "--kind WAJIB disebut bersama --job-id (complete|reject): tidak ada verdict default. "
+    "Gerbang cap dan cek deterministik tetap bisa MEMAKSA reject di atas pilihan itu."
 )
 
 
@@ -1210,14 +1336,29 @@ class VaultClient:
         log.info("postVerdict terkirim: 0x%s", tx_hash)
         return tx_hash
 
-    def set_provider_cap(self, provider: str, cap_usdc: int) -> str:
+    def set_provider_cap(self, provider: str, cap_usdc: int, *, allow_unlimited: bool = False) -> str:
         """`setProviderCap` (spec §3 aturan 4). ADR-020 keputusan 8: ikut ditahan mode aman.
 
         Ia tidak menyentuh job tertentu, jadi TIDAK ada penjaga status job di sini —
         penjaga yang berlaku untuknya adalah gerbang memori di `_send()`.
+
+        NILAI 0 DITOLAK di sini, di BATAS KIRIM (temuan SEDANG-3 review putaran-2). Di
+        kontrak 0 berarti TANPA BATAS (ADR-001) dan `EvaluatorVault.setProviderCap` menimpa
+        nilai lama tanpa syarat, jadi SATU panggilan dengan `cap_to_onchain(CapPlan(None))`
+        mematikan gating yang justru sedang didemokan. Penjaganya tidak bisa ditaruh di
+        `derive_cap`: monoton-tidak-naik di sana bersandar pada `previous`, dan serangan
+        yang membuat `NO_CAP` justru MENGHAPUS profil yang menyimpan `previous` itu.
+        `allow_unlimited=True` adalah satu-satunya jalur sadar — ia harus diketik pemanggil.
         """
+        cap = int(cap_usdc)
+        if cap < 0:
+            raise UnlimitedCapRefused(NEGATIVE_CAP_TEMPLATE.format(provider=provider, cap=cap))
+        if cap == 0 and not allow_unlimited:
+            raise UnlimitedCapRefused(
+                UNLIMITED_CAP_TEMPLATE.format(provider=provider, cap=cap, db=self.db_path)
+            )
         tx_hash = self._send(
-            self.vault.functions.setProviderCap(Web3.to_checksum_address(provider), int(cap_usdc))
+            self.vault.functions.setProviderCap(Web3.to_checksum_address(provider), cap)
         )
         log.info("setProviderCap terkirim: 0x%s", tx_hash)
         return tx_hash
@@ -1279,6 +1420,12 @@ class JobPlan:
     gate: GateDecision
     evaluation: Evaluation | None
     deliverable: bytes | None
+    # ROOT memori yang MELAHIRKAN rencana ini (temuan SEDANG-1 review putaran-2). Nama
+    # mode saja tidak mengikat apa pun: memori yang ditulis SESUDAH `plan_job` membiarkan
+    # mode tetap `normal` sementara root sudah berpindah, dan `run_live` akan menempelkan
+    # root BARU pada `gate`/`cap`/`incident_jobs` yang lahir dari DB LAMA. `None` berarti
+    # rencana ini tidak terikat root sama sekali — `run_live` menolaknya.
+    memory_root: bytes | None = None
 
     @property
     def line(self) -> str:
@@ -1348,6 +1495,14 @@ def verdict_evidence(plan: JobPlan, memory_root: bytes) -> dict:
     keadaan memori yang melahirkannya; dua nilai yang diumumkan terpisah bisa berasal dari
     dua keadaan berbeda.
 
+      3. `EVIDENCE_KIND_GATE_REJECTION_WITH_EVALUATION` — gerbang cap MENOLAK job yang
+         KEBETULAN sudah `Submitted`. Di `sim/` urutan itu NORMAL: provider `submit()`
+         sebelum agen sempat dijalankan. Bentuk lama memilih bundel `evaluation` begitu
+         `Evaluation` ada, sehingga pelanggaran cap — sebab lahirnya verdict ini — hilang
+         seluruhnya dari bukti yang di-hash. Bundel ini membawa KEDUANYA: `gate` yang
+         menyatakan cap yang dilanggar beserta jobId insidennya, dan `evaluation` yang
+         menyatakan apa yang sempat diperiksa atas deliverable itu.
+
     Yang TETAP ditolak: job tanpa `Evaluation` yang gerbangnya LOLOS. Di sana memang belum
     ada apa pun untuk dinilai, dan verdict tanpa bukti adalah persis yang dicabut 2.4b.
     """
@@ -1356,14 +1511,20 @@ def verdict_evidence(plan: JobPlan, memory_root: bytes) -> dict:
         "mode": plan.mode.mode,
         "memory_root": "0x" + bytes(memory_root).hex(),
     }
+    if not plan.gate.accept:
+        # Penolakan gerbang mendahului bentuk `evaluation`, dan tidak pernah MENGGANTIKANnya:
+        # bila keduanya ada, keduanya ikut. Urutan `if` inilah temuan TINGGI-A.
+        bundel = {**dasar, "kind": EVIDENCE_KIND_GATE_REJECTION, "gate": gate_rejection_body(plan)}
+        if plan.evaluation is not None:
+            bundel["kind"] = EVIDENCE_KIND_GATE_REJECTION_WITH_EVALUATION
+            bundel["evaluation"] = plan.evaluation.to_body()
+        return bundel
     if plan.evaluation is not None:
         return {
             **dasar,
             "kind": EVIDENCE_KIND_EVALUATION,
             "evaluation": plan.evaluation.to_body(),
         }
-    if not plan.gate.accept:
-        return {**dasar, "kind": EVIDENCE_KIND_GATE_REJECTION, "gate": gate_rejection_body(plan)}
     raise MemoryRootMismatch(
         f"BELUM ADA YANG BISA DIUMUMKAN untuk jobId={plan.job.job_id}: gerbang MELOLOSKAN "
         f"budget {plan.job.budget} (status job {plan.job.status}) dan provider belum "
@@ -1388,6 +1549,63 @@ def verdict_reason_hash(bundle: dict) -> bytes:
     return bytes(Web3.keccak(text=canonical_json(bundle)))
 
 
+def verdict_bundle_dir(client: VaultClient) -> Path:
+    """Direktori bundel bukti, DI SAMPING `memory.db` klien ini (atau `VERDICT_BUNDLE_DIR`).
+
+    Dijangkarkan ke memori, bukan ke direktori kerja, dengan alasan yang sama seperti
+    `memory_db_path()`: yang menentukan artefak mana yang berlaku adalah konfigurasi.
+    """
+    if client.db_path is None:
+        raise SafeModeStop(
+            "klien vault dibangun tanpa path memori — bundel bukti tidak punya tempat, "
+            "jadi tidak ada transaksi yang boleh dikirim"
+        )
+    raw = config_value(VERDICT_BUNDLE_DIR_ENV, "")
+    if raw:
+        arah = Path(raw).expanduser()
+        return arah if arah.is_absolute() else (agent_root() / arah).resolve()
+    return client.db_path.parent / VERDICT_BUNDLE_DIRNAME
+
+
+def store_verdict_bundle(directory: Path, job_id: int, bundle: Mapping[str, object]) -> Path:
+    """Menyimpan JSON KANONIK bundel — persis byte yang di-keccak jadi `reasonHash`.
+
+    Ditulis SEBELUM `postVerdict` dikirim: bundel yang lahir sesudah transaksinya mendarat
+    tidak pernah ada untuk verdict yang gagal di tengah jalan, dan justru run berikutnya
+    yang membutuhkannya (spec §5 langkah 5 memajukan memori, jadi root hari ini berbeda).
+    Menyimpan TEKS-nya, bukan objeknya, supaya perbandingan berikutnya adalah keccak atas
+    byte yang sama — bukan hasil serialisasi ulang yang kebetulan mirip.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{int(job_id)}.json"
+    path.write_text(canonical_json(dict(bundle)), encoding="utf-8")
+    return path
+
+
+def stored_verdict_bundle(directory: Path, job_id: int) -> tuple[Path, str | None]:
+    """Teks bundel tersimpan untuk satu job. Tidak ada = `None`, bukan galat."""
+    path = directory / f"{int(job_id)}.json"
+    try:
+        return path, path.read_text(encoding="utf-8")
+    except OSError:
+        return path, None
+
+
+def bundle_reproduces_onchain(text: str, existing: VerdictState) -> bool:
+    """Bundel tersimpan itu preimage `reasonHash` on-chain DAN membawa root on-chain.
+
+    Dibuktikan dengan keccak, bukan dengan kepercayaan pada file lokal: menyodorkan bundel
+    palsu untuk `reasonHash` asing menuntut preimage keccak256.
+    """
+    if bytes(Web3.keccak(text=text)) != bytes(existing.reason_hash):
+        return False
+    try:
+        body = json.loads(text)
+    except ValueError:
+        return False
+    return str(body.get("memory_root", "")) == "0x" + bytes(existing.memory_root).hex()
+
+
 def plan_job(
     client: VaultClient,
     job: JobView,
@@ -1410,6 +1628,16 @@ def plan_job(
             "klien vault dibangun tanpa path memori — keputusan memori tidak bisa diambil"
         )
     gate = client.refresh_memory_gate()
+    # Root DIREKAM di sini, pada pembacaan gerbang yang SAMA yang memberi `mode` dan
+    # menjadi dasar `gate_job` di bawah — bukan dihitung ulang saat mengirim. Kegagalan
+    # menurunkan root bukan alasan untuk membatalkan rencana (mode aman punya jalurnya
+    # sendiri), tetapi rencana tanpa root TIDAK boleh menghasilkan transaksi: `run_live`
+    # menolak `memory_root=None`.
+    try:
+        root_rencana: bytes | None = client.derived_memory_root()
+    except MemoryRootMismatch as exc:
+        log.warning("root memori tidak bisa diturunkan saat menyusun rencana: %s", exc)
+        root_rencana = None
     memori = MemoryClient.local(str(client.db_path))
     try:
         decision = gate_job(
@@ -1437,7 +1665,14 @@ def plan_job(
                 configured_deliverable_dir() if deliverable_dir is None else deliverable_dir
             ),
         )
-    return JobPlan(job=job, mode=gate.decision, gate=decision, evaluation=evaluation, deliverable=onchain)
+    return JobPlan(
+        job=job,
+        mode=gate.decision,
+        gate=decision,
+        evaluation=evaluation,
+        deliverable=onchain,
+        memory_root=root_rencana,
+    )
 
 
 def record_outcome(client: VaultClient, plan: JobPlan) -> None:
@@ -1477,27 +1712,53 @@ def record_outcome(client: VaultClient, plan: JobPlan) -> None:
     )
 
 
-def verdict_kind(plan: JobPlan, requested: int) -> int:
-    """Verdict yang benar-benar diumumkan untuk satu rencana job.
+def required_verdict_kind(plan: JobPlan) -> int | None:
+    """Verdict yang DIPAKSA oleh bukti agen sendiri, atau `None` bila bukti tidak memaksa.
 
-    SATU aturan, dan ia berasal dari spec §5 langkah 2 apa adanya: *"jika budget > cap →
-    `postVerdict(REJECT)`"*. Gating itu terjadi saat job masih `Funded`, jadi ia mendahului
-    `--kind` yang diminta operator — job yang capnya dilanggar tidak boleh diumumkan
-    `complete` hanya karena baris perintahnya default.
+    DUA sumber, keduanya milik agen dan tidak satu pun berasal dari baris perintah:
 
-    Selain itu `requested` diteruskan apa adanya. Pemilihan verdict dari hasil cek
-    deterministik adalah milik task 2.5 dan sengaja TIDAK dikerjakan di sini.
+      1. spec §5 langkah 2 — *"jika budget > cap → `postVerdict(REJECT)`"*. Syarat
+         `plan.evaluation is None` dulu ada di sini dan ITULAH lubangnya (temuan TINGGI-A):
+         provider yang `submit()` lebih dulu — di `sim/` itu urutan NORMAL — membuat
+         `Evaluation` terisi, penjaganya dilewati, dan job over-cap diumumkan `complete`.
+         Gating cap tidak pernah berhenti berlaku hanya karena deliverable sudah ada.
+      2. spec §5 langkah 3-4 — skor lahir dari cek deterministik. `Evaluation.passed ==
+         False` berarti cek AGEN SENDIRI gagal, dan bundel yang di-hash ke `reasonHash`
+         menyatakan `passed=false`. Mengumumkan `complete` di atasnya berarti verdict
+         publik yang MEMBANTAH buktinya sendiri, sekaligus membayar provider (temuan
+         TINGGI-B). Tidak bisa ditawar `--kind`.
+
+    Arahnya SATU: bukti hanya bisa MENGETATKAN verdict menjadi REJECT. Ia tidak pernah
+    memaksa `complete` — memaksa pembayaran adalah kelas kesalahan yang justru ditutup di
+    sini, dan operator yang meminta `reject` atas job yang lolos cek tidak membahayakan
+    siapa pun kecuali dirinya di jendela challenge.
     """
-    if plan.evaluation is None and not plan.gate.accept and requested != KIND_REJECT:
-        log.info(
-            "GERBANG MENOLAK jobId=%d (%s) — verdict dipaksa REJECT (spec §5 langkah 2), "
-            "bukan %s yang diminta",
-            plan.job.job_id,
-            plan.gate.reason,
-            "complete" if requested == KIND_COMPLETE else str(requested),
-        )
+    if not plan.gate.accept:
         return KIND_REJECT
-    return requested
+    if plan.evaluation is not None and not plan.evaluation.passed:
+        return KIND_REJECT
+    return None
+
+
+def verdict_kind(plan: JobPlan, requested: int) -> int:
+    """Verdict yang benar-benar diumumkan: `required_verdict_kind` lebih dulu, lalu pilihan
+    operator. Baris perintah tidak pernah bisa melonggarkan hasil cek."""
+    required = required_verdict_kind(plan)
+    if required is None or requested == required:
+        return requested
+    # Penanda dibedakan supaya log menyebut SEBAB yang memaksa, bukan sekadar hasilnya:
+    # "GERBANG MENOLAK" untuk pelanggaran cap (spec §5 langkah 2) dan "CEK DETERMINISTIK
+    # GAGAL" untuk hasil cek sendiri (langkah 3-4). Keduanya bisa berlaku bersamaan.
+    log.info(
+        "%s jobId=%d — gerbang=%s (%s), cek gagal=%s; verdict dipaksa REJECT, bukan %s yang diminta",
+        "GERBANG MENOLAK" if not plan.gate.accept else "CEK DETERMINISTIK GAGAL",
+        plan.job.job_id,
+        "lolos" if plan.gate.accept else "DITOLAK",
+        plan.gate.reason,
+        list(plan.evaluation.failed_checks) if plan.evaluation is not None else [],
+        "complete" if requested == KIND_COMPLETE else str(requested),
+    )
+    return required
 
 
 def run_job(
@@ -1556,6 +1817,73 @@ def read_ready_at(client: VaultClient, job_id: int, post_receipt) -> int:
     raise RuntimeError(f"tidak bisa membaca readyAt untuk jobId={job_id}")
 
 
+def require_onchain_verdict_agrees(
+    client: VaultClient,
+    job_id: int,
+    existing: VerdictState,
+    kind: int,
+    reason_hash: bytes,
+    memory_root: bytes,
+) -> None:
+    """Verdict yang SUDAH diumumkan WAJIB sama dengan yang dihitung run ini (SEDANG-2).
+
+    Cabang "verdict sudah ada" dulu memfinalisasi apa pun yang ditemukannya, dan dua
+    serangan menembusnya: (i) verdict `complete` yang terlanjur diumumkan tetap dieksekusi
+    walau gerbang SEKARANG menolak — run bahkan melaporkan exit 0 `PIPA HIDUP SELESAI`;
+    (ii) `reasonHash`/`memoryRoot` asing diterima tanpa protes sementara log mencetak
+    versi baru hasil hitung sendiri, sehingga jejak audit menunjuk bundel yang BUKAN yang
+    terikat on-chain.
+
+    `kind` dibandingkan KERAS: ia yang menentukan siapa dibayar, dan tidak ada keadaan sah
+    di mana verdict on-chain berbeda arah dari bukti hari ini.
+
+    `reasonHash`/`memoryRoot` punya SATU perbedaan yang sah, dan ia bukan kelonggaran
+    melainkan urutan spec §5: memori ditulis SESUDAH `postVerdict` (langkah 5), jadi run
+    berikutnya atas job yang sama menghitung root yang lebih baru. Perbedaan itu hanya
+    diterima bila bundel yang diumumkan MASIH BISA DITUNJUKKAN: teks kanonik tersimpan
+    yang keccak-nya PERSIS `reasonHash` on-chain dan yang memuat `memoryRoot` on-chain.
+    Menyodorkan bundel palsu untuk `reasonHash` asing menuntut preimage keccak256, jadi
+    jalur ini tidak bisa dipakai untuk memfinalisasi verdict yang bukan milik kita.
+    """
+    if int(existing.kind) != int(kind):
+        raise VerdictMismatch(
+            ONCHAIN_KIND_DRIFT_TEMPLATE.format(
+                job_id=job_id,
+                onchain=int(existing.kind),
+                onchain_name=verdict_kind_name(int(existing.kind)),
+                fresh=int(kind),
+                fresh_name=verdict_kind_name(int(kind)),
+            )
+        )
+    if bytes(existing.reason_hash) == bytes(reason_hash) and bytes(existing.memory_root) == bytes(
+        memory_root
+    ):
+        return
+    path, text = stored_verdict_bundle(verdict_bundle_dir(client), job_id)
+    if text is not None and bundle_reproduces_onchain(text, existing):
+        log.warning(
+            "%s",
+            ONCHAIN_BUNDLE_REPRODUCED_TEMPLATE.format(
+                job_id=job_id,
+                path=path,
+                hash="0x" + bytes(existing.reason_hash).hex(),
+                root="0x" + bytes(existing.memory_root).hex(),
+                fresh_root="0x" + bytes(memory_root).hex(),
+            ),
+        )
+        return
+    raise VerdictMismatch(
+        ONCHAIN_EVIDENCE_DRIFT_TEMPLATE.format(
+            job_id=job_id,
+            onchain_hash="0x" + bytes(existing.reason_hash).hex(),
+            onchain_root="0x" + bytes(existing.memory_root).hex(),
+            fresh_hash="0x" + bytes(reason_hash).hex(),
+            fresh_root="0x" + bytes(memory_root).hex(),
+            store=path.parent,
+        )
+    )
+
+
 def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None = None) -> int:
     """Pipa atas jobId ACP NYATA: postVerdict -> tunggu CHALLENGE_WINDOW -> finalize.
 
@@ -1584,12 +1912,18 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
     di vault). Ia idempoten per `job_id`; melewatinya di cabang "sudah ada" berarti hasil
     job hilang dari memori SELAMANYA setiap kali run diulang.
     """
-    kind_name = "complete" if kind == KIND_COMPLETE else "reject"
+    kind_name = verdict_kind_name(kind)
     log.info("LIVE jobId ACP NYATA=%d kind=%d (%s)", job_id, kind, kind_name)
     if plan is None:
         raise MemoryRootMismatch(
             f"run_live jobId={job_id} tanpa rencana job — tidak ada bukti dan tidak ada "
             "keadaan memori yang bisa diumumkan; nol postVerdict/finalize/setProviderCap"
+        )
+    # Rencana WAJIB milik job INI. Tanpa penjaga satu baris ini `postVerdict(777, …)`
+    # terkirim membawa bundel job 43 (temuan RENDAH review putaran-2).
+    if int(plan.job.job_id) != int(job_id):
+        raise VerdictMismatch(
+            PLAN_JOB_MISMATCH_TEMPLATE.format(job_id=job_id, planned=plan.job.job_id)
         )
     # Gerbang dibaca ULANG lebih dulu supaya root yang dicetak/diumumkan adalah root yang
     # SAMA yang akan diperiksa `_send()`. `_send()` tetap membacanya lagi — itu yang mengikat.
@@ -1607,10 +1941,39 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
             )
         )
     memory_root = client.derived_memory_root()
+    # Rencana terikat pada ROOT yang dibacanya, bukan hanya pada NAMA modenya (SEDANG-1).
+    # Penulis `memory.db` yang mendarat sesudah `plan_job` membiarkan mode tetap `normal`
+    # sementara root sudah berpindah; tanpa perbandingan ini root DB BARU diumumkan
+    # menempel pada `gate`/`cap`/`incident_jobs` dari DB LAMA, dan jangkar bukti 2.4b
+    # tidak berlaku bagi auditor yang merekonstruksi memori pada root itu.
+    if plan.memory_root is None:
+        raise VerdictMismatch(PLAN_WITHOUT_ROOT_TEMPLATE.format(job_id=job_id))
+    if bytes(plan.memory_root) != bytes(memory_root):
+        raise VerdictMismatch(
+            ROOT_DRIFT_TEMPLATE.format(
+                job_id=job_id,
+                planned="0x" + bytes(plan.memory_root).hex(),
+                current="0x" + bytes(memory_root).hex(),
+                db=client.db_path,
+            )
+        )
     bundle = verdict_evidence(plan, memory_root)
-    if evidence_kind(bundle) == EVIDENCE_KIND_GATE_REJECTION and kind != KIND_REJECT:
+    if evidence_kind(bundle) in EVIDENCE_KINDS_REQUIRING_REJECT and kind != KIND_REJECT:
         raise MemoryRootMismatch(
             GATE_REJECTION_KIND_TEMPLATE.format(job_id=job_id, kind=kind, kind_name=kind_name)
+        )
+    # Bukti cek deterministik yang GAGAL tidak boleh menemani verdict `complete` (TINGGI-B).
+    # Lapis kedua di samping `verdict_kind()`: jalur yang memanggil `run_live` langsung —
+    # termasuk otomasi 2.5 — tetap berhenti, alasan yang sama seperti mode aman ditegakkan
+    # di `_send()` dan bukan di pemanggil.
+    if kind != KIND_REJECT and plan.evaluation is not None and not plan.evaluation.passed:
+        raise VerdictMismatch(
+            FAILED_CHECKS_KIND_TEMPLATE.format(
+                job_id=job_id,
+                kind=kind,
+                kind_name=kind_name,
+                failed=list(plan.evaluation.failed_checks),
+            )
         )
     reason_hash = verdict_reason_hash(bundle)
     log.info("memory_root TURUNAN memory.db di %s = 0x%s", client.db_path, memory_root.hex())
@@ -1631,12 +1994,24 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
 
     post_receipt = None
     if existing.kind != 0:
+        # Verdict on-chain WAJIB sama dengan yang dihitung run ini (SEDANG-2). Tanpa ini
+        # cabang ini memfinalisasi apa pun yang kebetulan sudah ada — termasuk `complete`
+        # atas job yang gerbangnya SEKARANG menolak.
+        require_onchain_verdict_agrees(client, job_id, existing, kind, reason_hash, memory_root)
         # VerdictAlreadyPosted: lanjut ke finalize, jangan gagal total (jalur diminta 1.3d).
+        # Nilai ON-CHAIN dicetak apa adanya: merekalah yang mengikat verdict ini. Tanpa baris
+        # ini log hanya memuat `reasonHash`/`memoryRoot` hasil hitung run SEKARANG, dan jejak
+        # audit menunjuk bundel yang BUKAN yang terikat on-chain (temuan SEDANG-2).
         log.info(
-            "verdict jobId=%d SUDAH ADA (kind=%d, readyAt=%d) — melewati postVerdict, lanjut finalize",
+            "verdict jobId=%d SUDAH ADA (kind=%d (%s), readyAt=%d, reasonHash=0x%s, "
+            "memoryRoot=0x%s — nilai ON-CHAIN inilah yang mengikat) — melewati postVerdict, "
+            "lanjut finalize",
             job_id,
             existing.kind,
+            verdict_kind_name(int(existing.kind)),
             existing.ready_at,
+            bytes(existing.reason_hash).hex(),
+            bytes(existing.memory_root).hex(),
         )
         ready_at = existing.ready_at
         post_hash = "(sudah ada sebelumnya)"
@@ -1650,6 +2025,11 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
         # di KEDUA cabang aman dan tidak pernah menghitung satu job dua kali.
         record_outcome(client, plan)
     else:
+        # Bundel disimpan SEBELUM transaksinya dikirim (TASKS 2.5 AC (c)): begitu
+        # `postVerdict` mendarat, `reasonHash` on-chain harus selalu punya preimage yang
+        # bisa ditunjukkan — termasuk kepada run berikutnya, yang memorinya sudah maju.
+        simpanan = store_verdict_bundle(verdict_bundle_dir(client), job_id, bundle)
+        log.info("bundel bukti (preimage reasonHash) disimpan: %s", simpanan)
         post_hash = client.post_verdict(job_id, kind, reason_hash, memory_root)
         post_receipt = client.wait_receipt(post_hash)
         log.info(
@@ -1725,14 +2105,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--kind",
         choices=("complete", "reject"),
-        default="complete",
-        help="verdict untuk --job-id (default: complete)",
+        default=None,
+        help="verdict untuk --job-id — WAJIB, tidak ada default (cek deterministik dan "
+        "gerbang cap tetap bisa MEMAKSA reject di atasnya)",
     )
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
 
     if args.guard is None and args.job_id is None:
+        parser.print_usage(sys.stdout)
+        return 2
+    # Tidak ada verdict default (temuan TINGGI-B). Baris perintah terpendek dulu berarti
+    # `complete` — yaitu MEMBAYAR provider — dan itu keputusan yang harus diketik, bukan
+    # diwarisi dari default. Pilihan operator tetap tunduk pada `required_verdict_kind`.
+    if args.job_id is not None and args.kind is None:
+        log.error("%s", KIND_REQUIRED_MESSAGE)
         parser.print_usage(sys.stdout)
         return 2
 

@@ -600,7 +600,8 @@ def test_cli_prints_safe_mode_and_sends_nothing(db, monkeypatch, caplog):
     # punya handler), jadi keluarannya dibaca dari `caplog`. Di CLI sungguhan baris yang
     # SAMA pergi ke stdout — itulah yang dibuktikan AC (d) secara manual.
     with caplog.at_level(logging.INFO, logger="vault_client"):
-        kode = vc.main(["--job-id", "407"])
+        # `--kind` WAJIB eksplisit sejak temuan TINGGI-B: tidak ada verdict default.
+        kode = vc.main(["--job-id", "407", "--kind", "reject"])
     keluaran = caplog.text
 
     assert kode == 0
@@ -699,7 +700,7 @@ def test_main_exits_nonzero_when_the_gate_stops_a_half_finished_pipeline(db, mon
     monkeypatch.setattr(vc.Account, "from_key", staticmethod(lambda key: _SigningAccount()))
 
     with caplog.at_level(logging.INFO, logger="vault_client"):
-        kode = vc.main(["--job-id", "417"])
+        kode = vc.main(["--job-id", "417", "--kind", "reject"])
 
     assert kode == vc.EXIT_STOPPED_MIDWAY != 0
     assert vc.EXIT_STOPPED_MIDWAY_MESSAGE in caplog.text
@@ -722,7 +723,7 @@ def test_a_clean_safe_mode_stop_still_exits_zero(db, monkeypatch, caplog):
     monkeypatch.setattr(vc, "load_private_key", lambda: pytest.fail("kunci tidak boleh dimuat"))
 
     with caplog.at_level(logging.INFO, logger="vault_client"):
-        assert vc.main(["--job-id", "417"]) == 0
+        assert vc.main(["--job-id", "417", "--kind", "reject"]) == 0
     assert dibangun["client"].sent_transactions == []
     assert vc.EXIT_STOPPED_MIDWAY_MESSAGE not in caplog.text
 
