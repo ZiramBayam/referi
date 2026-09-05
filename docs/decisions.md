@@ -521,3 +521,48 @@ Konsekuensi:
 (-) 3.3b varian A dijalankan di Anvil lokal (vault segar, root nol → naif → degradasi terlihat);
     varian B di vault Sepolia beku (DB dihapus, root non-nol → mode aman). Amandemen ADR-007 tetap
     berlaku, hanya lokasinya kini ditetapkan.
+
+## ADR-024 Aturan (b) dicabut; pemicu mode aman = memori lokal tidak terbaca
+Tanggal: 2026-09-05. Status: diterima. Mencabut ADR-023 keputusan 2 huruf (b); menegakkan ADR-023
+keputusan 1. Pemicu: BLOKIR @agent-security-reviewer atas 2.4a-fix.
+
+Konteks: ADR-023 aturan (b) ("DB ada tapi NOL job outcome SEMENTARA `lastMemoryRoot() != 0` → AMAN")
+memindahkan self-brick, tidak membunuhnya. Pada vault submission beku ADR-022,
+`lastMemoryRoot` = `keccak("the-evaluator/live/memory-root/v1")` = `0x1fa62c3d…` permanen non-nol dan
+tidak bisa dinolkan (`postVerdict` satu-satunya penulis), jadi (b) SELALU aktif. Job A adalah job
+pertama → `job_outcomes = 0` saat `postVerdict`-nya → ditahan → outcome pertama tidak pernah lahir.
+Dieksekusi pada DB bersih: rantai 2.5 menghasilkan `tx = []`. Kontrol: DB sama + satu outcome
+karangan → `tx = ['postVerdict']`.
+Dua cacat tambahan: (i) (b) membaca `lastMemoryRoot` di cabang keputusan tx, yang justru dilarang
+ADR-023 keputusan 1 — ADR-023 kontradiktif dengan dirinya sendiri; (ii) (b) dipenuhi oleh DB 3 baris
+buatan tangan, jadi ia menegakkan "DB tidak kosong", bukan "memori bisa membuktikan asal-usulnya";
+terhadap penyerang yang bisa menulis `memory.db` nilainya NOL, sementara biayanya seluruh §7.
+
+Keputusan:
+1. Aturan (b) DICABUT. Tidak ada penggantinya di v1.
+2. `decide_mode` final, urutan presedensi TEPAT ini:
+   (1) kunci single-instance gagal, ATAU `load_snapshot`/`memory_root` melempar → AMAN;
+   (2) `memory.db` (atau `-wal`/`-shm`) hilang: `lastMemoryRoot() == 0` → NAIF; selain itu → AMAN;
+   (3) selebihnya → NORMAL, termasuk memori kosong nol job outcome.
+   `lastMemoryRoot()` dibaca HANYA di cabang (2) dan hanya untuk membedakan "hari pertama" dari
+   "vault yang sudah hidup"; di semua cabang lain ia log/UI saja (ADR-023 keputusan 1).
+3. Bootstrap job A TIDAK punya jalur khusus: memori kosong = mode normal tanpa kalibrasi, yang
+   perilakunya sama dengan evaluator stateless (spec §3 aturan 6). DITOLAK: pengecualian "postVerdict
+   pertama", entity `origin`, dan langkah seeding di `make demo` — dua yang pertama melubangi aturan
+   atau mati bersama `rm -rf data/`, yang ketiga menulis outcome yang tidak lahir dari verdict.
+4. `proves_origin` DIGANTI NAMA jadi `local_memory_readable`. Nama/docstring yang mengklaim
+   pembuktian asal-usul DILARANG sampai ada log root lokal (v2).
+5. Residu `agent/data/memory.db` (provider fiktif `0xa1a1…`, `incident_jobs=(11,12)`, tidak pernah
+   lewat `record_job_outcome`) DILARANG jadi alas rantai 2.5. Rantai A/B/C dijalankan pada DB yang
+   TERBUKTI kosong; kekosongan dibuktikan dengan `agent/memory_export.py` sebelum job A.
+
+Konsekuensi:
+(+) Rantai 2.5 dan §7 langkah 1-3/5 mungkin pada vault beku; gate destruktif §7 langkah 4 tetap utuh
+    lewat aturan (a) di kedua varian 3.3b.
+(+) Satu-satunya pembacaan chain yang tersisa di jalur keputusan hanya bisa melonggarkan pada vault
+    yang belum pernah mem-post verdict — pada vault itu tidak ada memori untuk dilewati.
+(-) HILANG: deteksi "`memory.db` diganti DB LAIN", baik kosong maupun terisi. Diperluas dari ADR-023
+    konsekuensi ke-3. WAJIB disebut di README §Batasan dengan kalimat ini apa adanya.
+(-) `rm -rf agent/data` pada vault beku tetap = mode aman permanen sampai memori dipulihkan dari
+    backup. Itu perilaku yang DIINGINKAN (3.3b varian B), jadi baris keluarannya WAJIB menyebut jalur
+    pemulihan, bukan hanya akibatnya.
