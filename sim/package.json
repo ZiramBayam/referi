@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "job:min": "tsx src/client_min.ts"
+    "job:min": "tsx src/client_min.ts",
+    "mint:client": "tsx src/mint_min.ts"
   },
   "dependencies": {
     "@virtuals-protocol/acp-node-v2": "0.1.12",
