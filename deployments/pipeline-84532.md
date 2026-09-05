@@ -87,8 +87,12 @@ status = 3 (Completed). Budget 1 USDC terbelah persis:
 Angka 940.000 + 50.000 + 10.000 = 1.000.000 diukur dari `balanceOf` sesudah `finalize`, bukan dihitung
 di atas kertas.
 
-**Utang yang terlihat dari sini:** vault sekarang MEMEGANG 50.000 token dan belum punya jalan keluar —
-itu persis yang ditutup task 1.2c (`sweepToken`).
+**Utang yang terlihat dari sini, dan TIDAK ditutup:** vault memegang 50.000 token dan tidak punya jalan
+keluar. `sweepToken(address,address) onlyArbiter` mendarat di sumber (commit `e675234`) sebagai kode + tes
+SAJA; ADR-022 membekukan alamat di atas sebagai kontrak submission dan membatalkan redeploy, jadi fungsi itu
+TIDAK ADA di bytecode terdeploy — dibuktikan langsung: `cast call 0x5c6EE4586ACABcb6326069c229E58091B21ef384
+"sweepToken(address,address)" ...` → `execution reverted`. 50.000 unit (0,05 USDC testnet) hangus permanen;
+ini dilepas secara sadar oleh ADR-018 keputusan 2, bukan kelalaian.
 
 ## Cara memutar ulang
 
