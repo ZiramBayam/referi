@@ -127,6 +127,8 @@ Refunded        0x7ca5472b7ea78c2c0141c5a12ee6d170cf4ce8ed06be3d22c8252ddfc7a6a2
 BudgetSet       0x869e2577b006bf47ee981cf6fec2e25583548081c14b98deab587f77b5068038
 ProviderSet     0x9a87df076ea1725aba8ba29d32517ce37c9597d88cbf16ec6707892cc330ab69
 ```
+Bentuk `JobRejected` (3 argumen, `rejector` = topic 2) DIKONFIRMASI ULANG 2026-09-06 dari ABI paket + source terverifikasi
++ log nyata + eksekusi fork — rinciannya dan jebakan `cast logs` ada di **§G** (baca sebelum menulis AC berbasis log).
 **Bentuk 2-argumen `JobCompleted(uint256,bytes32)` TIDAK ADA.** topic0-nya `0x45c386dc6524a2d9fe630455323c6a39f557c52ab01e886deee20a0b538147ac`
 dan `cast logs --address <ACP> <topic0 itu> --from-block 46173040 --to-block 46183039` mengembalikan KOSONG pada rentang
 yang justru memuat `JobCompleted` bentuk 3-argumen. Jangan pernah memakai bentuk 2-argumen di AC/skrip/indexer.
@@ -762,3 +764,69 @@ Dua konsekuensi yang MENGIKAT (menutup pertanyaan task 2.4-min):
    `0x80c17db79857f338a6a6df68a6883ecc0ce78e2202fe61ed979733573f40538e` — identik dengan nilai §A.
    Perintah pembanding: `node -e "const {ACP_ABI}=require('<…>/dist/core/acpAbi.js'); console.log(JSON.stringify(
    ACP_ABI.filter(x=>x.name==='JobSubmitted')))"`.
+
+## G. Verifikasi log lewat `cast logs` — ALAT, bukan protokol. Diverifikasi 2026-09-06 (prasyarat AC (a) task 2.5)
+### G.1 `JobRejected` — bentuk DIKONFIRMASI ULANG dari tiga sumber independen (2026-09-06)
+`JobRejected(uint256 indexed jobId, address indexed rejector, bytes32 reason)` — **BENAR**, aritas 3, dua argumen indexed,
+`reason` di `data`. Sumber yang dilihat hari ini, bukan ingatan:
+1. ABI paket terpasang: `node -e "const {ACP_ABI}=require('<node_modules/.pnpm/@virtuals-protocol+acp-node-v2@0.1.12/…>/dist/core/acpAbi.js');
+   console.log(JSON.stringify(ACP_ABI.filter(x=>x.name==='JobRejected')))"` → `indexed:true jobId uint256`, `indexed:true rejector address`,
+   `indexed:false reason bytes32`, `anonymous:false`.
+2. Source terverifikasi Sourcify `exact_match` (`AgenticCommerceV3.sol` `:121-125`, sha256 `3b47cdbc…8cddb` diambil ulang & cocok).
+3. Log NYATA Base Sepolia: blok 45755763, tx `0x301d71c947bd06afbc8016093a5f9e5c09bbd1175ece2ee56775ab916090c551`,
+   3 topics + `data` 32 byte (job 367, rejector = client karena `evaluator == 0`).
+topic0 = `cast sig-event "JobRejected(uint256,address,bytes32)"` = `0xae7362b1af91f4492868987b9c73990d780060811551b58728fbe96fd1bab275`
+— identik dengan §A dan dengan topic0 log nyata di atas. `reject(uint256,bytes32,bytes)` selector `0x41dd26f5` (terlihat di calldata tx itu).
+
+### G.2 Rantai job C (`reject` saat **Funded** oleh vault-sebagai-evaluator) — DIEKSEKUSI di fork, bukan dibaca
+`forge test` di fork Base Sepolia 2026-09-06 memakai kontrak ASLI (ACP `0x0b93…4d461e`, vault terdeploy `0x5c6E…f384`,
+`vm.prank(agent)`): createJob(evaluator = VAULT) → setBudget 2 USDC → fund → status **1 (Funded)** →
+`postVerdict(jobId, 2, reasonHash, root)` → warp 200 s → `finalize(jobId)` **SUKSES**. `vm.getRecordedLogs()` dari tx
+`finalize` (job 418), apa adanya:
+```
+1 ERC20 Transfer  emitter 0xECc2…BDb3  (ACP → client, 0x1e8480 = 2.000.000)
+2 Refunded        emitter ACP  topic0 0x7ca5472b…a2c4
+3 JobRejected     emitter ACP  topic0 0xae7362b1…b275  topic1 jobId  topic2 = 0x5c6E…f384 (VAULT)  data = reasonHash
+4 Finalized       emitter VAULT topic0 0x642e932534104f1bb949c7593c10c039babcf12b89d90da5c889ca1e833f87b5
+```
+status sesudahnya = **4 (Rejected)**, client menerima 100% budget. Tiga konsekuensi yang MENGIKAT AC (a):
+- **`reject` dari status Funded SAH untuk evaluator** (source `:563-575`, `emit JobRejected` `:592`: Funded ATAU
+  Submitted, `evaluator != 0` → HANYA evaluator). Gerbang cap saat Funded memang mungkin; tidak perlu menunggu Submitted.
+- **`rejector` (topic 2) = alamat VAULT `0x5c6EE4586ACABcb6326069c229E58091B21ef384`, BUKAN EOA agent.** Bukti AC (a) yang
+  mencari alamat agent akan gagal palsu.
+- `JobRejected` selalu diemit; `Refunded` hanya bila `budget > 0` (§A) — jangan jadikan `Refunded` penanda.
+
+### G.3 JEBAKAN `cast logs` 1.7.1: filter argumen indexed DIABAIKAN DIAM-DIAM saat memakai signature
+Diuji 2026-09-06 pada rentang 45750000-45759999 yang memuat TEPAT SATU `JobRejected` (job 367):
+```
+cast logs --address <ACP> "JobRejected(uint256,address,bytes32)" 367      → log job 367 keluar
+cast logs --address <ACP> "JobRejected(uint256,address,bytes32)" 999999   → log job 367 TETAP keluar  (!!)
+cast logs --address <ACP> "JobRejected(uint256,address,bytes32)" 367 <alamat rejector SALAH> → TETAP keluar (!!)
+```
+Bentuk hex 32-byte juga diabaikan. Jadi **argumen sesudah signature TIDAK memfilter apa pun**; perintah "berfilter jobId"
+memberi LULUS PALSU untuk sembarang reject di rentang itu. Yang benar-benar memfilter hanyalah bentuk TOPIC MENTAH:
+```
+cast logs --address <ACP> 0xae7362b1af91f4492868987b9c73990d780060811551b58728fbe96fd1bab275 \
+  0x<jobId di-pad 32 byte> --from-block <N-9999> --to-block <N> --rpc-url https://sepolia.base.org
+```
+kontrol: jobId salah (`0x…0f423f`) → keluaran KOSONG; jobId benar → 1 log. (`cast --to-uint256 <jobId>` untuk padding.)
+**Bahaya kedua: keluaran KOSONG + exit 0 adalah hasil yang SAMA untuk "tidak ada event" dan untuk "signature salah"** —
+persis kegagalan `JobCompleted(uint256,bytes32)` di 1.3d. Perintah AC (a) apa adanya (tanpa filter jobId) BEKERJA dan
+mengembalikan semua `JobRejected` di rentang; ia sah HANYA bila keluarannya dicocokkan sendiri ke `topic1 == jobId C`
+dan `topic2 == VAULT`. Rentang tetap tunduk batas §E: `toBlock - fromBlock <= 10000` (`N-9999`..`N` = 9999, aman).
+
+### G.4 Sisi vault (AC (b) & (d)) — dibaca dari bytecode TERDEPLOY `0x5c6E…f384`, 2026-09-06
+```
+providerCap(address)(uint256)  selector 0x99893d92   → 1 kecocokan di `cast code`; `cast call <VAULT>
+  "providerCap(address)(uint256)" <provider> --rpc-url https://sepolia.base.org` → 0 (belum ada cap). Signature AC (b) BENAR.
+MemoryRootUpdated(bytes32 indexed memoryRoot, uint256 indexed jobId)
+  topic0 0xc6028d32061c1f0b8f4f1370b6f1ab5105a96bfc6631a3840371ebbcb27c7923  (ada di bytecode terdeploy)
+VerdictPosted(uint256 indexed jobId, uint8 kind, bytes32 reasonHash, bytes32 memoryRoot, uint64 readyAt)
+  topic0 0x6744a0f4fac82e60e8b7fdcca821ce8a15f365465f8c2ad497249e023511eb7e
+```
+**KEDUA argumen `MemoryRootUpdated` indexed → `data` kosong (`0x`)**; `memoryRoot` = topic 1, `jobId` = topic 2. Dikonfirmasi
+pada log nyata blok 46355036 & 46355080 (`cast logs --address <VAULT> "MemoryRootUpdated(bytes32,uint256)" --from-block
+46350000 --to-block 46359999`): `data: 0x`. Skrip AC (d) yang men-decode `memoryRoot` dari `data` akan mendapat kosong.
+Sumber Solidity = commit **8d3e596** (revisi yang benar-benar dideploy, `deployments/84532.json`), bukan HEAD:
+`git show 8d3e596:contracts/src/EvaluatorVault.sol` baris 130/140/248. Selector `sweepToken` `0x258836fe` milik HEAD
+**0 kecocokan** di bytecode terdeploy — jangan pakai fungsi itu di AC.
