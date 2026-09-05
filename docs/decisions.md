@@ -404,3 +404,50 @@ Konsekuensi:
 (-) 2.1b dan 2.4b diblokir sampai 2.1r (encoding kanonik) hijau. Urutannya tidak boleh dibalik.
 (-) Spec §3 baris 113 (rumus `derive_cap`) dan baris 123 (definisi root) berubah; pembaruannya masuk AC
     task 0.8b. Baris 123 WAJIB menyebut ketiga prefiks dan kata "termasuk pattern yatim".
+
+## ADR-021 Plafon pertumbuhan cap per job, dan penolakan budget saat client == provider
+Tanggal: 2026-09-05. Status: diterima. Memperketat ADR-020 keputusan 1-3 (tidak membalikkannya).
+Pemicu: review ulang @agent-security-reviewer atas task 2.1 sesudah ADR-020 mendarat.
+
+Konteks: ADR-020 keputusan 1 melarang budget yang dikendalikan provider masuk rumus cap, tetapi
+`passed_budgets` — satu-satunya sumber median yang tersisa — MASIH dikendalikan provider. Sebabnya
+struktural, bukan bug: tidak ada apa pun di ERC-8183/ACP yang mengikat client != provider secara
+ekonomis (yang ada hanya `ClientIsProvider()` yang melarang ALAMAT yang sama, api-facts §A:276-279),
+dan token escrow Base Sepolia punya `mint()` tanpa kontrol akses (ADR-017, dibuktikan 0.4b-min).
+Reviewer menjalankan rantainya: provider mendanai jobnya sendiri lewat EOA kedua sebesar 100 USDC
+dengan deliverable sepele yang LOLOS empat cek deterministik; risk masih 0 sehingga tidak ada cap
+tersimpan dan monoton ADR-020 keputusan 4 tidak punya jangkar; sesudah insiden pertama pada client
+SUNGGUHAN, risk 1 memberi cap = median-passed = 100.000.000, dan job 20 USDC LOLOS padahal cap yang
+benar 1.000.000. Ini kegagalan §7 langkah 3 yang SAMA dengan ADR-020, lewat pintu berbeda.
+
+Keputusan:
+1. PLAFON PERTUMBUHAN: kontribusi tiap job LOLOS ke perhitungan median dibatasi
+   `min(budget, BASELINE_CAP_USDC)`. Konsekuensinya matematis dan disengaja — cap turunan riwayat
+   TIDAK PERNAH melampaui `BASELINE_CAP_USDC` (1 USDC), dan untuk risk >= 2 tidak pernah melampaui
+   250.000. Riwayat baik tidak bisa MENAIKKAN cap; ia hanya bisa gagal menurunkannya.
+2. `record_job_outcome` menerima `client` sebagai ARGUMEN dan MENOLAK merekam budget bila
+   `client == provider` (kesamaan alamat PERSIS, case-insensitive/checksum-normalized). Filter ini
+   ada di titik MASUK, bukan di state: tidak ada field baru di body provider, sehingga preimage
+   `memory_root` (ADR-020 keputusan 6-7, task 2.1r) TIDAK berubah dan tidak perlu diputar ulang.
+   Job seperti itu tetap menaikkan `stats.jobs`; hanya budgetnya yang dibuang.
+3. Definisi "sekerabat" BERHENTI di kesamaan alamat persis. Analisis Sybil (alamat yang saling
+   mendanai gas, umur wallet, pendanaan bersama) DITOLAK sebagai scope creep: ACP sudah memaksa
+   penyerang memakai EOA kedua (`ClientIsProvider()`), jadi deteksi EOA kedua adalah masalah Sybil
+   terbuka yang tidak akan selesai sebelum 10 Sep. Kita memagarinya dengan keputusan 1, bukan
+   berpura-pura menyelesaikannya.
+4. Cap BUKAN pertahanan tunggal terhadap provider curang; ia hanya membatasi UKURAN kerugian per job.
+   Pertahanan terhadap deliverable curang tetap cek deterministik (task 2.3) dan mode aman (2.4a).
+   Kalimat ini WAJIB ada di README agar tidak ada yang mengira cap adalah deteksi.
+
+Konsekuensi:
+(+) Rantai eksploit reviewer mati di dua tempat sekaligus, dan keduanya diuji dengan angka.
+(+) Sifat sistem menjadi satu arah dan bisa diucapkan dalam satu kalimat: memori hanya bisa
+    MENGECILKAN cap, tidak pernah membesarkannya. Klaim itu tidak bisa dipatahkan dengan `cast`.
+(+) Nol perubahan pada encoding root; 2.1r dan 2.1b tidak terganggu; mendarat hari ini.
+(-) "Provider membangun kepercayaan lewat riwayat baik" DILARANG diklaim di README, video, dan post.
+    Yang boleh diklaim: kalibrasi memori mengetatkan cap dan memperdalam cek, tidak pernah melonggarkan.
+(-) Provider jujur berbudget besar akan terkena cap 1 USDC begitu ia menyentuh risk >= 1. Diterima
+    sadar: pemulihan reputasi dan cap yang tumbuh adalah v2 (sejalan ADR-020 konsekuensi ke-2).
+(-) Median-passed kini hampir selalu tersaturasi di plafon, sehingga cap praktis berperilaku seperti
+    konstanta berjenjang risiko. Itu tidak apa-apa untuk hackathon dan HARUS ditulis apa adanya —
+    jangan sajikan sebagai statistik yang seolah belajar.
