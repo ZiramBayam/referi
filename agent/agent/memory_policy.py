@@ -160,6 +160,11 @@ ADDRESS_RE: Final = re.compile(r"^0x[0-9a-f]{40}\Z")
 PATTERN_ID_RE: Final = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}\Z")
 MAX_PROOF_LEN: Final = 512
 MAX_UINT256: Final = 2**256 - 1
+# Jumlah digit maksimum satu integer di preimage: uint256 = 78 digit. Batas ini WAJIB
+# eksplisit, bukan diserahkan ke `int()`: CPython >= 3.11 melempar `ValueError` sendiri di
+# 4300 digit (`sys.int_max_str_digits`), sedangkan pembaca lain (JS) hanya mencocokkan regex
+# dan tetap menghitung — satu file, satu sisi mati, sisi lain mencetak root.
+MAX_DECIMAL_DIGITS: Final = 78
 
 
 class MemoryPolicyError(RuntimeError):
@@ -235,6 +240,52 @@ SECTION_PROVIDER: Final = "provider"
 SECTION_PATTERN: Final = "reference:pattern"
 SECTION_RUBRIC: Final = "reference:rubric"
 
+# Field top-level yang SAH di file ekspor. Apa pun di luar ini ditolak (lihat `from_export_obj`).
+EXPORT_FIELDS: Final = frozenset({"version", "providers", "patterns", "rubrics"})
+
+
+def _wellformed_text(text: str) -> str:
+    """String yang BISA di-encode UTF-8. Surrogate yatim ditolak, tidak diperbaiki diam-diam.
+
+    Ditegakkan untuk SETIAP string yang masuk preimage — kunci seksi maupun nilai di dalam
+    body. Alasannya paritas, bukan estetika: Python melempar saat encode, Node menukar
+    surrogate yatim dengan U+FFFD dan terus menghitung. Selama salah satu sisi "memperbaiki"
+    masukan rusak, dua alat audit bisa menjawab berbeda atas file yang sama.
+    """
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise MemoryIntegrityError(
+            f"string preimage bukan UTF-8 well-formed (surrogate yatim): {text!r}"
+        ) from exc
+    return text
+
+
+def _checked_decimal(text: str) -> str:
+    """Batas PANJANG desimal, ditegakkan di jalur tulis MAUPUN baca preimage.
+
+    Dua hal sekaligus. (a) Paritas: tanpa batas eksplisit, `{"$u": "1" + "0"*5000}` membuat
+    Python melempar `ValueError` dari `int()` (batas 4300 digit CPython) sementara pembaca JS
+    yang hanya mencocokkan regex MENCETAK root — persis "satu file, dua perilaku" yang tidak
+    boleh ada di alat audit. (b) Isi memori ini uint256 (budget, cap, root): 78 digit sudah
+    mencakup seluruh rentangnya, jadi angka di luar itu bukan data kita.
+    """
+    digits = len(text) - 1 if text.startswith("-") else len(text)
+    if digits > MAX_DECIMAL_DIGITS:
+        # Dicek dari PANJANG dulu, sebelum `int()`: pada 5000 digit `int()` sendiri yang
+        # melempar (`sys.int_max_str_digits`), dan pesannya menjadi detail CPython — bukan
+        # aturan encoding yang bisa ditiru implementasi lain.
+        raise MemoryIntegrityError(
+            f"integer {digits} digit melewati batas {MAX_DECIMAL_DIGITS} (uint256) — "
+            "encoding ini menolaknya di kedua bahasa, bukan mati di salah satu"
+        )
+    if abs(int(text)) > MAX_UINT256:
+        raise MemoryIntegrityError(
+            f"integer {text} di luar rentang uint256 (78 digit tidak cukup sebagai batas: "
+            "2**256 juga 78 digit)"
+        )
+    return text
+
 
 def _canonical_value(value: Any, depth: int = 0) -> Any:
     """Bentuk kanonik lintas-bahasa: tanpa bilangan JSON, tanpa float, kunci ASCII."""
@@ -243,13 +294,13 @@ def _canonical_value(value: Any, depth: int = 0) -> Any:
     if value is None or isinstance(value, bool):
         return value
     if isinstance(value, int):
-        return {NUMBER_TAG: str(value)}
+        return {NUMBER_TAG: _checked_decimal(str(value))}
     if isinstance(value, float):
         raise MemoryIntegrityError(
             "float tidak boleh masuk preimage memory_root (tidak dapat direproduksi lintas bahasa)"
         )
     if isinstance(value, str):
-        return value
+        return _wellformed_text(value)
     if isinstance(value, Mapping):
         out: dict[str, Any] = {}
         for key, item in value.items():
@@ -267,7 +318,12 @@ def _canonical_value(value: Any, depth: int = 0) -> Any:
     raise MemoryIntegrityError(f"tipe {type(value).__name__} tidak dapat dikanonikkan")
 
 
-_DECIMAL_RE: Final = re.compile(r"^-?(0|[1-9][0-9]*)\Z")
+# Bentuk desimal KANONIK, satu bentuk per angka. `-?` di depan `0` sengaja TIDAK dipakai:
+# `-0` lolos regex lama, `int("-0") == 0`, lalu ter-encode ULANG menjadi `{"$u":"0"}` —
+# sedangkan pembaca yang mengambil string apa adanya (skrip Node) menghash `"-0"`. Satu file,
+# dua root, dua-duanya "berhasil". Itu membatalkan kalimat "tidak pernah dua angka dari satu
+# file", jadi bentuk non-kanonik (`-0`, `007`, `+1`, spasi) DITOLAK di kedua sisi.
+_DECIMAL_RE: Final = re.compile(r"^(0|-?[1-9][0-9]*)\Z")
 
 
 def decanonical_value(value: Any, depth: int = 0) -> Any:
@@ -283,8 +339,19 @@ def decanonical_value(value: Any, depth: int = 0) -> Any:
         if set(value) == {NUMBER_TAG}:
             text = value[NUMBER_TAG]
             if not isinstance(text, str) or not _DECIMAL_RE.match(text):
-                raise MemoryIntegrityError(f"penanda integer {value!r} bukan desimal yang sah")
-            return int(text)
+                raise MemoryIntegrityError(
+                    f"penanda integer {value!r} bukan desimal KANONIK (satu bentuk per angka: "
+                    "tanpa -0, tanpa nol di depan, tanpa tanda +)"
+                )
+            return int(_checked_decimal(text))
+        if NUMBER_TAG in value:
+            # `{"$u": …, "lain": …}`: `_canonical_value` melarang `$u` sebagai kunci body,
+            # jadi bentuk ini tidak pernah bisa dihasilkan eksportir. Python akan menolaknya
+            # nanti saat menghash; pembaca yang menghash objek apa adanya TIDAK. Ditolak di
+            # sini supaya kedua sisi berhenti di titik yang sama.
+            raise MemoryIntegrityError(
+                f"kunci {NUMBER_TAG!r} hanya sah sebagai penanda integer tunggal, dapat {value!r}"
+            )
         return {k: decanonical_value(v, depth + 1) for k, v in value.items()}
     if isinstance(value, list):
         return [decanonical_value(v, depth + 1) for v in value]
@@ -315,7 +382,12 @@ def _frame(text: str) -> bytes:
     bisa disimpan sebagai kunci reference (api-facts §C.1) — tetap bisa direkonstruksi di JS
     lewat `Buffer.byteLength`.
     """
-    raw = text.encode("utf-8")
+    # Surrogate YATIM (`\ud800`) ditolak DI SINI, bukan diserahkan ke perilaku encoder:
+    # Python melempar, sedangkan `Buffer.from(s,"utf8")` di Node menukarnya dengan `EF BF BD`
+    # (U+FFFD) DIAM-DIAM dan tetap menghitung, sehingga tiga kunci berbeda (`\ud800`,
+    # `\udfff`, `\ufffd` yang SAH) runtuh menjadi SATU root di sisi Node — persis yang
+    # dijanjikan mustahil oleh bingkai panjang-berprefiks. Kedua sisi kini MENOLAK.
+    raw = _wellformed_text(text).encode("utf-8")
     return str(len(raw)).encode("ascii") + b":" + raw + b","
 
 
@@ -329,7 +401,10 @@ def _frame_section(tag: str, mapping: Mapping[str, Any]) -> bytes:
     Jumlah entri ikut di-hash supaya seksi kosong dan seksi hilang tidak pernah sama.
     """
     parts = [_frame(tag), _frame(str(len(mapping)))]
-    for key in sorted(mapping, key=lambda k: k.encode("utf-8")):
+    # `_wellformed_text` dipanggil DI KUNCI SORT: pengurutan sendiri sudah meng-encode UTF-8,
+    # jadi tanpa ini surrogate yatim keluar sebagai `UnicodeEncodeError` mentah sebelum
+    # `_frame` sempat menolaknya dengan pesan yang benar.
+    for key in sorted(mapping, key=lambda k: _wellformed_text(k).encode("utf-8")):
         parts.append(_frame(key))
         parts.append(_frame(canonical_json(mapping[key])))
     return b"".join(parts)
@@ -337,7 +412,10 @@ def _frame_section(tag: str, mapping: Mapping[str, Any]) -> bytes:
 
 def _sorted_pairs(mapping: Mapping[str, Any]) -> list[list[Any]]:
     """Pasangan (kunci, isi) terurut menurut BYTE kuncinya — bukan menurut locale."""
-    return [[key, mapping[key]] for key in sorted(mapping, key=lambda k: k.encode("utf-8"))]
+    return [
+        [key, mapping[key]]
+        for key in sorted(mapping, key=lambda k: _wellformed_text(k).encode("utf-8"))
+    ]
 
 
 def _keccak(data: bytes) -> bytes:
@@ -586,6 +664,30 @@ class GateDecision:
     depth: str
 
 
+def _checked_reference_keys(
+    mapping: Mapping[str, Any], prefix: str, label: str
+) -> dict[str, Any]:
+    """Kunci reference WAJIB memakai awalan seksinya — di KEDUA jalur (DB dan ekspor).
+
+    Alasannya sama dengan tuntutan kanonisitas nama provider: seksi `patterns` dijangkar
+    root sebagai `reference:pattern`, tetapi `DecisionMemoryView` hanya bisa membaca kunci
+    berawalan `pattern:` (jalur bacanya `raw_references(REFERENCE_PATTERN_PREFIX)`). Entri
+    berkunci `bukan-pattern-prefix` karena itu dijangkar tetapi TIDAK PERNAH dibaca — bukti
+    palsu. Di jalur DB syarat ini otomatis terpenuhi (kunci datang dari enumerasi berawalan);
+    yang benar-benar ditutup di sini adalah jalur EKSPOR, yang sebelumnya menerimanya.
+    """
+    out: dict[str, Any] = {}
+    for key, body in mapping.items():
+        text = str(key)
+        if not text.startswith(prefix):
+            raise MemoryIntegrityError(
+                f"kunci reference {text!r} di seksi {label!r} tidak berawalan {prefix!r} — "
+                "ia akan dijangkar root tetapi TIDAK PERNAH dibaca jalur keputusan"
+            )
+        out[text] = body
+    return out
+
+
 @dataclass(frozen=True)
 class MemorySnapshot:
     """Potongan memori yang menjadi PREIMAGE `memory_root` (spec §3 baris 123).
@@ -645,8 +747,8 @@ class MemorySnapshot:
             checked[kanonik] = body
         return cls(
             providers=checked,
-            patterns={str(k): v for k, v in patterns.items()},
-            rubrics={str(k): v for k, v in (rubrics or {}).items()},
+            patterns=_checked_reference_keys(patterns, REFERENCE_PATTERN_PREFIX, "patterns"),
+            rubrics=_checked_reference_keys(rubrics or {}, REFERENCE_RUBRIC_PREFIX, "rubrics"),
         )
 
     def to_canonical_obj(self) -> dict[str, Any]:
@@ -671,14 +773,46 @@ class MemorySnapshot:
             raise MemoryIntegrityError(
                 f"ekspor memakai encoding {version!r}, modul ini {MEMORY_ROOT_ENCODING_VERSION!r}"
             )
+        asing = set(obj) - EXPORT_FIELDS
+        if asing:
+            # Field top-level asing TIDAK ikut ter-hash. Ekspor yang memuatnya bisa
+            # menampilkan satu cerita ke manusia sementara rootnya mengikat cerita lain.
+            raise MemoryIntegrityError(
+                f"ekspor memuat field top-level yang tidak dijangkar root: {sorted(asing)}"
+            )
+
         def pairs(name: str) -> dict[str, Any]:
+            rows = obj.get(name, [])
+            if not isinstance(rows, list):
+                raise MemoryIntegrityError(
+                    f"seksi {name!r} harus array, dapat {type(rows).__name__}"
+                )
             out: dict[str, Any] = {}
-            for key, body in obj.get(name, []):
+            for item in rows:
+                # PERSIS dua elemen. Elemen ketiga yang diabaikan diam-diam adalah tempat
+                # sempurna menyembunyikan "profil yang ditampilkan ke manusia" di samping
+                # body yang ter-hash.
+                if not isinstance(item, (list, tuple)) or len(item) != 2:
+                    raise MemoryIntegrityError(
+                        f"entri seksi {name!r} harus pasangan [kunci, body], dapat {item!r}"
+                    )
+                key, body = item
+                if not isinstance(key, str):
+                    raise MemoryIntegrityError(
+                        f"kunci seksi {name!r} harus string, dapat {type(key).__name__}"
+                    )
                 if key in out:
                     raise MemoryIntegrityError(f"kunci {key!r} muncul dua kali di seksi {name!r}")
-                out[str(key)] = decanonical_value(body)
+                out[key] = decanonical_value(body)
             return out
-        return cls(providers=pairs("providers"), patterns=pairs("patterns"), rubrics=pairs("rubrics"))
+
+        # Validasi lewat `from_mapping` yang SAMA, bukan salinan yang lebih longgar.
+        # Sebelum task 2.1b jalur ini tidak memvalidasi apa pun: alat audit JS/Python
+        # MENERIMA ekspor bernama `hello-i-am-not-an-address` dan berkunci
+        # `bukan-pattern-prefix` — ekspor yang agen sendiri TOLAK — lalu mencetak root
+        # untuknya. Root yang bisa dihitung untuk memori yang tidak akan pernah dibaca
+        # agen adalah bukti palsu, persis kelas kegagalan yang ditutup ADR-020 keputusan 7.
+        return cls.from_mapping(pairs("providers"), pairs("patterns"), pairs("rubrics"))
 
     def preimage(self) -> bytes:
         """PREIMAGE BEKU (ADR-020 keputusan 6). Urutan seksi bagian dari encoding.

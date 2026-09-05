@@ -592,15 +592,37 @@ def test_root_anchorsExactlyWhatTheDecisionPathReads(client):
         _seed_provider(client, addr(i), risk_level=i % 3)
     snapshot = mp.load_snapshot(client)
     view = mp.DecisionMemoryView(client)
-    assert set(snapshot.providers) == {p.address for p in view.list_providers()}
-    # Dan tabrakan setelah normalisasi kini MUSTAHIL secara konstruksi: dua nama kanonik
-    # yang menormalkan ke alamat sama adalah nama yang sama.
-    assert all(nama == mp.normalize_address(nama) for nama in snapshot.providers)
+    # Dibandingkan terhadap NAMA MENTAH dari DB, SEBELUM normalisasi. Versi lama tes ini
+    # membandingkan `snapshot.providers` dengan hasil `normalize_address` atas dirinya
+    # sendiri — tautologi: nama yang lolos `from_mapping` sudah kanonik menurut definisi,
+    # jadi assert itu tidak bisa merah. Yang bisa merah adalah ini: nama yang BENAR-BENAR
+    # tersimpan di DB harus sama persis dengan nama yang dibaca jalur keputusan.
+    nama_mentah = {nama for nama, _ in view.raw_providers()}
+    assert set(snapshot.providers) == nama_mentah
+    assert nama_mentah == {p.address for p in view.list_providers()}
 
 
 def test_snapshot_refuses_provider_name_that_is_not_an_address():
     with pytest.raises(ValueError):
         mp.MemorySnapshot.from_mapping({"bukan-alamat": {}}, {})
+
+
+def test_raw_provider_name_that_is_not_canonical_makes_the_anchor_test_red(client):
+    """Sisi MUTASI dari tes di atas: DB yang memuat nama tidak kanonik TERLIHAT.
+
+    Tanpa tes ini, "nama mentah == nama yang dibaca" bisa saja benar hanya karena tidak
+    ada yang pernah menulis nama aneh. Di sini nama aneh ditulis langsung ke DB (persis
+    yang bisa dilakukan pemilik `memory.db`), dan dua hal WAJIB terjadi: nama mentahnya
+    berbeda dari nama yang dibaca jalur keputusan, dan `load_snapshot` MENOLAK.
+    """
+    aneh = "  0X" + "5A" * 20 + "  "
+    client.set_entity(mp.CATEGORY_PROVIDER, aneh, {"risk_level": 2})
+    view = mp.DecisionMemoryView(client)
+    nama_mentah = {nama for nama, _ in view.raw_providers()}
+    assert nama_mentah == {aneh}
+    assert nama_mentah != {p.address for p in view.list_providers()}
+    with pytest.raises(mp.MemoryIntegrityError):
+        mp.load_snapshot(client)
 
 
 def test_preimage_has_no_json_numbers_so_javascript_can_rebuild_it():
@@ -1543,16 +1565,19 @@ def test_length_prefixed_framing_cannot_be_collided():
     Tanpa bingkai, `("0xaa…", "b:c")` dan `("0xaa…:b", "c")` bisa menghasilkan byte yang
     sama. Di sini keduanya berbeda, dan seksi kosong != seksi berisi entri kosong.
     """
-    a = mp.MemorySnapshot.from_mapping({}, {"p": "a", "pa": ""}, {})
-    b = mp.MemorySnapshot.from_mapping({}, {"p": "", "pa": "a"}, {})
+    a = mp.MemorySnapshot.from_mapping({}, {"pattern:p": "a", "pattern:pa": ""}, {})
+    b = mp.MemorySnapshot.from_mapping({}, {"pattern:p": "", "pattern:pa": "a"}, {})
     assert a.preimage() != b.preimage()
 
     kosong = mp.MemorySnapshot.from_mapping({}, {}, {})
-    satu = mp.MemorySnapshot.from_mapping({}, {"": ""}, {})
+    satu = mp.MemorySnapshot.from_mapping({}, {"pattern:": ""}, {})
     assert kosong.preimage() != satu.preimage()
-    # Isi seksi tidak bisa berpindah seksi tanpa terlihat.
-    pola = mp.MemorySnapshot.from_mapping({}, {"x": "1"}, {})
-    rubrik = mp.MemorySnapshot.from_mapping({}, {}, {"x": "1"})
+    # Isi seksi tidak bisa berpindah seksi tanpa terlihat. Dibangun lewat konstruktor
+    # langsung, bukan `from_mapping`: sejak 2.1b kunci wajib berawalan seksinya, sehingga
+    # kunci yang IDENTIK di dua seksi sudah mustahil dibuat lewat jalur bervalidasi —
+    # yang diuji di sini murni bingkai label seksinya.
+    pola = mp.MemorySnapshot(patterns={"x": "1"})
+    rubrik = mp.MemorySnapshot(rubrics={"x": "1"})
     assert pola.preimage() != rubrik.preimage()
 
 
@@ -1704,15 +1729,20 @@ def _root_gate_violations(source: str) -> list[str]:
 
     tree = ast.parse(source)
     terlarang = {"memory_root", "memory_root_hex", "load_snapshot"}
-    alias: set[str] = set()
+    # nama LOKAL -> nama ASLI yang diimpor. Yang dilaporkan adalah nama ASLI: kelonggaran
+    # `SNAPSHOT_ALLOWED` mengunci APA yang dipakai, bukan APA namanya di file itu. Tanpa ini,
+    # `from agent.memory_policy import memory_root as load_snapshot` melapor sebagai
+    # `load_snapshot@N`, tersaring habis oleh kelonggaran, dan gerbang root tertembus lewat
+    # pintu yang justru dibuka untuk snapshot.
+    alias: dict[str, str] = {}
     modul: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and (node.module or "").endswith("memory_policy"):
             for a in node.names:
                 if a.name == "*":
-                    alias |= terlarang
+                    alias.update({n: n for n in terlarang})
                 elif a.name in terlarang:
-                    alias.add(a.asname or a.name)
+                    alias[a.asname or a.name] = a.name
         elif isinstance(node, ast.ImportFrom):
             for a in node.names:
                 if a.name == "memory_policy":
@@ -1725,7 +1755,7 @@ def _root_gate_violations(source: str) -> list[str]:
     pelanggaran: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and node.id in alias:
-            pelanggaran.append(f"{node.id}@{node.lineno}")
+            pelanggaran.append(f"{alias[node.id]}@{node.lineno}")
         elif isinstance(node, ast.Attribute) and node.attr in terlarang:
             induk = dotted(node.value)
             if induk in modul or induk.endswith("memory_policy"):
@@ -1734,6 +1764,22 @@ def _root_gate_violations(source: str) -> list[str]:
             # `getattr(mp, "memory_root")` tidak punya simpul Attribute sama sekali.
             pelanggaran.append(f"str:{node.value}@{node.lineno}")
     return pelanggaran
+
+
+@pytest.mark.parametrize(
+    "sumber",
+    [
+        "import agent.memory_policy as load_snapshot\nload_snapshot.memory_root(c)\n",
+        # Nama LOKAL `load_snapshot`, target impor `memory_root`/`memory_root_hex`: inilah
+        # yang menembus filter berbasis nama lokal.
+        "from agent.memory_policy import memory_root as load_snapshot\nload_snapshot(c)\n",
+        "from agent.memory_policy import memory_root_hex as load_snapshot\nload_snapshot(c)\n",
+    ],
+)
+def test_snapshot_allowance_cannot_be_used_to_smuggle_a_root(sumber):
+    """Kelonggaran `load_snapshot` mengunci APA yang dipakai, bukan namanya di file."""
+    temuan = _root_gate_violations(sumber)
+    assert temuan and all(t.split("@")[0] != "load_snapshot" for t in temuan), temuan
 
 
 def test_root_gate_scanner_catches_the_two_bypasses_the_reviewer_found():
@@ -1754,6 +1800,13 @@ def test_root_gate_scanner_catches_the_two_bypasses_the_reviewer_found():
     )
 
 
+# Satu-satunya modul yang boleh memanggil `load_snapshot` langsung: alat ekspor (task 2.1b).
+# Ia WAJIB memegang objek `MemorySnapshot` yang sama untuk file DAN untuk root — membaca DB
+# dua kali berarti root mengikat state yang tidak pernah ada (Sibyl 0.7.0 tanpa transaksi,
+# api-facts §C). Gerbang ROOT tetap berlaku penuh untuknya; lihat tes tepat di bawah.
+SNAPSHOT_ALLOWED = {"memory_export.py"}
+
+
 def test_only_memory_root_for_onchain_may_reach_a_memory_derived_root():
     """ADR-020 keputusan 6: modul agen lain WAJIB lewat gerbang, bukan `memory_root` langsung.
 
@@ -1767,7 +1820,28 @@ def test_only_memory_root_for_onchain_may_reach_a_memory_derived_root():
     for berkas in sorted(paket.glob("*.py")):
         if berkas.name == "memory_policy.py":
             continue
-        temuan = _root_gate_violations(berkas.read_text(encoding="utf-8"))
+        temuan = [
+            t
+            for t in _root_gate_violations(berkas.read_text(encoding="utf-8"))
+            # Nama PERSIS, bukan substring: `import agent.memory_policy as load_snapshot`
+            # lalu `load_snapshot.memory_root(c)` menghasilkan temuan `load_snapshot.memory_root@N`
+            # yang akan tersaring oleh pencocokan substring — gerbang root ditembus lewat
+            # kelonggaran yang justru dibuat untuk snapshot.
+            if not (t.split("@")[0] == "load_snapshot" and berkas.name in SNAPSHOT_ALLOWED)
+        ]
         if temuan:
             pelanggar[berkas.name] = temuan
     assert pelanggar == {}, f"modul memakai root tanpa lewat gerbang: {pelanggar}"
+
+
+def test_export_module_still_goes_through_the_root_gate():
+    """Kelonggaran `SNAPSHOT_ALLOWED` hanya untuk `load_snapshot`, TIDAK untuk root.
+
+    Alat ekspor (2.1b) WAJIB memegang objek snapshot mentah — file dan root harus lahir dari
+    SATU pembacaan DB — tetapi ia tetap tidak boleh menghitung root di luar gerbang.
+    """
+    berkas = pathlib.Path(mp.__file__).parent / "memory_export.py"
+    sumber = berkas.read_text(encoding="utf-8")
+    temuan = _root_gate_violations(sumber)
+    assert temuan and all("load_snapshot" in t for t in temuan), temuan
+    assert "memory_root_for_onchain" in sumber
