@@ -4,6 +4,27 @@ Lingkup: `post_verdict()` + `finalize()` + `set_provider_cap()` lewat web3.py, p
 pra-baca status job di ACP, dan — sejak task 2.4a, dikoreksi 2.4a-fix — GERBANG MODE AMAN
 yang menahan ketiganya.
 
+JALUR `--job-id` (task 2.4-min, ADR-022 keputusan 2-3). Watcher (task 2.2) DITURUNKAN dari
+jalur kritis: agen tidak lagi mem-polling event, ia DIPANGGIL PER JOB. Karena itu dua hal
+yang dulu milik watcher pindah ke sini, dan keduanya WAJIB, bukan hiasan:
+
+  1. `getJob(jobId)` (getter mapping `jobs(uint256)`, api-facts §A) dibaca SEKALI di awal.
+     Job yang `evaluator != VAULT` DITOLAK: kita bukan evaluatornya, jadi `complete`/
+     `reject` kita pasti ditolak ACP dan verdict apa pun atasnya hanya sampah on-chain.
+     Penolakannya bersih — exit 0, NOL transaksi, nonce tidak bergerak.
+  2. `client` job diambil dari struct yang sama dan diteruskan ke
+     `memory_policy.record_job_outcome(client_address=…)`. Tanpa itu ADR-021 keputusan 2
+     (budget job yang didanai provider SENDIRI dibuang dari perhitungan cap) mati diam-diam:
+     `client` TIDAK indexed di `JobFunded`, jadi tidak ada sumber lain yang murah.
+
+PENOLAKAN DELIVERABLE (ADR-019 keputusan 2, utang task 2.3-min). `criteria.evaluate_job()`
+MELEMPAR `DeliverableUnverifiedError` bila teks lokal tidak bisa dibuktikan sebagai preimage
+hash on-chain. Penanganannya SEKELAS mode aman: pemanggil menangkapnya, memasang KUNCI
+sekali-jalan lewat `VaultClient.refuse()`, dan sejak itu `_send()` menolak SETIAP transaksi —
+nol `postVerdict`, nol `finalize`, nol `setProviderCap`. Latch-nya ada supaya jalur baru yang
+lupa memeriksa nilai balik tetap berhenti, persis alasan `SafeModeStop` ditegakkan di `_send()`
+dan bukan di pemanggil.
+
 MODE AMAN (spec §3 aturan 5 sebagaimana dibaca ulang ADR-023 dan DIKOREKSI ADR-024;
 ADR-007 + amandemennya, ADR-011, ADR-020 keputusan 8). Presedensi `decide_mode`, tepat ini:
 
@@ -63,15 +84,27 @@ from sibyl_memory_client import MemoryClient
 from web3 import Web3
 from web3.logs import DISCARD
 
+from agent.checks.chain import Web3ChainFacts
+from agent.checks.source import (
+    DEFAULT_DELIVERABLE_DIR,
+    DELIVERABLE_DIR_ENV,
+    REFUSAL_LINE,
+    DeliverableUnverifiedError,
+)
+from agent.criteria import Evaluation, evaluate_job
 from agent.memory_lock import MemoryLockError
 from agent.memory_policy import (
     MODE_NAIVE,
     MODE_SAFE,
     ZERO_ROOT,
+    DecisionMemoryView,
+    GateDecision,
     LocalMemoryEvidence,
     ModeDecision,
     decide_mode,
+    gate_job,
     local_memory_evidence,
+    record_job_outcome,
 )
 
 log = logging.getLogger("vault_client")
@@ -189,6 +222,47 @@ FINALIZE_GAS_FLOOR = 420_000
 TX_RECEIPT_TIMEOUT_SECONDS = 180
 
 # ----------------------------------------------------------------------
+# Konstanta jalur --job-id (task 2.4-min)
+# ----------------------------------------------------------------------
+
+# Status ACP paling awal yang PUNYA deliverable (api-facts §A: Submitted=2). Di bawah itu
+# provider belum `submit()`, jadi tidak ada hash on-chain untuk diverifikasi dan tidak ada
+# yang bisa dinilai — bukan kegagalan, hanya belum waktunya (spec §5 langkah 2 vs 3).
+STATUS_SUBMITTED = 2
+
+# Jendela `eth_getLogs`. RPC publik Base Sepolia menolak rentang lebar dengan
+# `413 Payload Too Large` — diukur 5 Sep 2026: 9.999 blok OK, 50.000 blok GAGAL. Karena itu
+# pencarian dilakukan MUNDUR per jendela, bukan sekali jalan.
+LOG_WINDOW_BLOCKS = 9_999
+# Sejauh apa mundurnya. 100.000 blok Base Sepolia (~2 detik/blok) ≈ 2,3 hari; cukup untuk
+# job demo yang di-`submit` beberapa menit sebelumnya, dan tetap terbatas supaya jalur ini
+# tidak pernah berubah menjadi pemindaian rantai penuh.
+LOG_LOOKBACK_BLOCKS = 100_000
+
+# Baris keadaan job — SATU-SATUNYA bentuk yang boleh dicetak. `client`/`provider`/`evaluator`
+# ada di dalamnya karena ketiganya adalah bukti AC: client dipakai ADR-021 keputusan 2, dan
+# evaluator adalah dasar penolakan di bawah.
+JOB_LINE_TEMPLATE = (
+    "JOB jobId={job_id} client={client} provider={provider} evaluator={evaluator} "
+    "status={status} ({status_name}) budget={budget} expiredAt={expired_at}"
+)
+
+# Penolakan "job ini bukan milik kita" (ADR-022 keputusan 2 — validasinya off-chain, karena
+# vault v1 yang dibekukan tidak punya pemeriksa on-chain-nya). Bentuknya menyebut KEDUA
+# alamat supaya juri bisa membandingkannya sendiri dengan `cast call <ACP> "getJob(...)"`.
+FOREIGN_JOB_TEMPLATE = (
+    "JOB BUKAN MILIK VAULT INI: jobId={job_id} evaluator={evaluator} != vault={vault}; "
+    "menolak menilai; nol postVerdict/finalize/setProviderCap"
+)
+
+# Baris ringkas hasil keputusan memori atas satu job (spec §5 langkah 2-3). Ia LAPORAN,
+# bukan perintah: pemilihan verdict dan pengiriman `setProviderCap` bukan milik task ini.
+JOB_PLAN_TEMPLATE = (
+    "RENCANA jobId={job_id} mode={mode} depth={depth} cap={cap} gate={gate} ({reason}) "
+    "evaluasi={evaluation}"
+)
+
+# ----------------------------------------------------------------------
 # Fragmen ABI (disalin dari sumber, tidak dikarang)
 # ----------------------------------------------------------------------
 
@@ -211,8 +285,30 @@ ACP_ABI = [
             {"name": "budget", "type": "uint256"},
             {"name": "description", "type": "string"},
         ],
-    }
+    },
+    # docs/api-facts.md §A, daftar event "APA ADANYA dari ABI": hanya `jobId` dan `provider`
+    # yang indexed; `deliverable` ada di `data`. topic0 yang dihasilkan ABI ini WAJIB sama
+    # dengan nilai terverifikasi `0x80c17db7…538e` — dijaga tes, bukan diasumsikan.
+    #
+    # Ini SATU-SATUNYA sumber hash deliverable: struct `Job` TIDAK punya field
+    # `deliverable` (lihat daftar output `jobs` di atas), jadi nilai yang dibandingkan
+    # dengan artefak lokal ADR-019 hanya ada di log ini.
+    {
+        "type": "event",
+        "name": "JobSubmitted",
+        "anonymous": False,
+        "inputs": [
+            {"name": "jobId", "type": "uint256", "indexed": True},
+            {"name": "provider", "type": "address", "indexed": True},
+            {"name": "deliverable", "type": "bytes32", "indexed": False},
+        ],
+    },
 ]
+
+# Nilai terverifikasi docs/api-facts.md §A (`cast sig-event`, 2026-09-03). Dipakai tes untuk
+# membuktikan fragmen ABI di atas menghasilkan topic yang sama — kalau nama/urutan tipe
+# salah ketik, filter log akan diam-diam kosong dan agen menolak setiap deliverable.
+JOB_SUBMITTED_TOPIC0 = "0x80c17db79857f338a6a6df68a6883ecc0ce78e2202fe61ed979733573f40538e"
 
 # contracts/src/EvaluatorVault.sol
 VAULT_ABI = [
@@ -465,6 +561,79 @@ class VerdictState:
     challenger: str
 
 
+@dataclass(frozen=True)
+class JobView:
+    """Struct `Job` ACP apa adanya (api-facts §A) — SATU pembacaan, dipakai bersama.
+
+    Bidangnya diberi nama sesuai ABI, kecuali `client` yang menjadi `client_address`:
+    di modul ini "client" sudah berarti `VaultClient`/`MemoryClient`, dan menamainya sama
+    adalah cara termurah membuat argumen `record_job_outcome(client=…, client_address=…)`
+    tertukar. `evaluator` di sini adalah SATU-SATUNYA dasar pemeriksaan "job ini milik kita".
+    """
+
+    job_id: int
+    client_address: str
+    status: int
+    provider: str
+    expired_at: int
+    evaluator: str
+    hook: str
+    budget: int
+    description: str
+
+    @classmethod
+    def from_tuple(cls, job_id: int, raw) -> JobView:
+        client_address, status, provider, expired_at, evaluator, hook, budget, description = raw
+        return cls(
+            job_id=int(job_id),
+            client_address=str(client_address),
+            status=int(status),
+            provider=str(provider),
+            expired_at=int(expired_at),
+            evaluator=str(evaluator),
+            hook=str(hook),
+            budget=int(budget),
+            description=str(description),
+        )
+
+    def is_for_evaluator(self, vault_address: str) -> bool:
+        """Perbandingan case-insensitive; checksum berbeda TIDAK boleh berarti job lain.
+
+        Job yang tidak dikenal ACP mengembalikan struct NOL (api-facts §A: `getJob` tidak
+        revert), jadi `evaluator` = `0x0…0` dan pemeriksaan ini menolaknya juga — tepat
+        seperti yang diinginkan: jobId salah ketik tidak boleh menghasilkan transaksi.
+        """
+        return self.evaluator.lower() == str(vault_address).lower()
+
+    @property
+    def line(self) -> str:
+        return JOB_LINE_TEMPLATE.format(
+            job_id=self.job_id,
+            client=self.client_address,
+            provider=self.provider,
+            evaluator=self.evaluator,
+            status=self.status,
+            status_name=status_name(self.status),
+            budget=self.budget,
+            expired_at=self.expired_at,
+        )
+
+
+def configured_deliverable_dir() -> Path:
+    """Direktori artefak ADR-019 dari `DELIVERABLE_DIR` (env → `.env` repo → default).
+
+    Nilainya diteruskan ke `criteria.evaluate_job(deliverable_dir=…)` sebagai ARGUMEN.
+    `checks.source.deliverable_dir()` sengaja hanya membaca environment sungguhan supaya
+    modul cek tidak perlu mengimpor `vault_client` (impor melingkar: `vault_client` sendiri
+    memakai `criteria.evaluate_job`), jadi pola `config_value` harus diterapkan DI SINI.
+
+    Path relatif dijangkarkan ke akar repo — alasannya sama dengan `memory_db_path()`:
+    yang menentukan artefak mana yang berlaku adalah konfigurasi, bukan `cd`.
+    """
+    raw = Path(config_value(DELIVERABLE_DIR_ENV, DEFAULT_DELIVERABLE_DIR)).expanduser()
+    return raw if raw.is_absolute() else (repo_root() / raw).resolve()
+
+
 # ----------------------------------------------------------------------
 # Gerbang mode aman (task 2.4a) — spec §3 aturan 5, ADR-007/011/020
 # ----------------------------------------------------------------------
@@ -687,6 +856,21 @@ class VaultClient:
         # "berhenti bersih" dari "berhenti di tengah pipa" — dua keadaan yang akibatnya
         # sangat berbeda bagi client yang dananya masih di escrow.
         self.sent_transactions: list[str] = []
+        # KUNCI SEKALI-JALAN. Sekali diisi, `_send()` menolak setiap transaksi sampai proses
+        # ini mati. Diisi oleh dua penolakan yang bukan verdict: job milik evaluator lain,
+        # dan deliverable yang tidak terverifikasi (ADR-019 keputusan 2). Ia ada karena
+        # alasan yang sama seperti gerbang mode aman ditegakkan di `_send()` dan bukan di
+        # pemanggil: jalur baru yang lupa memeriksa nilai balik tetap harus berhenti.
+        self.refusal: str | None = None
+
+    # -- penolakan sekali-jalan -----------------------------------------
+
+    def refuse(self, reason: str) -> None:
+        """Memasang kunci penolakan. Alasan PERTAMA yang menang — ia yang paling dekat
+        dengan sebabnya; alasan berikutnya hanya akibat."""
+        if self.refusal is None:
+            self.refusal = reason
+            log.error("%s", reason)
 
     # -- gerbang mode aman ----------------------------------------------
 
@@ -731,10 +915,67 @@ class VaultClient:
 
     # -- pembacaan ------------------------------------------------------
 
+    def job(self, job_id: int) -> JobView:
+        """Struct `Job` LENGKAP dari getter mapping `jobs(uint256)` (read-only).
+
+        Dulu jalur ini hanya mengambil `status` dan membuang sisanya; `client` dan
+        `evaluator` yang ikut terbaca gratis justru dua bidang yang menentukan apakah agen
+        boleh bekerja sama sekali (ADR-022 keputusan 2-3).
+        """
+        return JobView.from_tuple(job_id, self.acp.functions.jobs(job_id).call())
+
     def job_status(self, job_id: int) -> int:
-        """Status job di ACP lewat getter mapping `jobs(uint256)` (read-only)."""
-        job = self.acp.functions.jobs(job_id).call()
-        return int(job[1])
+        """Status job di ACP (satu `eth_call` yang sama dengan `job()`)."""
+        return self.job(job_id).status
+
+    def job_deliverable(
+        self,
+        job_id: int,
+        *,
+        lookback_blocks: int = LOG_LOOKBACK_BLOCKS,
+        window_blocks: int = LOG_WINDOW_BLOCKS,
+    ) -> bytes | None:
+        """Hash deliverable on-chain dari log `JobSubmitted(jobId)`. `None` bila tak ketemu.
+
+        Ini BUKAN polling (ADR-005 melarang polling API ACP untuk event, dan ADR-022
+        keputusan 3 mencabut watcher dari jalur kritis): satu pencarian mundur, sekali,
+        atas jobId yang SUDAH kita ketahui. Tidak ada `last_block`, tidak ada loop menunggu.
+
+        Mundur per jendela karena RPC publik menolak rentang lebar (`413 Payload Too Large`
+        pada 50.000 blok, terukur 5 Sep 2026). Log TERBARU yang menang bila provider pernah
+        `submit` lebih dari sekali — pencarian memang berjalan dari blok terbaru ke belakang.
+        """
+        latest = int(self.w3.eth.block_number)
+        floor = max(0, latest - int(lookback_blocks))
+        high = latest
+        while high >= floor:
+            low = max(floor, high - int(window_blocks))
+            events = list(
+                self.acp.events.JobSubmitted().get_logs(
+                    argument_filters={"jobId": int(job_id)}, from_block=low, to_block=high
+                )
+            )
+            if events:
+                terbaru = max(events, key=lambda e: int(e["blockNumber"]))
+                nilai = bytes(terbaru["args"]["deliverable"])
+                log.info(
+                    "JobSubmitted(jobId=%d) di blok %d: deliverable=0x%s",
+                    job_id,
+                    int(terbaru["blockNumber"]),
+                    nilai.hex(),
+                )
+                return nilai
+            if low <= floor:
+                break
+            high = low - 1
+        log.warning(
+            "log JobSubmitted(jobId=%d) tidak ditemukan dalam %d blok terakhir (%d..%d)",
+            job_id,
+            lookback_blocks,
+            floor,
+            latest,
+        )
+        return None
 
     def verdict(self, job_id: int) -> VerdictState:
         kind, reason_hash, memory_root, ready_at, finalized, challenger = self.vault.functions.verdicts(
@@ -756,7 +997,14 @@ class VaultClient:
         # SATU-SATUNYA tempat transaksi dibangun & dikirim, jadi SATU-SATUNYA tempat yang
         # harus menegakkan mode aman. Penjaga ini berjalan SEBELUM `build_transaction`,
         # sebelum `get_transaction_count`, dan sebelum penandatanganan.
-        self._require_memory_gate(getattr(func, "fn_name", "tx"))
+        action = getattr(func, "fn_name", "tx")
+        self._require_memory_gate(action)
+        # Kunci penolakan (task 2.4-min): job milik evaluator lain, atau deliverable yang
+        # tidak terverifikasi (ADR-019 keputusan 2). Diperiksa SESUDAH gerbang memori supaya
+        # agen yang berhenti karena memorinya tetap melaporkan `MODE AMAN` — sebab itulah
+        # yang lebih dalam; keduanya sama-sama nol transaksi.
+        if self.refusal is not None:
+            raise SafeModeStop(f"{action}: {self.refusal}")
         if self.account is None:
             raise RuntimeError(
                 "klien vault dibangun tanpa kunci privat (baca-saja) — tidak ada tx yang bisa dikirim"
@@ -834,6 +1082,170 @@ def build_client(private_key: str | None = None) -> VaultClient:
     log.info("memori=%s (.env=%s)", db_path, env_file_path() or "tidak ada")
     log.info("agen=%s", account.address if account else "(kunci belum dimuat; klien baca-saja)")
     return VaultClient(w3, vault_address, acp_address, account, chain_id, db_path=db_path)
+
+
+# ----------------------------------------------------------------------
+# Jalur --job-id (task 2.4-min) — baca job dari chain, jalankan keputusan memori
+# ----------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class JobPlan:
+    """Hasil keputusan memori atas satu job. LAPORAN, bukan perintah.
+
+    Task 2.4-min sengaja BERHENTI di sini: memilih verdict dari `gate`/`evaluation` adalah
+    task 2.5, dan mengganti `memory_root` konstanta 1.3d dengan root turunan-memori adalah
+    task 2.4b (yang ADR-020 keputusan 6 blokir sampai encoding kanoniknya beku). Yang
+    dijamin task ini hanyalah: bahan keputusan datang dari chain + memori sendiri, dan
+    jalur penolakannya nol transaksi.
+    """
+
+    job: JobView
+    mode: ModeDecision
+    gate: GateDecision
+    evaluation: Evaluation | None
+    deliverable: bytes | None
+
+    @property
+    def line(self) -> str:
+        return JOB_PLAN_TEMPLATE.format(
+            job_id=self.job.job_id,
+            mode=self.mode.mode,
+            depth=self.gate.depth,
+            cap="TANPA CAP" if self.gate.cap.cap_usdc is None else self.gate.cap.cap_usdc,
+            gate="lolos" if self.gate.accept else "DITOLAK",
+            reason=self.gate.reason,
+            evaluation=(
+                "belum ada deliverable"
+                if self.evaluation is None
+                else ("LOLOS" if self.evaluation.passed else f"GAGAL {list(self.evaluation.failed_checks)}")
+            ),
+        )
+
+
+def plan_job(
+    client: VaultClient,
+    job: JobView,
+    *,
+    deliverable_dir: str | os.PathLike[str] | None = None,
+    lookback_blocks: int = LOG_LOOKBACK_BLOCKS,
+) -> JobPlan:
+    """Keputusan memori atas satu job (spec §5 langkah 2-3), TANPA transaksi apa pun.
+
+    Langkah 2 (`gate_job`) selalu dijalankan: ia hanya butuh `provider` + `budget` dari
+    struct job dan memori sendiri. Langkah 3 (cek deterministik) hanya jalan bila job sudah
+    `Submitted` — sebelum itu belum ada hash deliverable on-chain untuk dibandingkan.
+
+    MELEMPAR `DeliverableUnverifiedError` bila job sudah `Submitted` tetapi hash on-chain
+    tidak terbaca atau teks lokal bukan preimage-nya. Pemanggil WAJIB menangkapnya dan
+    memasang `client.refuse()`.
+    """
+    if client.db_path is None:
+        raise SafeModeStop(
+            "klien vault dibangun tanpa path memori — keputusan memori tidak bisa diambil"
+        )
+    gate = client.refresh_memory_gate()
+    memori = MemoryClient.local(str(client.db_path))
+    try:
+        decision = gate_job(
+            DecisionMemoryView(memori), job.provider, int(job.budget), gate.decision
+        )
+    finally:
+        close_memory_client(memori)
+
+    evaluation: Evaluation | None = None
+    onchain: bytes | None = None
+    if job.status >= STATUS_SUBMITTED:
+        onchain = client.job_deliverable(job.job_id, lookback_blocks=lookback_blocks)
+        if onchain is None:
+            raise DeliverableUnverifiedError(
+                f"{REFUSAL_LINE}: log JobSubmitted(jobId={job.job_id}) tidak ditemukan, "
+                "jadi tidak ada hash on-chain untuk membuktikan teks deliverable"
+            )
+        evaluation = evaluate_job(
+            job.job_id,
+            onchain,
+            depth=decision.depth,
+            facts=Web3ChainFacts(client.w3, client.acp.address),
+            description=job.description,
+            deliverable_dir=(
+                configured_deliverable_dir() if deliverable_dir is None else deliverable_dir
+            ),
+        )
+    return JobPlan(job=job, mode=gate.decision, gate=decision, evaluation=evaluation, deliverable=onchain)
+
+
+def record_outcome(client: VaultClient, plan: JobPlan) -> None:
+    """Menulis hasil job ke memori (spec §5 langkah 5) — SESUDAH `postVerdict`, SEBELUM
+    `finalize`.
+
+    `client_address` datang dari `getJob`, bukan dari log: `client` TIDAK indexed di
+    `JobFunded` (api-facts §A). Tanpa argumen itu ADR-021 keputusan 2 mati diam-diam dan
+    provider bisa mendanai jobnya sendiri untuk mengangkat capnya sendiri.
+
+    Yang ditulis HANYA hasil cek deterministik agen (`failed_checks` selalu subset
+    `DETERMINISTIC_CHECK_IDS`) — tidak ada jalur dari teks pihak ke memori (spec §3 aturan 3).
+    """
+    if plan.evaluation is None or client.db_path is None:
+        return
+    memori = MemoryClient.local(str(client.db_path))
+    try:
+        profile = record_job_outcome(
+            memori,
+            plan.job.provider,
+            plan.job.job_id,
+            int(plan.job.budget),
+            plan.evaluation.passed,
+            failed_checks=plan.evaluation.failed_checks,
+            client_address=plan.job.client_address,
+        )
+    finally:
+        close_memory_client(memori)
+    log.info(
+        "memori diperbarui: provider=%s jobs=%d pass=%d reject=%d risk=%d insiden=%s",
+        profile.address,
+        profile.stats_jobs,
+        profile.stats_pass,
+        profile.stats_reject,
+        profile.risk_level,
+        list(profile.incident_jobs),
+    )
+
+
+def run_job(
+    client: VaultClient,
+    job_id: int,
+    kind: int,
+    *,
+    deliverable_dir: str | os.PathLike[str] | None = None,
+    lookback_blocks: int = LOG_LOOKBACK_BLOCKS,
+) -> int:
+    """Jalur `--job-id`: `getJob` → saring evaluator → keputusan memori → pipa verdict.
+
+    Dua jalur berhenti bersih dengan NOL transaksi dan exit 0, dan keduanya memasang kunci
+    `client.refuse()` supaya tidak ada jalur lain yang bisa mengirim tx sesudahnya:
+      - `evaluator != VAULT` (ADR-022 keputusan 2);
+      - `DeliverableUnverifiedError` (ADR-019 keputusan 2, utang task 2.3-min).
+    """
+    job = client.job(job_id)
+    log.info("%s", job.line)
+    vault_address = client.vault.address
+    if not job.is_for_evaluator(vault_address):
+        client.refuse(
+            FOREIGN_JOB_TEMPLATE.format(
+                job_id=job.job_id, evaluator=job.evaluator, vault=vault_address
+            )
+        )
+        return 0
+    try:
+        plan = plan_job(
+            client, job, deliverable_dir=deliverable_dir, lookback_blocks=lookback_blocks
+        )
+    except DeliverableUnverifiedError as exc:
+        client.refuse(str(exc) if str(exc).startswith(REFUSAL_LINE) else f"{REFUSAL_LINE}: {exc}")
+        return 0
+    log.info("%s", plan.line)
+    return run_live(client, job_id, kind, plan=plan)
 
 
 # ----------------------------------------------------------------------
@@ -927,11 +1339,16 @@ def run_selftest(client: VaultClient) -> int:
     return 0
 
 
-def run_live(client: VaultClient, job_id: int, kind: int) -> int:
+def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None = None) -> int:
     """Pipa atas jobId ACP NYATA: postVerdict -> tunggu CHALLENGE_WINDOW -> finalize.
 
     Jalur dan penjaganya sama persis dengan selftest; yang berbeda hanya asal jobId dan
     hasil yang diharapkan: `Finalized` ADA dan `FinalizeFailed` TIDAK ADA.
+
+    `plan` (task 2.4-min) menyisipkan tulisan memori DI ANTARA `postVerdict` dan `finalize`,
+    persis urutan spec §5 langkah 5→6. `memory_root`/`reason_hash` di sini MASIH konstanta
+    pipa 1.3d: menurunkannya dari memori adalah task 2.4b, dan ADR-020 keputusan 6 melarang
+    root turunan-memori diumumkan on-chain sebelum encoding kanoniknya beku.
     """
     kind_name = "complete" if kind == KIND_COMPLETE else "reject"
     log.info("LIVE jobId ACP NYATA=%d kind=%d (%s)", job_id, kind, kind_name)
@@ -969,6 +1386,9 @@ def run_live(client: VaultClient, job_id: int, kind: int) -> int:
         )
         if post_receipt.status != 1:
             raise RuntimeError(f"postVerdict gagal on-chain: 0x{post_hash}")
+        # spec §5 langkah 5: memori ditulis SESUDAH verdict diumumkan, sebelum finalize.
+        if plan is not None:
+            record_outcome(client, plan)
         # readyAt dari event di receipt (RPC publik bisa tertinggal di belakang receipt).
         ready_at = read_ready_at(client, job_id, post_receipt)
 
@@ -1072,15 +1492,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.job_id is not None:
             kind = KIND_COMPLETE if args.kind == "complete" else KIND_REJECT
             try:
-                return run_live(client, args.job_id, kind)
+                return run_job(client, args.job_id, kind)
             except JobVoidedError as exc:
                 # Job NYATA yang sudah terminal = verdict yatim: kegagalan pipa, bukan hasil normal.
                 log.error("%s", voided_message(exc.job_id, exc.status))
                 return 1
         return run_selftest(client)
-    except SafeModeStop as exc:
+    except (SafeModeStop, DeliverableUnverifiedError) as exc:
         # Jaring kedua: gerbang di atas sudah menahan, jadi ini hanya terjadi bila sebuah
-        # jalur baru mencoba mengirim tx tanpa lewat sana.
+        # jalur baru mencoba mengirim tx tanpa lewat sana. `DeliverableUnverifiedError`
+        # ikut di sini karena ADR-019 keputusan 2 menuntut perlakuan SEKELAS mode aman —
+        # termasuk pembedaan "berhenti bersih" dari "berhenti di tengah pipa" di bawah.
         log.info("%s", exc)
         terkirim = dibangun["client"].sent_transactions if "client" in dibangun else []
         if terkirim:

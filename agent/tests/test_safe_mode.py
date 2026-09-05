@@ -41,6 +41,8 @@ ROOT_ONCHAIN = bytes.fromhex("11" * 32)
 ZERO = bytes(32)
 AGENT_ADDRESS = "0xfa5AF5BAeB4aC500267D7189fa1f0AA923eCA894"
 PROVIDER = "0x" + "ab" * 20
+CLIENT = "0x" + "cc" * 20
+VAULT_ADDRESS = "0x" + "11" * 20
 
 
 # ----------------------------------------------------------------------
@@ -75,10 +77,36 @@ class FakeFunctions:
 
 
 class FakeContract:
-    def __init__(self, eth: FakeEth, returns: dict) -> None:
+    def __init__(self, eth: FakeEth, returns: dict, address: str = "0x" + "11" * 20) -> None:
         self.eth = eth
         self.returns = returns
+        # `run_job` membandingkan `getJob(...).evaluator` dengan `vault.address`, jadi
+        # kontrak palsu pun harus punya alamat — sama seperti kontrak web3 sungguhan.
+        self.address = address
         self.functions = FakeFunctions(self)
+        self.events = FakeEvents(self)
+
+
+class FakeEventType:
+    """`acp.events.JobSubmitted()` palsu: nol log kecuali tes mengisinya sendiri."""
+
+    def __init__(self, contract: FakeContract, name: str) -> None:
+        self.contract = contract
+        self.name = name
+
+    def get_logs(self, argument_filters=None, from_block=None, to_block=None):
+        return []
+
+
+class FakeEvents:
+    def __init__(self, contract: FakeContract) -> None:
+        self._contract = contract
+
+    def __getattr__(self, name: str):
+        def maker():
+            return FakeEventType(self._contract, name)
+
+        return maker
 
 
 class FakeEth:
@@ -89,9 +117,10 @@ class FakeEth:
         self.sent: list[bytes] = []
         self.nonce_reads = 0
         self.chain_id = 84532
+        self.block_number = 46_400_000
 
     def contract(self, address=None, abi=None):
-        return FakeContract(self, self.returns)
+        return FakeContract(self, self.returns, address or "0x" + "11" * 20)
 
     def get_transaction_count(self, address):
         self.nonce_reads += 1
@@ -122,12 +151,14 @@ def build_client(
     milik repo."""
     returns = {
         "lastMemoryRoot": onchain_root,
-        "jobs": ("0x" + "cc" * 20, job_status, PROVIDER, 0, "0x" + "dd" * 20, "0x" + "00" * 20, 1, ""),
+        # `evaluator` SENGAJA = alamat vault klien ini: tes di file ini menguji gerbang
+        # memori, bukan penyaringan "job milik siapa" (itu tests/test_job_pipeline.py).
+        "jobs": (CLIENT, job_status, PROVIDER, 0, VAULT_ADDRESS, "0x" + "00" * 20, 1, ""),
         "verdicts": (0, ZERO, ZERO, 0, False, "0x" + "00" * 20),
     }
     w3 = FakeWeb3(returns)
     return vc.VaultClient(
-        w3, "0x" + "11" * 20, "0x" + "22" * 20, FakeAccount(), 84532, db_path=db
+        w3, VAULT_ADDRESS, "0x" + "22" * 20, FakeAccount(), 84532, db_path=db
     )
 
 
@@ -650,7 +681,7 @@ def test_main_exits_nonzero_when_the_gate_stops_a_half_finished_pipeline(db, mon
         dibangun["client"] = client
         return client
 
-    def _run_live(client, job_id, kind):
+    def _run_live(client, job_id, kind, plan=None):
         client.post_verdict(job_id, kind, b"\x01" * 32, b"\x02" * 32)
         for suffix in vc.MEMORY_DB_SUFFIXES:  # memori lenyap DI TENGAH pipa
             db.with_name(db.name + suffix).unlink(missing_ok=True)
