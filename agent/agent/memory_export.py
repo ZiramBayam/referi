@@ -12,15 +12,14 @@ Empat batas yang menentukan bentuk modul ini (semuanya dari review 2.1r, bukan p
 1. SATU PEMBACAAN DB — dan hanya SEJAUH ITU. Yang dijamin modul ini: file ekspor dan root
    diserialkan/dihash dari objek `MemorySnapshot` yang SAMA, jadi tidak ada pembacaan DB kedua
    yang bisa menyelipkan keadaan lain di antara keduanya.
-   YANG BELUM TERTUTUP, dan jangan dibaca lebih besar dari ini: balapan DI DALAM
-   `load_snapshot` sendiri. Ia melakukan 1x `list_entities` + 2x `search` + N x `get_reference`
-   dan Sibyl 0.7.0 TIDAK punya transaksi (api-facts §C), sehingga tulisan yang mendarat di
-   tengah rangkaian itu — persis yang dilakukan `promote_suspicions` DARI PROSES YANG SAMA —
-   menghasilkan snapshot yang memuat provider versi lama, kehilangan provider yang ditulis
-   belakangan, tetapi ikut menjangkar reference barunya. Root untuk keadaan yang tidak pernah
-   ada, dan file ekspornya cocok dengan root itu sehingga TIDAK terlihat dari file. Penutupnya
-   (kunci single-instance atas `memory.db`) adalah task 2.4a keputusan (i); modul ini tidak
-   bisa dan tidak berpura-pura menutupnya.
+   Balapan DI DALAM `load_snapshot` sendiri (1x `list_entities` + 2x `search` +
+   N x `get_reference` di atas Sibyl 0.7.0 yang TIDAK punya transaksi, api-facts §C) kini
+   ditutup dari luar: `load_snapshot` berjalan di bawah KUNCI SINGLE-INSTANCE
+   (`agent/memory_lock.py`, task 2.4a), jadi tidak ada instans agen lain yang bisa menulis
+   di tengah rangkaian itu. Tanpa kunci itu, tulisan yang mendarat di tengah menghasilkan
+   snapshot bagi keadaan yang TIDAK PERNAH ADA — dan file ekspornya cocok dengan root itu,
+   sehingga cacatnya tidak terlihat dari file. Yang TETAP di luar jangkauan: penulis yang
+   tidak memakai modul kami (mis. `sqlite3` mentah) — kunci ini kooperatif.
 
 2. SATU IMPLEMENTASI ROOT. Root dihitung lewat `memory_policy.memory_root_for_onchain()` —
    GERBANG yang sama yang dipakai `vault_client`/`postVerdict` (task 2.4b). Bukan sekadar

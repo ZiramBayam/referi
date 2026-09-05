@@ -28,7 +28,9 @@ Acuan:
     pemotongan senyap). Ketiganya ditangani di `_reference_keys()`.
   - docs/decisions.md ADR-001 (cap 0 di kontrak = TANPA BATAS), ADR-002 (karantina =
     entity, bukan tier), ADR-007 + amandemennya (fail-closed), ADR-011 (root yang pernah
-    diumumkan), ADR-020 keputusan 6-7 (encoding & cakupan root), ADR-021 (plafon cap).
+    diumumkan), ADR-020 keputusan 6-7 (encoding & cakupan root), ADR-021 (plafon cap),
+    ADR-023 (pemicu mode aman bukan lagi perbandingan sepasang root) + ADR-024 (pemicunya
+    adalah memori lokal yang TIDAK TERBACA / HILANG; aturan "nol job outcome" dicabut).
 
 Modul ini MURNI lokal: tidak ada jaringan, tidak ada chain, tidak ada LLM.
 
@@ -47,18 +49,22 @@ BATAS YANG DIAKUI — PENULIS `memory.db` (jangan dibaca lebih ringan dari ini):
      tidak-naik tidak menolong: jangkarnya adalah `cap_usdc` yang tersimpan di body yang
      sama, dan penyerang menghapusnya bersamaan. Ia juga bisa menghapus `incident_jobs`,
      `confirmed_patterns`, dan seluruh entity provider sekaligus.
-  3) SATU-SATUNYA PENAWAR adalah JANGKAR ROOT: `memory_root` (yang encodingnya dibekukan di
-     task 2.1r) mengikat SELURUH himpunan yang boleh dibaca, sehingga setiap suntingan di
-     atas mengubah root, root lokal berhenti cocok dengan `lastMemoryRoot()` on-chain, dan
-     `decide_mode` masuk mode AMAN. Perlu dicatat kapan penawar itu TIDAK berlaku: pada hari
-     pertama root on-chain masih nol dan `decide_mode` sah mengembalikan NAIF — tidak ada
-     yang bisa dideteksi karena belum ada yang bisa dibandingkan; dan seluruh rangkaian ini
-     baru punya arti sejak 2.1r, sebab sebelum encoding dibekukan tidak ada root memori yang
-     boleh diumumkan sama sekali.
-  Jadi pihak yang bisa menulis `memory.db` bisa mematikan ketersediaan evaluator dan — sampai
-  root pertama terdaftar on-chain — bisa melonggarkan cap; ia TIDAK bisa mencuri dana dan
-  TIDAK bisa memaksa verdict lolos, karena verdict berasal dari cek deterministik (task 2.3),
-  bukan dari memori. Itu pertukaran yang dipilih sadar (ADR-020 keputusan 8), bukan kelalaian.
+  3) PENAWARNYA TERBATAS, dan sejak ADR-023 batasnya lebih sempit daripada yang pernah
+     ditulis di sini. `memory_root` (encodingnya beku sejak 2.1r) tetap MENGIKAT seluruh
+     himpunan yang boleh dibaca, sehingga setiap suntingan di atas mengubah root yang
+     diumumkan `postVerdict` dan auditor bisa membuktikannya SESUDAHNYA. Yang TIDAK lagi
+     terjadi: root lokal DIBANDINGKAN dengan `lastMemoryRoot()` sebelum bertransaksi.
+     Perbandingan itu dicabut ADR-023 karena ia mengunci agen ke mode aman permanen (spec §5
+     menulis memori SESUDAH `postVerdict`, jadi root lokal selalu satu langkah di depan).
+     Yang tersisa sebagai pemicu otomatis hanyalah KEADAAN FILE memori: hilang di hadapan
+     vault yang sudah pernah mengumumkan root, tidak bisa dibaca, atau terkunci instans lain
+     → mode AMAN. `memory.db` yang DIGANTI DB lain — kosong maupun terisi — TIDAK terdeteksi
+     hari ini; itu kehilangan yang diterima sadar (ADR-024 konsekuensi) dan wajib disebut di
+     README §Batasan.
+  Jadi pihak yang bisa menulis `memory.db` bisa mematikan ketersediaan evaluator dan bisa
+  melonggarkan cap; ia TIDAK bisa mencuri dana dan TIDAK bisa memaksa verdict lolos, karena
+  verdict berasal dari cek deterministik (task 2.3), bukan dari memori. Itu pertukaran yang
+  dipilih sadar (ADR-020 keputusan 8, ADR-023), bukan kelalaian.
 
 UTANG YANG DIAKUI (jangan dibaca seolah sudah selesai):
   - Encoding preimage `memory_root` sudah DIBEKUKAN (ADR-020 keputusan 6, task 2.1r):
@@ -73,8 +79,11 @@ UTANG YANG DIAKUI (jangan dibaca seolah sudah selesai):
     luar — konsekuensi ketersediaan yang sama dengan butir 1 di atas, dipilih sadar karena
     alternatifnya (menjangkar sesuatu yang tidak pernah dibaca) adalah kebohongan senyap.
   - Idempotensi tulisan provider dijaga CAS versi, tetapi store-nya TIDAK transaksional
-    (api-facts §C tidak punya transaksi) — dua proses agen pada satu `memory.db` tetap
-    DILARANG secara operasional, bukan dicegah oleh kode.
+    (api-facts §C tidak punya transaksi). Sejak task 2.4a jendela itu ditutup dari luar oleh
+    KUNCI SINGLE-INSTANCE (`agent/memory_lock.py`): setiap baca-hitung dan setiap tulis
+    memegang `flock` eksklusif atas `<memory.db>.lock`, dan instans kedua BERHENTI
+    (fail-closed) alih-alih menimpa. Yang TIDAK ditutup: kunci itu KOOPERATIF — proses yang
+    membuka `memory.db` dengan `sqlite3` mentah, editor, atau `rm` tidak terhalang.
   - Cap BUKAN deteksi (ADR-021 keputusan 4). Ia hanya membatasi UKURAN kerugian per job;
     yang mendeteksi deliverable curang adalah cek deterministik (task 2.3), dan yang
     menghentikan agen saat memori tidak dipercaya adalah mode aman (task 2.4a).
@@ -82,6 +91,7 @@ UTANG YANG DIAKUI (jangan dibaca seolah sudah selesai):
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import re
@@ -91,6 +101,8 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Final
 
 from sibyl_memory_client import MemoryClient, NotFoundError
+
+from agent.memory_lock import locked_client
 
 log = logging.getLogger("memory_policy")
 
@@ -138,6 +150,21 @@ DEPTH_FULL: Final = "full"
 
 ZERO_ROOT: Final[bytes] = bytes(32)
 
+# Keadaan memori lokal (ADR-024 keputusan 2). EMPAT, bukan dua: "tidak ada" dan "tidak bisa
+# dibaca" berujung pada mode yang BERBEDA, dan meruntuhkan keduanya menjadi satu boolean
+# adalah persis cara aturan yang benar berubah menjadi aturan yang salah.
+LOCAL_MEMORY_OK: Final = "ok"
+LOCAL_MEMORY_MISSING: Final = "missing"
+LOCAL_MEMORY_ERROR: Final = "error"
+LOCAL_MEMORY_LOCK_FAILED: Final = "lock_failed"
+
+# Batas tunggu kunci `memory.db` untuk PEMBACAAN GERBANG saja (task 2.4a-fix). Jalur TULIS
+# tetap memakai `memory_lock.DEFAULT_TIMEOUT_SECONDS` (10 detik) karena tulisan yang gagal
+# berarti kehilangan hasil kerja; pembacaan gerbang terjadi berkali-kali per transaksi dan
+# kegagalannya SUDAH punya jawaban yang benar (mode aman), jadi menunggu penuh hanya
+# memakan anggaran waktu ADR-014 tanpa menambah keamanan.
+GATE_LOCK_TIMEOUT_SECONDS: Final = 1.0
+
 # ADR-001: di EvaluatorVault/`providerCap`, nilai 0 berarti TANPA BATAS. Karena itu
 # "tanpa cap" TIDAK PERNAH direpresentasikan sebagai 0 di dalam Python — ia `None` —
 # dan cap hasil `derive_cap` DILARANG nol (ADR-019 keputusan 4).
@@ -158,6 +185,9 @@ MIN_CAP_USDC = 250_000
 # nama karantina `f"{addr}:{pattern}"` tidak bisa dipalsukan.
 ADDRESS_RE: Final = re.compile(r"^0x[0-9a-f]{40}\Z")
 PATTERN_ID_RE: Final = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}\Z")
+# Kategori rubric memakai bentuk yang SAMA: kunci `reference:rubric:*` ikut dijangkar
+# `memory_root`, jadi ia tunduk pada batas yang sama dengan `reference:pattern:*`.
+RUBRIC_CATEGORY_RE: Final = PATTERN_ID_RE
 MAX_PROOF_LEN: Final = 512
 MAX_UINT256: Final = 2**256 - 1
 # Jumlah digit maksimum satu integer di preimage: uint256 = 78 digit. Batas ini WAJIB
@@ -619,6 +649,73 @@ class ProviderProfile:
 
 
 @dataclass(frozen=True)
+class LocalMemoryEvidence:
+    """Keadaan memori lokal — masukan `decide_mode` (ADR-023 keputusan 2, ADR-024).
+
+    NAMA & KLAIM (ADR-024 keputusan 4): kelas ini TIDAK membuktikan asal-usul apa pun. Ia
+    hanya melaporkan apakah `memory.db` ADA dan apakah ia BISA DIBACA. Pembuktian asal-usul
+    menuntut log root lokal yang belum ada (v2), dan menamai sesuatu lebih besar daripada
+    yang dikerjakannya adalah cara paling murah menipu diri sendiri.
+
+    Root memori ikut dibawa, tetapi HANYA sebagai konteks yang dicetak/diumumkan
+    (`postVerdict`) — bukan bahan perbandingan: root lokal selalu satu tulisan di depan root
+    yang diumumkan on-chain, jadi membandingkan keduanya selalu berakhir mode aman sesudah
+    job pertama (ADR-023).
+
+      - `status`       : salah satu dari EMPAT keadaan, dan pemisahannya menentukan mode:
+          `ok`          — `memory.db` ada dan seluruh pembacaannya berhasil;
+          `missing`     — file utama TIDAK ADA (memori dihapus / belum pernah dibuat);
+          `error`       — ada tetapi pembacaannya MELEMPAR (rusak, enumerasi terpotong, …);
+          `lock_failed` — kunci single-instance tidak didapat, yaitu ADA INSTANS AGEN LAIN.
+        `error` dan `lock_failed` TIDAK PERNAH boleh runtuh menjadi `missing`: yang pertama
+        berarti kita tidak tahu isi memori, yang terakhir berarti memori memang tidak ada.
+      - `job_outcomes` : banyaknya JOB BERBEDA yang meninggalkan jejak di entity `provider`.
+                         SEJAK ADR-024 ia TIDAK memutuskan apa pun — nol job outcome adalah
+                         mode NORMAL tanpa kalibrasi. Ia tetap dilaporkan karena itulah
+                         angka yang membuat baris `MODE NORMAL` bisa dibaca manusia.
+      - `root`         : `memory_root` lokal; `None` bila tidak terbaca.
+      - `detail`       : asal angka-angka di atas, apa adanya, untuk log dan pesan.
+    """
+
+    status: str
+    job_outcomes: int
+    root: bytes | None
+    detail: str
+
+    @classmethod
+    def ok(cls, *, job_outcomes: int, root: bytes, detail: str) -> LocalMemoryEvidence:
+        return cls(status=LOCAL_MEMORY_OK, job_outcomes=job_outcomes, root=root, detail=detail)
+
+    @classmethod
+    def missing(cls, detail: str) -> LocalMemoryEvidence:
+        """File utama tidak ada. SATU-SATUNYA keadaan yang boleh berujung NAIF."""
+        return cls(status=LOCAL_MEMORY_MISSING, job_outcomes=0, root=None, detail=detail)
+
+    @classmethod
+    def error(cls, detail: str) -> LocalMemoryEvidence:
+        """Ada tetapi tidak bisa dibaca. Ketidaktahuan tidak pernah memberi izin lebih besar."""
+        return cls(status=LOCAL_MEMORY_ERROR, job_outcomes=0, root=None, detail=detail)
+
+    @classmethod
+    def lock_failed(cls, detail: str) -> LocalMemoryEvidence:
+        """Kunci single-instance tidak didapat — ada instans agen LAIN yang berjalan."""
+        return cls(status=LOCAL_MEMORY_LOCK_FAILED, job_outcomes=0, root=None, detail=detail)
+
+    @property
+    def local_memory_readable(self) -> bool:
+        """Persis itu, tidak lebih: memori lokal ada DAN terbaca (ADR-024 keputusan 4)."""
+        return self.status == LOCAL_MEMORY_OK
+
+    @property
+    def is_missing(self) -> bool:
+        return self.status == LOCAL_MEMORY_MISSING
+
+    @property
+    def root_hex(self) -> str:
+        return "TIDAK TERBACA" if self.root is None else "0x" + self.root.hex()
+
+
+@dataclass(frozen=True)
 class ModeDecision:
     """Hasil `decide_mode` — nilai murni yang bisa diuji tanpa chain (task 2.4a memakainya)."""
 
@@ -833,11 +930,44 @@ class MemorySnapshot:
         )
 
 
+# ----------------------------------------------------------------------
+# Kunci single-instance (task 2.4a butir 1) — lihat `agent/memory_lock.py`
+# ----------------------------------------------------------------------
+
+
+def under_memory_lock[F: Callable[..., Any]](fn: F) -> F:
+    """Memegang kunci `memory.db` selama SELURUH pemanggilan fungsi ini.
+
+    Dipakai pada DUA jenis operasi, dan keduanya perlu alasan terpisah:
+
+      - BACA-HITUNG (`load_snapshot`, dan lewat itu seluruh `memory_root*`). Rangkaiannya
+        1x `list_entities` + 2x `search` + N x `get_reference` pada store TANPA transaksi
+        (api-facts §C). Tanpa kunci, tulisan yang mendarat di tengah menghasilkan root untuk
+        keadaan yang TIDAK PERNAH ADA — dan file ekspor pun cocok dengan root itu, jadi
+        cacatnya tidak terlihat dari file.
+      - TULIS (`record_job_outcome`, `promote_suspicions`, `store_provider_cap`, dan seluruh
+        setter mentah). `_save_provider_cas` hanya CAS versi cek-lalu-tulis; jendela antara
+        keduanya tidak atomik, jadi kunci inilah yang menutupnya.
+
+    Fungsi yang dibungkus WAJIB menerima klien memori sebagai argumen PERTAMA. Kunci ini
+    REENTRAN, jadi fungsi tingkat atas dan helper yang dipanggilnya boleh sama-sama memakai
+    dekorator ini tanpa saling mengunci.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(client: Any, *args: Any, **kwargs: Any) -> Any:
+        with locked_client(client):
+            return fn(client, *args, **kwargs)
+
+    return wrapper  # type: ignore[return-value]
+
+
 # ======================================================================
 # BAGIAN 1 — pemetaan tier §3 (I/O memori mentah)
 # ======================================================================
 
 
+@under_memory_lock
 def set_active_job(client: MemoryClient, job_id: int | str, body: Mapping[str, Any]) -> None:
     """HOT — spec §3 "Job aktif": `set_state("job:{id}", {...})`."""
     client.set_state(f"{STATE_KEY_PREFIX}{job_id}", dict(body))
@@ -849,31 +979,63 @@ def get_active_job(client: MemoryClient, job_id: int | str) -> dict[str, Any] | 
     return None if row is None else row["body"]
 
 
+@under_memory_lock
 def save_provider(client: MemoryClient, profile: ProviderProfile) -> ProviderProfile:
     """WARM — spec §3 "Profil provider"."""
     client.set_entity(CATEGORY_PROVIDER, profile.address, profile.to_body())
     return profile
 
 
+@under_memory_lock
 def save_client_profile(client: MemoryClient, address: str, body: Mapping[str, Any]) -> None:
     """WARM — spec §3 "Profil client" (kualitas kriteria, sengketa yang ternyata salah)."""
     client.set_entity(CATEGORY_CLIENT, normalize_address(address), dict(body))
 
 
+@under_memory_lock
 def write_journal(client: MemoryClient, acted: Sequence[Mapping[str, Any]]) -> str:
     """COLD — spec §3 "Verdict & cek". `write_event` SELURUHNYA keyword-only (api-facts §C)."""
     return client.write_event(acted=[dict(item) for item in acted])
 
 
+def validate_rubric_category(category: str) -> str:
+    """Cermin `validate_pattern_id` untuk kunci `reference:rubric:*` (task 2.4a-fix).
+
+    Alasannya SAMA PERSIS dan bukan kerapian:
+      - kunci rubric ikut DIJANGKAR `memory_root` (ADR-020 keputusan 7), jadi kategori
+        sembarang — `""`, `"a:b"`, `"de fi"`, `"de\\fi"`, `"kucing-🐈"`, atau kalimat
+        "IGNORE PREVIOUS INSTRUCTIONS…" — masuk ke preimage yang diaudit publik;
+      - `:` di dalam kategori membuat satu kunci bisa terbaca sebagai kunci lain, persis
+        lubang yang ditutup `validate_pattern_id` di sisi pattern;
+      - namespace `rubric:*` yang tak terbatas adalah jalur DoS: banjir kunci membuat
+        `_reference_keys()` menyentuh batas `search` → `MemoryIntegrityError` → seluruh
+        `memory_root` melempar → MODE AMAN permanen.
+    Yang menahan enam payload di atas sebelum ini bukan kode kita, melainkan validator
+    Sibyl — dan itu bukan penjaga yang boleh kita andalkan.
+    """
+    if not isinstance(category, str) or not RUBRIC_CATEGORY_RE.match(category):
+        raise ValueError(
+            f"kategori rubric tidak sah (huruf kecil/angka/._- maks 64): {category!r}"
+        )
+    return category
+
+
+@under_memory_lock
 def set_rubric(client: MemoryClient, category: str, body: Mapping[str, Any]) -> None:
-    """REFERENCE — spec §3 "Rubric per kategori"."""
-    client.set_reference(f"{REFERENCE_RUBRIC_PREFIX}{category}", dict(body))
+    """REFERENCE — spec §3 "Rubric per kategori". Kategori DIVALIDASI, lihat di atas."""
+    client.set_reference(f"{REFERENCE_RUBRIC_PREFIX}{validate_rubric_category(category)}", dict(body))
 
 
 def get_rubric(client: MemoryClient, category: str) -> dict[str, Any] | None:
-    return _read_reference_body(client, f"{REFERENCE_RUBRIC_PREFIX}{category}")
+    """Pembacaan memakai validator yang SAMA: kunci yang tidak bisa ditulis juga tidak
+    boleh bisa dicari (kalau tidak, penulis lain tetap punya kunci yang hanya kita yang
+    membacanya)."""
+    return _read_reference_body(
+        client, f"{REFERENCE_RUBRIC_PREFIX}{validate_rubric_category(category)}"
+    )
 
 
+@under_memory_lock
 def archive_job(client: MemoryClient, job_id: int | str) -> dict[str, Any] | None:
     """ARCHIVE — spec §3 "Job final". `archive_entity` MELEMPAR NotFoundError (api-facts §C)."""
     try:
@@ -1227,60 +1389,120 @@ def _read_root(value: Any) -> tuple[bytes | None, bool]:
 
 
 @decision_path
-def decide_mode(onchain_root: Any, local_root: Any) -> ModeDecision:
-    """spec §3 aturan 5 — fail-closed. Fungsi MURNI: tanpa I/O jaringan maupun chain.
+def decide_mode(onchain_root: Any, local: LocalMemoryEvidence | None) -> ModeDecision:
+    """spec §3 aturan 5 sebagaimana dibaca ulang ADR-023 dan DIKOREKSI ADR-024. MURNI.
 
-    Pembacaan `lastMemoryRoot()` dan penegakan "tidak mengirim tx" adalah task 2.4a; di
-    sini modenya dikembalikan sebagai nilai.
+    PRESEDENSI, tepat urutan ini (ADR-024 keputusan 2) — urutannya bagian dari aturannya:
 
-      - root onchain TERBACA dan bernilai nol (hari pertama) → NAIF (stateless), wajar;
-      - root onchain ada DAN memori lokal cocok                → NORMAL;
-      - root onchain ada TAPI lokal hilang/tidak cocok         → AMAN;
-      - root onchain TIDAK TERBACA (None, "0x", "", tipe asing)→ AMAN.
+      (1) kunci single-instance gagal, ATAU pembacaan memori MELEMPAR   → AMAN;
+      (2) `memory.db` HILANG: root onchain nol → NAIF; selain itu (termasuk root yang tidak
+          terbaca)                                                      → AMAN;
+      (3) selebihnya                                                    → NORMAL, TERMASUK
+          memori kosong dengan nol job outcome.
 
-    Baris terakhir memisahkan "root terbaca = 0" dari "root tidak terbaca". Keduanya
-    tampak seperti "kosong", tetapi hanya yang pertama berarti hari pertama; yang kedua
-    berarti kita tidak tahu keadaan chain, dan ketidaktahuan TIDAK PERNAH boleh memberi
-    izin lebih besar.
+    `lastMemoryRoot()` dibaca HANYA di cabang (2), dan hanya untuk membedakan "hari pertama"
+    dari "vault yang sudah hidup". Di semua cabang lain ia log/UI saja (ADR-023 keputusan 1).
+
+    DUA HAL YANG DICABUT, jangan dikembalikan tanpa ADR baru:
+      - perbandingan root lokal vs `lastMemoryRoot()` (ADR-023). Vault beku ADR-022 menyimpan
+        root konstanta pipa 1.3d yang tidak bisa diturunkan dari `memory.db` mana pun, dan
+        spec §5 langkah 5 menulis memori SESUDAH `postVerdict` sehingga root lokal selalu
+        satu langkah di depan — agen berhenti sesudah job PERTAMA bahkan di vault baru;
+      - aturan (b) "DB ada tapi NOL job outcome + root non-nol → AMAN" (ADR-024). Ia
+        memindahkan self-brick, tidak membunuhnya: di vault beku root SELALU non-nol, jadi
+        (b) menahan `postVerdict` job A dan outcome pertama tidak pernah lahir (`tx = []`).
+        Ia juga dipenuhi DB tiga baris buatan tangan, jadi yang ditegakkannya "DB tidak
+        kosong" — nilainya NOL terhadap pihak yang bisa menulis `memory.db`.
+
+    BOOTSTRAP job A TIDAK punya jalur khusus (ADR-024 keputusan 3): memori kosong = mode
+    NORMAL tanpa kalibrasi, dan perilakunya memang sama dengan evaluator stateless
+    (spec §3 aturan 6). Pengecualian "postVerdict pertama", entity `origin`, dan seeding di
+    `make demo` semuanya DITOLAK PM.
+
+    YANG HILANG, disebut apa adanya (ADR-024 konsekuensi): `memory.db` yang DIGANTI DB lain —
+    kosong maupun terisi — tidak terdeteksi. Pemulihannya butuh log root lokal (v2).
 
     Dalam mode AMAN `postVerdict` juga ditahan: ADR-011 mencatat bahwa fail-closed kini
     murni dijaga di sisi agen — tidak ada root baru diumumkan, jadi tidak ada verdict baru
     yang bisa difinalisasi. (Spec §3 baris 117 secara harfiah hanya melarang `finalize`;
     ADR-011 lebih ketat dan itu yang diikuti.)
     """
-    onchain, onchain_ok = _read_root(onchain_root)
-    local, local_ok = _read_root(local_root)
-
-    if not onchain_ok:
-        return _safe_decision("root onchain tidak terbaca (nilai tidak sah) → tidak boleh menebak")
-
-    if onchain == ZERO_ROOT:
-        return ModeDecision(
-            mode=MODE_NAIVE,
-            reason="root onchain terbaca dan bernilai nol (hari pertama) → evaluasi stateless",
-            depth=DEPTH_SAMPLING,
-            forced_risk=None,
-            allow_finalize=True,
-            allow_post_verdict=True,
-            allow_set_provider_cap=True,
+    if local is not None and not isinstance(local, LocalMemoryEvidence):
+        # Sebuah root telanjang (bytes/hex) DITOLAK KERAS, bukan diterima diam-diam:
+        # pemanggil gaya lama akan tampak "hijau" sambil kehilangan seluruh isi aturan 5.
+        raise TypeError(
+            "decide_mode menerima LocalMemoryEvidence (ADR-023), bukan root lokal "
+            f"({type(local).__name__}) — perbandingan sepasang root sudah dicabut"
         )
 
-    if local_ok and local != ZERO_ROOT and local == onchain:
-        return ModeDecision(
-            mode=MODE_NORMAL,
-            reason="root lokal cocok dengan root onchain",
-            depth=DEPTH_SAMPLING,
-            forced_risk=None,
-            allow_finalize=True,
-            allow_post_verdict=True,
-            allow_set_provider_cap=True,
+    evidence = local if local is not None else LocalMemoryEvidence.error("bukti tidak diberikan")
+
+    # (1) Kunci gagal / pembacaan melempar → AMAN, mendahului SEGALANYA.
+    #
+    # Kunci yang tidak didapat bukan pernyataan tentang isi chain maupun isi memori: ia
+    # berarti ADA INSTANS AGEN LAIN. Rantai yang menuntut presedensi ini terukur: instans-2
+    # gagal kunci → (dulu) NAIF → ia menandatangani `postVerdict` dari wallet yang sama →
+    # dua instans menulis nonce yang sama, dan tulisan memorinya sendiri melempar. Dua
+    # instans yang menandatangani dari satu wallet adalah masalah yang lebih besar daripada
+    # kalibrasi yang hilang.
+    if evidence.status == LOCAL_MEMORY_LOCK_FAILED:
+        return _safe_decision(
+            f"kunci single-instance memory.db tidak didapat ({evidence.detail}) → ada instans "
+            "agen lain, dan dua instans yang menandatangani dari satu wallet tidak boleh terjadi"
+        )
+    if evidence.status == LOCAL_MEMORY_ERROR:
+        return _safe_decision(f"memori lokal ada tetapi tidak bisa dibaca ({evidence.detail})")
+
+    # (2) File memori HILANG. INILAH satu-satunya cabang yang membaca root on-chain, dan ia
+    # membacanya untuk SATU pertanyaan saja: apakah vault ini sudah pernah hidup?
+    #   - root nol  → hari pertama; tidak ada apa pun yang bisa hilang → NAIF (stateless).
+    #                 §7 langkah 4 / 3.3b varian A menuntut ini: memori dihapus di vault
+    #                 SEGAR harus tetap berjalan supaya degradasinya terlihat.
+    #   - selain itu → vault sudah hidup tetapi memorinya lenyap → AMAN.
+    #   - tidak terbaca → kita tidak bisa membedakan keduanya, dan ketidaktahuan TIDAK
+    #                 PERNAH memberi izin lebih besar → AMAN.
+    if evidence.is_missing:
+        onchain, onchain_ok = _read_root(onchain_root)
+        if not onchain_ok:
+            return _safe_decision(
+                f"memori lokal hilang ({evidence.detail}) dan root onchain tidak terbaca "
+                "(nilai tidak sah) → tidak boleh menebak mana yang hari pertama"
+            )
+        if onchain == ZERO_ROOT:
+            return ModeDecision(
+                mode=MODE_NAIVE,
+                reason=(
+                    f"memori lokal hilang ({evidence.detail}) tetapi vault belum pernah "
+                    "mengumumkan root (hari pertama) → evaluasi stateless"
+                ),
+                depth=DEPTH_SAMPLING,
+                forced_risk=None,
+                allow_finalize=True,
+                allow_post_verdict=True,
+                allow_set_provider_cap=True,
+            )
+        return _safe_decision(
+            f"memori lokal hilang ({evidence.detail}) padahal vault sudah pernah mengumumkan "
+            "root → memori dihapus"
         )
 
-    hilang = (not local_ok) or local == ZERO_ROOT
-    return _safe_decision(
-        "root onchain ada tetapi memori lokal hilang"
-        if hilang
-        else "root onchain ada tetapi root lokal tidak cocok"
+    # (3) Selebihnya NORMAL — TERMASUK memori kosong dengan nol job outcome (ADR-024
+    # keputusan 1 & 3). Aturan (b) lama ("nol outcome + root non-nol → AMAN") DICABUT: pada
+    # vault beku ADR-022 root selalu non-nol, jadi (b) menahan `postVerdict` job A, dan
+    # outcome pertama tidak pernah lahir — rantai 2.5 menghasilkan `tx = []`. Ia juga
+    # dipenuhi oleh DB tiga baris buatan tangan, jadi yang ditegakkannya adalah "DB tidak
+    # kosong", bukan asal-usul. JANGAN dikembalikan tanpa ADR baru.
+    return ModeDecision(
+        mode=MODE_NORMAL,
+        reason=(
+            f"memori lokal ada dan terbaca: {evidence.job_outcomes} job outcome tercatat "
+            f"({evidence.detail})"
+        ),
+        depth=DEPTH_SAMPLING,
+        forced_risk=None,
+        allow_finalize=True,
+        allow_post_verdict=True,
+        allow_set_provider_cap=True,
     )
 
 
@@ -1307,9 +1529,9 @@ def _safe_decision(reason: str) -> ModeDecision:
 
 
 @decision_path
-def safe_mode(onchain_root: Any, local_root: Any) -> bool:
-    """Pintasan boolean atas `decide_mode` (spec §3 aturan 5)."""
-    return decide_mode(onchain_root, local_root).is_safe
+def safe_mode(onchain_root: Any, local: LocalMemoryEvidence | None) -> bool:
+    """Pintasan boolean atas `decide_mode` (spec §3 aturan 5 + ADR-023)."""
+    return decide_mode(onchain_root, local).is_safe
 
 
 @decision_path
@@ -1497,6 +1719,7 @@ def gate_job(
 
 
 @decision_path
+@under_memory_lock
 def load_snapshot(client: MemoryClient) -> MemorySnapshot:
     """Membaca preimage root dari DB: entity `provider` + `reference:pattern:*` + `reference:rubric:*`.
 
@@ -1587,6 +1810,76 @@ def memory_root_for_onchain(source: MemorySnapshot | MemoryClient) -> bytes:
     return memory_root(source)
 
 
+@decision_path
+def count_job_outcomes(snapshot: MemorySnapshot) -> int:
+    """Banyaknya JOB BERBEDA yang meninggalkan jejak di entity `provider` (ADR-023 2b).
+
+    Dihitung dari `recorded_jobs` (setiap `record_job_outcome`) DIGABUNG `incident_jobs`
+    (job yang gagal cek deterministik, termasuk yang masuk lewat promosi pola). Keduanya
+    diperlukan: memori demo bisa berisi insiden hasil promosi tanpa `recorded_jobs`, dan
+    memori agen berjalan bisa berisi `recorded_jobs` tanpa satu pun insiden. Union-nya
+    diambil sebagai HIMPUNAN supaya satu job yang muncul di kedua daftar tidak dihitung dua
+    kali dan urutan tidak berpengaruh.
+
+    SEJAK ADR-024 angka ini TIDAK memutuskan apa pun: nol job outcome adalah mode NORMAL
+    tanpa kalibrasi, bukan mode aman. Ia dilaporkan karena itulah angka yang membuat baris
+    `MODE NORMAL` bisa dibaca manusia, dan karena `make demo` memakainya untuk membuktikan
+    DB rantai 2.5 memang kosong sebelum job A (ADR-024 keputusan 5). Ia BUKAN ukuran
+    kualitas memori dan tidak boleh dipakai sebagai itu — pihak yang bisa menulis
+    `memory.db` bisa mengarangnya.
+
+    Body yang rusak membuat `ProviderProfile.from_body` MELEMPAR; pemanggil memperlakukan
+    itu sebagai memori yang tidak terbaca, yaitu mode aman.
+    """
+    jobs: set[int] = set()
+    for name, body in snapshot.providers.items():
+        profile = ProviderProfile.from_body(name, body)
+        jobs.update(profile.recorded_jobs)
+        jobs.update(profile.incident_jobs)
+    return len(jobs)
+
+
+@decision_path
+def local_memory_evidence(
+    client: MemoryClient, *, lock_timeout_seconds: float | None = None
+) -> LocalMemoryEvidence:
+    """Keadaan memori lokal dari SATU pembacaan DB (ADR-023 keputusan 2, ADR-024).
+
+    Root dan jumlah job outcome lahir dari `MemorySnapshot` yang SAMA. Membaca DB dua kali
+    berarti keduanya bisa menggambarkan dua keadaan yang berbeda (Sibyl 0.7.0 tanpa
+    transaksi, api-facts §C), dan gerbang mode akan memutuskan atas keadaan yang tidak
+    pernah ada.
+
+    `lock_timeout_seconds` default `GATE_LOCK_TIMEOUT_SECONDS` (BUKAN 10 detik milik jalur
+    TULIS): gerbang dibaca berkali-kali per transaksi, dan menunggu penuh di setiap
+    pembacaan memakan anggaran waktu ADR-014 tanpa menambah keamanan apa pun — pembacaan
+    yang gagal mengambil kunci sudah punya jawaban yang benar (mode aman), jadi menunggu
+    lebih lama hanya menunda jawaban itu. Kunci ini REENTRAN, sehingga `load_snapshot` yang
+    juga memakai `@under_memory_lock` di dalam blok ini tidak menunggu untuk kedua kalinya.
+
+    Fungsi ini TIDAK menangkap kesalahan: `load_snapshot` yang melempar (memori rusak,
+    kunci single-instance tidak didapat, hasil enumerasi terpotong) WAJIB terlihat oleh
+    pemanggil, yang mengubahnya menjadi `LocalMemoryEvidence.unreadable(...)` → mode aman.
+    """
+    timeout = GATE_LOCK_TIMEOUT_SECONDS if lock_timeout_seconds is None else lock_timeout_seconds
+    with locked_client(client, timeout_seconds=timeout):
+        return _evidence_under_lock(client)
+
+
+@decision_path
+def _evidence_under_lock(client: MemoryClient) -> LocalMemoryEvidence:
+    snapshot = load_snapshot(client)
+    outcomes = count_job_outcomes(snapshot)
+    return LocalMemoryEvidence.ok(
+        job_outcomes=outcomes,
+        root=memory_root_for_onchain(snapshot),
+        detail=(
+            f"{len(snapshot.providers)} provider, {len(snapshot.patterns)} pattern, "
+            f"{outcomes} job outcome"
+        ),
+    )
+
+
 # ======================================================================
 # BAGIAN 3 — karantina & promosi (spec §3 aturan 2, ADR-002)
 # Bagian ini BOLEH menyentuh entity karantina. Hasilnya masuk ke jalur keputusan HANYA
@@ -1658,6 +1951,7 @@ def _dedup_evidence(evidence: Iterable[Evidence]) -> list[Evidence]:
     return unique
 
 
+@under_memory_lock
 def record_suspicion(
     client: MemoryClient,
     provider_address: str,
@@ -1712,6 +2006,7 @@ def promotion_eligible(evidence: Sequence[Evidence]) -> bool:
     return len({e.job_id for e in evidence}) >= 2
 
 
+@under_memory_lock
 def promote_suspicions(client: MemoryClient, provider_address: str) -> list[str]:
     """Mempromosikan karantina yang memenuhi syarat → `reference:pattern` + provider.
 
@@ -1779,6 +2074,7 @@ def _current_provider_version(client: MemoryClient, address: str) -> int:
         raise MemoryIntegrityError(f"versi entity provider {address!r} rusak: {exc}") from exc
 
 
+@under_memory_lock
 def _save_provider_cas(
     client: MemoryClient, profile: ProviderProfile, expected_version: int
 ) -> ProviderProfile:
@@ -1789,8 +2085,10 @@ def _save_provider_cas(
     antara baca-versi dan tulis tidak atomik. Yang dijamin: tulisan yang dibangun dari
     snapshot USANG ditolak, sehingga satu tulisan basi tidak bisa mengembalikan provider
     ber-insiden ke risk 0 tanpa cap (dan tidak bisa membuka kembali replay). Yang TIDAK
-    dijamin: keamanan dua proses agen yang menulis DB yang sama secara bersamaan — itu
-    tetap DILARANG secara operasional, bukan dicegah oleh kode ini.
+    dijamin oleh CAS itu sendiri: dua proses agen yang menulis DB yang sama. Itu ditutup
+    di lapisan lain — `@under_memory_lock` memegang kunci single-instance selama SELURUH
+    pemanggilan ini, jadi proses kedua berhenti dengan `MemoryLockError` alih-alih
+    menyelinap ke dalam jendela cek-lalu-tulis.
     """
     current = _current_provider_version(client, profile.address)
     if current != expected_version:
@@ -1820,6 +2118,7 @@ def _recompute_risk(profile: ProviderProfile) -> int:
     return min(MAX_RISK_LEVEL, len(set(profile.incident_jobs)))
 
 
+@under_memory_lock
 def _add_confirmed_pattern(
     client: MemoryClient, address: str, pattern_id: str, jobs: Sequence[int]
 ) -> ProviderProfile:
@@ -1834,6 +2133,7 @@ def _add_confirmed_pattern(
     )
 
 
+@under_memory_lock
 def record_job_outcome(
     client: MemoryClient,
     provider_address: str,
@@ -1859,10 +2159,11 @@ def record_job_outcome(
     lewat sini.
 
     BATAS YANG DIAKUI (jangan dibaca lebih jauh dari ini): idempotensi itu cek-lalu-tulis
-    di atas store yang TIDAK transaksional. Tulisan yang dibangun dari snapshot USANG
-    ditolak oleh CAS versi (`_save_provider_cas`, `StaleWriteError`), tetapi jendela antara
-    baca dan tulis tidak atomik — dua proses agen pada satu `memory.db` tetap DILARANG
-    secara operasional dan tidak dicegah oleh kode ini.
+    di atas store yang TIDAK transaksional. Tulisan dari snapshot USANG ditolak CAS versi
+    (`_save_provider_cas`, `StaleWriteError`), dan jendela antara baca dan tulis ditutup
+    `@under_memory_lock` — bukan oleh atomisitas SDK, melainkan oleh larangan instans kedua
+    (`flock` atas `<memory.db>.lock`, task 2.4a). Sifatnya kooperatif: penulis DB yang tidak
+    memakai modul ini tetap tidak terhalang.
     """
     for check_id in failed_checks:
         if check_id not in DETERMINISTIC_CHECK_IDS:
@@ -1928,6 +2229,7 @@ def record_job_outcome(
     return updated
 
 
+@under_memory_lock
 def store_provider_cap(client: MemoryClient, provider_address: str, decision: CapPlan) -> ProviderProfile:
     """Menyimpan cap terakhir ke profil provider (untuk audit; keputusan tetap dihitung ulang)."""
     profile = _load_provider_for_write(client, provider_address)

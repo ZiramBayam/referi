@@ -149,6 +149,13 @@ class CountingClient:
         self._inner = inner
         self.calls: list[str] = []
 
+    @property
+    def storage(self):
+        """Diteruskan apa adanya — kunci single-instance (task 2.4a) membaca path DB
+        dari `client.storage.db_path`. `storage` BUKAN pembacaan memori, jadi ia sengaja
+        tidak dicatat di `calls`."""
+        return self._inner.storage
+
     def get_entity(self, category, name):
         self.calls.append("get_entity")
         return self._inner.get_entity(category, name)
