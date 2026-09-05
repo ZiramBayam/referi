@@ -522,6 +522,10 @@ read_events(*, limit: int = 50, since: str|None = None, until: str|None = None) 
 # REFERENCE
 set_reference(key: str, body: str|dict|list, *, metadata: dict|None = None) -> None
 get_reference(key: str) -> dict|None
+# TIDAK ADA `list_references` di 0.7.0 (`hasattr(MemoryClient,"list_references")` → False).
+# Enumerasi reference HANYA lewat `search` di bawah — baca §C.1 sebelum memakainya.
+# LINTAS TIER (TERVERIFIKASI 2026-09-05, lihat §C.1)
+search(query: str, *, limit: int = 20, prefix: bool = False, tiers: tuple[str, ...]|None = None) -> list[dict]
 # ARCHIVE / hapus permanen
 archive_entity(category: str, name: str, reason: str|None = None) -> dict   # → {'archived_id','original_id'}; MELEMPAR NotFoundError
 delete_entity(category: str, name: str) -> bool   # True bila terhapus, False bila tidak ada (idempoten, tidak melempar)
@@ -545,10 +549,66 @@ Tier FLAGGED: `schema.sql` 0.7.0 memang memuat tabel `flagged_actors` (komentar 
 → tidak bisa dipakai dari SDK. Karantina TETAP entity `category="suspicion"`.
 Perintah: `grep -rn "flagged_actors" <site-packages>/sibyl_memory_client/client.py <…>/storage.py` → kosong.
 Metode publik lain yang ADA di 0.7.0 tapi di luar cakupan verifikasi ini (jangan dipanggil sebelum diverifikasi):
-`search, learn, learner, lint, free_tier_status, get/set_tenant, get/set_tier, schema_version, storage,
-accept_skill_proposal, reject_skill_proposal, list_skill_proposals`.
+`learn, learner, lint, free_tier_status, get/set_tenant, get/set_tier, schema_version, storage,
+accept_skill_proposal, reject_skill_proposal, list_skill_proposals`. (`search` DIKELUARKAN dari daftar ini
+2026-09-05: sudah terverifikasi di §C.1.) Daftar LENGKAP metode publik `MemoryClient` 0.7.0
+(`sorted(a for a in dir(MemoryClient) if not a.startswith("_"))`, dijalankan 2026-09-05) — apa pun di luar daftar ini
+TIDAK ADA: `accept_skill_proposal, archive_entity, delete_entity, free_tier_status, get_entity, get_reference,
+get_state, get_tenant, get_tier, learn, learner, lint, list_entities, list_skill_proposals, local, read_events,
+reject_skill_proposal, schema_version, search, search_entities, set_entity, set_reference, set_state, set_tenant,
+set_tier, storage, write_event`.
 Python ≥ 3.10 (`requires_python` di https://pypi.org/pypi/sibyl-memory-client/json). Tier plugin default `local()` = `free`
 → cap lokal 5 MB, `set_entity`/`archive_entity` bisa melempar `CapExceededError`.
+
+### C.1 Enumerasi REFERENCE lewat `search` — TERVERIFIKASI 2026-09-05 (menutup blocker 2.1r / ADR-020 kep. 7)
+Sumber: paket TERPASANG di `agent/.venv` (`importlib.metadata.version("sibyl_memory_client")` → `0.7.0`),
+`inspect.signature`, plus probe perilaku pada DB temp SEKALI-PAKAI di luar repo (`MemoryClient.local(<tmpdir>/memory.db)`,
+offline). Signature PERSIS (salinan `inspect.signature`, `self` dibuang):
+```python
+search(query: 'str', *, limit: 'int' = 20, prefix: 'bool' = False,
+       tiers: 'tuple[str, ...] | None' = None) -> 'list[dict[str, Any]]'
+list_entities(category: 'str | None' = None, *, status: 'str | None' = None,
+              limit: 'int' = 100) -> 'list[dict[str, Any]]'
+```
+YA — `search("pattern:", limit=<N>, prefix=True, tiers=("reference",))` BISA mengenumerasi reference, DENGAN syarat di bawah.
+Bentuk baris: kolom PERSIS `['body','category','key','rank','snippet','tier','ts']`; `category` selalu `None` untuk tier
+reference. **`body` bertipe `str` JSON** (mis. `'{"i":1}'`) → WAJIB `json.loads`, konsisten dengan `get_reference` di §C.
+
+TERVERIFIKASI (tiap baris = hasil probe yang dijalankan, bukan bacaan kode):
+- `search("", limit=100, tiers=("reference",))` → **0 baris**. Query KOSONG BUKAN wildcard-semua; tidak ada "ambil semua".
+- `prefix=True` menemukan SEMUA kunci `pattern:*` — **nol false-negative** atas 14 kunci patologis yang berhasil disimpan:
+  `pattern:` (kosong), `pattern:x`, `pattern:---`, `pattern:🎯`, `pattern:日本語`, `pattern:` + `"L"*300`, `pattern:a b`,
+  `pattern:'quote`, `pattern:NEAR`, `pattern:AND`, `pattern:OR`, `pattern:*`, `pattern:0x9aF3`, `pattern:  `
+  → `stored: 14 returned: 14` / `FALSE NEGATIVES (0): []`. Inilah yang menutup blocker: `memory_root` bisa menjangkar
+  SELURUH `reference:pattern:*` + `reference:rubric:*`, termasuk pattern yatim.
+- Filter `tiers` RAPAT: dengan kunci senama di 4 tier, `tiers=("reference",)` → `set(row["tier"])` = `{"reference"}`
+  (2 baris); query sama TANPA `tiers` → `['entity','journal','reference','state']` (5 baris). Tier sah tetap
+  `("entity","state","reference","journal")`.
+
+BAHAYA — TIGA jebakan; pemanggil WAJIB menangani ketiganya, kalau tidak `memory_root` SALAH secara senyap:
+1. **`prefix=True` BUKAN prefiks-kunci, melainkan prefiks-TOKEN FTS atas kunci DAN body.** Hasilnya SUPERSET yang bocor
+   lintas prefiks. Probe: kunci `pattern:real`, `rubric:pattern:trap`, `other:pattern-trap` → `search("pattern:",
+   prefix=True, tiers=("reference",))` mengembalikan KETIGANYA. Body pun terindeks: `rubric:defi` berbody
+   `{"note":"this rubric mentions pattern matching"}` JUGA dikembalikan (`BODY-ONLY MATCH LEAKED: True`).
+   (`metadata=` TIDAK terindeks: `qqq:viameta` dengan `metadata={"tag":"pattern"}` tidak muncul.)
+   → Pemanggil WAJIB menyaring sendiri `row["key"].startswith("pattern:")` SESUDAH `search`. Jangan pakai hasil mentah.
+2. **URUTAN TIDAK TERURUT-KUNCI — jangan pernah dipakai apa adanya untuk preimage hash.** Urutannya `ORDER BY rank`
+   (bm25: makin negatif makin dulu → dokumen makin PENDEK makin dulu), seri dipecah rowid = urutan INSERT.
+   Bukti bantahan: (a) body beda panjang, insert urut kunci a,b,c → keluar `b(-1.64e-06)`, `c(-1.19e-06)`, `a(-6.46e-07)`,
+   `got == sorted: False`; (b) 10 kunci `pattern:pNNN` body seragam, insert TERBALIK → keluar p009…p000,
+   `got == sorted: False`, `got == insertion order: True`; (c) kunci aneh (`pattern:B`, `pattern:a-b`, `pattern:a_b`,
+   `pattern:á`, `pattern:zz-ü`, …) → `got == sorted(got): False`. Kasus "kelihatan sorted" (25 kunci `pattern:pNNN`
+   body seragam di-insert urut) HANYA KEBETULAN rank seri + rowid menaik (`ranks distinct: 1`) — jangan jadi dasar.
+   Urutan STABIL antar panggilan pada DB yang tidak berubah, tapi stabil ≠ kanonik: berubah bila body diedit atau
+   urutan tulis berbeda. → Implementasi WAJIB `sorted()` sendiri atas kunci sebelum menghitung hash/`memory_root`.
+3. **POTONG SENYAP — tanpa error, tanpa flag "masih ada sisa".** `search` default `limit=20`; `list_entities` default
+   `limit=100`. Probe 25 pattern: `limit=10 → 10`, `limit=20 → 20`, `limit=25 → 25`, `limit=100 → 25`, tanpa `limit` → 20.
+   `list_entities` atas 120 entity: default → 100, `limit=10` → 10, `limit=100` → 100, `limit=200` → 120.
+   → Pemanggil WAJIB (a) memberi `limit` EKSPLISIT dan (b) MENDETEKSI saat `len(hasil) == limit` lalu MELEMPAR, bukan
+   mendiamkan. Pola wajib kita: helper `_list_all` yang MELEMPAR bila hasil menyentuh batas.
+
+Catatan samping (kunci reference divalidasi saat tulis): `set_reference` MELEMPAR `ValidationError` untuk kunci berisi
+`..` (`"key contains a forbidden path sequence"`), `"`, atau karakter kontrol — 3 dari 17 kunci uji ditolak di probe ini.
 
 ### Klaim "offline, tanpa `sibyl init`" — diverifikasi offline 2026-09-02
 Yang diuji: `MemoryClient.local(<path baru>)` membuat DB dari nol tanpa `sibyl init` dan tanpa jaringan, lalu
