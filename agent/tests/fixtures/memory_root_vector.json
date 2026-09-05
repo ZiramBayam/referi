@@ -1,0 +1,118 @@
+{
+  "version": "evaluator-memory-root/v1",
+  "providers": [
+    [
+      "0x00000000000000000000000000000000000000aa",
+      {
+        "risk_level": {
+          "$u": "1"
+        },
+        "cap_usdc": {
+          "$u": "1000000"
+        },
+        "stats": {
+          "jobs": {
+            "$u": "3"
+          },
+          "pass": {
+            "$u": "1"
+          },
+          "reject": {
+            "$u": "2"
+          }
+        },
+        "confirmed_patterns": [
+          "angka-tidak-cocok"
+        ],
+        "incident_jobs": [
+          {
+            "$u": "7"
+          },
+          {
+            "$u": "9"
+          }
+        ],
+        "recorded_jobs": [
+          {
+            "$u": "7"
+          },
+          {
+            "$u": "8"
+          },
+          {
+            "$u": "9"
+          }
+        ],
+        "budgets": {
+          "passed": [
+            {
+              "$u": "200000"
+            },
+            {
+              "$u": "1606938044258990275541962092341162602522202993782792835301383"
+            }
+          ]
+        },
+        "last_seen": "2026-09-05T00:00:00Z",
+        "version": {
+          "$u": "4"
+        }
+      }
+    ],
+    [
+      "0x00000000000000000000000000000000000000bb",
+      {
+        "risk_level": {
+          "$u": "0"
+        },
+        "cap_usdc": null,
+        "backdoor": "muatan tersembunyi",
+        "nested": {
+          "z": {
+            "$u": "-1"
+          },
+          "a": [
+            true,
+            false,
+            null,
+            "\u03c0 \u65e5\u672c\u8a9e"
+          ]
+        },
+        "escape": [
+          "kutip \" di sini",
+          "backslash \\ di sini",
+          "tab\tLF\nCR\r",
+          "kontrol\u0001\u001f",
+          "astral \ud83c\udfaf"
+        ],
+        "version": {
+          "$u": "0"
+        }
+      }
+    ]
+  ],
+  "patterns": [
+    [
+      "pattern:angka-tidak-cocok",
+      "{\"detectors\":[\"chain\"],\"pattern_id\":\"angka-tidak-cocok\"}"
+    ],
+    [
+      "pattern:yatim",
+      "{\"detectors\":[\"links\"],\"pattern_id\":\"yatim\"}"
+    ],
+    [
+      "pattern:\u65e5\u672c\u8a9e",
+      "{\"catatan\":\"kunci non-ASCII\"}"
+    ]
+  ],
+  "rubrics": [
+    [
+      "rubric:defi",
+      "{\"kriteria\":[\"angka cocok kontrak\",\"tautan hidup\"]}"
+    ],
+    [
+      "rubric:pattern:trap",
+      "{\"catatan\":\"kunci ini bocor lewat search(\\\"pattern:\\\")\"}"
+    ]
+  ]
+}

@@ -5,7 +5,9 @@ menjadi tiga bagian, dan pemisahan itu bukan gaya penulisan melainkan kontrol ke
 
   BAGIAN 1 — pemetaan tier §3 (I/O memori mentah).
   BAGIAN 2 — JALUR KEPUTUSAN. Satu-satunya pintu baca adalah `DecisionMemoryView`, yang
-             HANYA mengizinkan entity `provider` dan reference berawalan `pattern:`.
+             HANYA mengizinkan entity `provider` dan reference berawalan `pattern:`/`rubric:`
+             — himpunan yang SAMA PERSIS dengan yang dijangkar `memory_root`
+             (ADR-020 keputusan 7).
              Setiap fungsi di jalur ini ditandai `@decision_path` dan dijaga dua tes:
              tes SUMBER (kata terlarang tidak boleh muncul) dan tes PROPERTI runtime
              (keputusan pada DB dengan-vs-tanpa karantina harus identik untuk ratusan
@@ -21,29 +23,55 @@ Acuan:
     `get_entity` MELEMPAR `NotFoundError`, `get_state`/`get_reference` mengembalikan
     pembungkus/None, `set_reference` menyimpan dict sebagai STRING JSON, `write_event`
     seluruhnya keyword-only, `list_entities` default `limit=100` (diam-diam memotong).
+  - docs/api-facts.md §C.1 — enumerasi reference lewat `search(prefix=True, tiers=("reference",))`
+    beserta TIGA jebakannya (superset lintas prefiks & body, urutan bm25 bukan urutan kunci,
+    pemotongan senyap). Ketiganya ditangani di `_reference_keys()`.
   - docs/decisions.md ADR-001 (cap 0 di kontrak = TANPA BATAS), ADR-002 (karantina =
     entity, bukan tier), ADR-007 + amandemennya (fail-closed), ADR-011 (root yang pernah
-    diumumkan), ADR-019 keputusan 4 (median saat himpunan budget lolos kosong).
+    diumumkan), ADR-020 keputusan 6-7 (encoding & cakupan root), ADR-021 (plafon cap).
 
 Modul ini MURNI lokal: tidak ada jaringan, tidak ada chain, tidak ada LLM.
 
-BATAS YANG DIAKUI — KETERSEDIAAN (jangan dianggap tidak ada karena tidak disebut):
-  Modul ini fail-closed dan TIDAK punya jalur pemulihan sendiri. Bila `list_entities`
-  menyentuh `LIST_LIMIT`, bila ada dua nama entity provider yang bertabrakan setelah
-  normalisasi, bila body sebuah entity rusak, atau bila sebuah `reference:pattern` hilang,
-  maka `memory_root()` MELEMPAR — dan ia akan terus melempar sampai seseorang memperbaiki
-  isi memori dari luar. Konsekuensinya bagi agen: mode aman (task 2.4a), yaitu tidak ada
-  `postVerdict`/`finalize`/`setProviderCap`, job MENGGANTUNG sampai `expiredAt`, lalu siapa
-  pun boleh `claimRefund` dan client menerima refund penuh. Jadi pihak yang bisa menulis ke
-  `memory.db` bisa mematikan ketersediaan evaluator, TIDAK bisa mencuri dana, dan TIDAK bisa
-  memaksa verdict. Itu pertukaran yang dipilih sadar (ADR-020 keputusan 8), bukan kelalaian.
+BATAS YANG DIAKUI — PENULIS `memory.db` (jangan dibaca lebih ringan dari ini):
+  1) KETERSEDIAAN. Modul ini fail-closed dan TIDAK punya jalur pemulihan sendiri. Bila
+     `list_entities`/`search` menyentuh batasnya, bila nama entity provider bukan alamat,
+     bila body sebuah entity rusak, atau bila `reference:pattern` yang dirujuk provider
+     hilang, maka `memory_root()` MELEMPAR — dan terus melempar sampai isi memori
+     diperbaiki dari luar. Konsekuensinya: mode aman (task 2.4a) — tidak ada
+     `postVerdict`/`finalize`/`setProviderCap`, job MENGGANTUNG sampai `expiredAt`, lalu
+     siapa pun boleh `claimRefund` dan client menerima refund penuh.
+  2) CAP BISA DILONGGARKAN SAMPAI TANPA BATAS. Ini yang lebih tajam dan sempat kurang
+     dinyatakan: penulis `memory.db` tidak hanya bisa mematikan agen, ia bisa MENIMPA body
+     provider menjadi `risk_level: 0` tanpa `cap_usdc`, sehingga `derive_cap` mengembalikan
+     `NO_CAP` → `cap_to_onchain` = 0 → di kontrak berarti TANPA BATAS (ADR-001). Monoton
+     tidak-naik tidak menolong: jangkarnya adalah `cap_usdc` yang tersimpan di body yang
+     sama, dan penyerang menghapusnya bersamaan. Ia juga bisa menghapus `incident_jobs`,
+     `confirmed_patterns`, dan seluruh entity provider sekaligus.
+  3) SATU-SATUNYA PENAWAR adalah JANGKAR ROOT: `memory_root` (yang encodingnya dibekukan di
+     task 2.1r) mengikat SELURUH himpunan yang boleh dibaca, sehingga setiap suntingan di
+     atas mengubah root, root lokal berhenti cocok dengan `lastMemoryRoot()` on-chain, dan
+     `decide_mode` masuk mode AMAN. Perlu dicatat kapan penawar itu TIDAK berlaku: pada hari
+     pertama root on-chain masih nol dan `decide_mode` sah mengembalikan NAIF — tidak ada
+     yang bisa dideteksi karena belum ada yang bisa dibandingkan; dan seluruh rangkaian ini
+     baru punya arti sejak 2.1r, sebab sebelum encoding dibekukan tidak ada root memori yang
+     boleh diumumkan sama sekali.
+  Jadi pihak yang bisa menulis `memory.db` bisa mematikan ketersediaan evaluator dan — sampai
+  root pertama terdaftar on-chain — bisa melonggarkan cap; ia TIDAK bisa mencuri dana dan
+  TIDAK bisa memaksa verdict lolos, karena verdict berasal dari cek deterministik (task 2.3),
+  bukan dari memori. Itu pertukaran yang dipilih sadar (ADR-020 keputusan 8), bukan kelalaian.
 
 UTANG YANG DIAKUI (jangan dibaca seolah sudah selesai):
-  - Bentuk AKHIR encoding preimage `memory_root` MENUNGGU putusan product-manager.
-    Yang sudah ditegakkan di sini: preimage memakai BODY MENTAH yang tersimpan (bukan
-    proyeksi), menolak tabrakan nama, dan bebas dari bilangan JSON (semua integer menjadi
-    string desimal bertanda) supaya dapat direkonstruksi di TypeScript/JS. Formatnya
-    boleh berubah bila PM memutuskan lain — 2.1b/2.4b memakai fungsi ini, bukan salinan.
+  - Encoding preimage `memory_root` sudah DIBEKUKAN (ADR-020 keputusan 6, task 2.1r):
+    body mentah, integer sebagai string desimal, kunci & body dibingkai panjang-berprefiks,
+    label versi ikut ter-hash. 2.1b/2.4b memakai fungsi INI, bukan salinan. Yang masih utang:
+    ekspor `agent/memory_export.py` (2.1b) belum ada, jadi bukti lintas-bahasa hari ini
+    berjalan di atas fixture JSON yang ditulis tangan dari `to_canonical_obj()`, bukan di
+    atas keluaran alat ekspor yang sesungguhnya.
+  - Kesamaan "dijangkar == dibaca" (ADR-020 keputusan 7) ditegakkan dengan MENOLAK nama
+    entity provider yang tidak kanonik, bukan dengan menerimanya lalu menjelaskannya. Itu
+    berarti satu entity bernama aneh MEMATIKAN perhitungan root sampai ia dibetulkan dari
+    luar — konsekuensi ketersediaan yang sama dengan butir 1 di atas, dipilih sadar karena
+    alternatifnya (menjangkar sesuatu yang tidak pernah dibaca) adalah kebohongan senyap.
   - Idempotensi tulisan provider dijaga CAS versi, tetapi store-nya TIDAK transaksional
     (api-facts §C tidak punya transaksi) — dua proses agen pada satu `memory.db` tetap
     DILARANG secara operasional, bukan dicegah oleh kode.
@@ -57,6 +85,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import weakref
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Final
@@ -84,6 +113,12 @@ QUARANTINE_STATUS_PROMOTED: Final = "promoted"
 # `list_entities` memotong diam-diam pada 100 (api-facts §C) → selalu eksplisit, DAN
 # setiap pemakaian WAJIB lewat `_list_all()` yang melempar bila hasilnya menyentuh batas.
 LIST_LIMIT: Final = 10_000
+
+# `search` memotong diam-diam pada 20 (api-facts §C.1 jebakan 3) → sama seperti `LIST_LIMIT`,
+# batas ini SELALU eksplisit dan pemakaiannya WAJIB lewat `_reference_keys()` yang melempar
+# bila hasil menyentuh batas. Nilainya dibaca dari GLOBAL modul saat dipanggil supaya tes
+# bisa mengecilkannya dan membuktikan pemotongan benar-benar terdeteksi.
+SEARCH_LIMIT: Final = 10_000
 
 # Cek deterministik yang sah sebagai bukti (spec §5 langkah 3, modul `agent/checks/*`).
 # Klaim pihak / skor LLM TIDAK ada di sini dan TIDAK PERNAH boleh masuk (spec §3 aturan 3).
@@ -121,8 +156,8 @@ MIN_CAP_USDC = 250_000
 
 # Batas bentuk masukan. Nama entity & id pola dibatasi ketat supaya pemisah `:` pada
 # nama karantina `f"{addr}:{pattern}"` tidak bisa dipalsukan.
-ADDRESS_RE: Final = re.compile(r"^0x[0-9a-f]{40}$")
-PATTERN_ID_RE: Final = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+ADDRESS_RE: Final = re.compile(r"^0x[0-9a-f]{40}\Z")
+PATTERN_ID_RE: Final = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}\Z")
 MAX_PROOF_LEN: Final = 512
 MAX_UINT256: Final = 2**256 - 1
 
@@ -177,6 +212,29 @@ def validate_pattern_id(pattern_id: str) -> str:
 # bisa merekonstruksi root" harus berlaku juga bagi yang tidak memakai Python.
 NUMBER_TAG: Final = "$u"
 
+# Kunci objek di dalam body: HANYA ASCII cetak, dan TANPA karakter yang butuh escape JSON
+# (`"` dan `\`). Batas ini bukan kerapian — ia menutup SELURUH kelas "dua bahasa membaca
+# nama properti yang sama secara berbeda". Nama properti adalah satu-satunya tempat di
+# encoding ini yang harus dilewatkan ke `JSON.parse` pihak lain sebagai NAMA (kunci seksi
+# adalah nilai string di dalam array, jadi tidak melewati jalur itu), dan implementasi
+# `JSON.parse` bebas punya cache nama properti sendiri. Kalau tidak ada satu pun kunci yang
+# butuh escape, tidak ada yang bisa didekode berbeda. `agent/tools/memory_root_check.mjs`
+# MENOLAK himpunan yang sama, jadi keduanya sepakat secara konstruksi: sama-sama menghitung
+# atau sama-sama menolak — tidak pernah menghasilkan dua angka.
+# `\Z`, BUKAN `$`: `$` di Python juga cocok TEPAT SEBELUM newline penutup, sehingga
+# kunci "lf\n" akan lolos diam-diam — persis kelas karakter yang dilarang di sini.
+BODY_KEY_RE: Final = re.compile(r"^[\x20-\x21\x23-\x5b\x5d-\x7e]*\Z")
+
+# ADR-020 keputusan 6 — versi encoding preimage. Ia ikut ter-hash sebagai bingkai pertama,
+# jadi perubahan encoding berikutnya menghasilkan root yang JELAS berbeda, bukan diam-diam
+# tabrakan dengan root lama yang sudah terdaftar di `knownRoots` (ADR-011).
+MEMORY_ROOT_ENCODING_VERSION: Final = "evaluator-memory-root/v1"
+
+# Label seksi. Urutannya BAGIAN DARI ENCODING dan tidak boleh diubah-ubah.
+SECTION_PROVIDER: Final = "provider"
+SECTION_PATTERN: Final = "reference:pattern"
+SECTION_RUBRIC: Final = "reference:rubric"
+
 
 def _canonical_value(value: Any, depth: int = 0) -> Any:
     """Bentuk kanonik lintas-bahasa: tanpa bilangan JSON, tanpa float, kunci ASCII."""
@@ -195,8 +253,11 @@ def _canonical_value(value: Any, depth: int = 0) -> Any:
     if isinstance(value, Mapping):
         out: dict[str, Any] = {}
         for key, item in value.items():
-            if not isinstance(key, str) or not key.isascii():
-                raise MemoryIntegrityError(f"kunci body harus string ASCII, dapat {key!r}")
+            if not isinstance(key, str) or not BODY_KEY_RE.match(key):
+                raise MemoryIntegrityError(
+                    f"kunci body harus ASCII cetak tanpa karakter yang butuh escape JSON "
+                    f'(tanpa " dan \\ dan tanpa kontrol), dapat {key!r}'
+                )
             if key == NUMBER_TAG:
                 raise MemoryIntegrityError(f"kunci {NUMBER_TAG!r} dipesan untuk penanda integer")
             out[key] = _canonical_value(item, depth + 1)
@@ -206,6 +267,34 @@ def _canonical_value(value: Any, depth: int = 0) -> Any:
     raise MemoryIntegrityError(f"tipe {type(value).__name__} tidak dapat dikanonikkan")
 
 
+_DECIMAL_RE: Final = re.compile(r"^-?(0|[1-9][0-9]*)\Z")
+
+
+def decanonical_value(value: Any, depth: int = 0) -> Any:
+    """Kebalikan `_canonical_value`: `{"$u": "<desimal>"}` kembali menjadi `int`.
+
+    Dipakai membaca file EKSPOR (task 2.1b) agar root bisa dihitung ulang dari file itu
+    dengan fungsi yang SAMA. Tidak ada ambiguitas: `_canonical_value` MELARANG `$u` sebagai
+    kunci body, jadi satu-satunya dict berkunci tunggal `$u` adalah integer yang di-encode.
+    """
+    if depth > 32:
+        raise MemoryIntegrityError("body ekspor terlalu dalam untuk didekanonikkan")
+    if isinstance(value, Mapping):
+        if set(value) == {NUMBER_TAG}:
+            text = value[NUMBER_TAG]
+            if not isinstance(text, str) or not _DECIMAL_RE.match(text):
+                raise MemoryIntegrityError(f"penanda integer {value!r} bukan desimal yang sah")
+            return int(text)
+        return {k: decanonical_value(v, depth + 1) for k, v in value.items()}
+    if isinstance(value, list):
+        return [decanonical_value(v, depth + 1) for v in value]
+    if isinstance(value, float):
+        raise MemoryIntegrityError("ekspor memuat bilangan JSON; encoding ini melarangnya")
+    if isinstance(value, int) and not isinstance(value, bool):
+        raise MemoryIntegrityError("ekspor memuat bilangan JSON; encoding ini melarangnya")
+    return value
+
+
 def canonical_json(value: Any) -> str:
     """JSON kanonik: kunci terurut, tanpa spasi, ASCII murni, tanpa bilangan JSON.
 
@@ -213,6 +302,37 @@ def canonical_json(value: Any) -> str:
     encoding, locale, maupun perbedaan urutan sort antar bahasa.
     """
     return json.dumps(_canonical_value(value), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def _frame(text: str) -> bytes:
+    """Bingkai PANJANG-BERPREFIKS (netstring): `<jumlah byte>:<isi utf-8>,`.
+
+    Inilah yang membuat "dua kunci berbeda runtuh jadi satu" mustahil (ADR-020 keputusan 6).
+    Penggabungan biasa (`key + body`) bisa ditabrak: nama `"0xa" , body "b:c"` dan nama
+    `"0xa:b"`, body `"c"` menghasilkan byte yang sama. Dengan panjang di depan, batas setiap
+    potongan ditentukan oleh angka yang ikut ter-hash, bukan oleh pemisah yang bisa ditiru.
+    Panjang dihitung dalam BYTE UTF-8 (bukan karakter) supaya kunci non-ASCII — yang MEMANG
+    bisa disimpan sebagai kunci reference (api-facts §C.1) — tetap bisa direkonstruksi di JS
+    lewat `Buffer.byteLength`.
+    """
+    raw = text.encode("utf-8")
+    return str(len(raw)).encode("ascii") + b":" + raw + b","
+
+
+def _frame_section(tag: str, mapping: Mapping[str, Any]) -> bytes:
+    """Satu seksi preimage: label, jumlah entri, lalu pasangan (kunci, body kanonik).
+
+    Kunci diurutkan MENURUT BYTE UTF-8 di sini — TIDAK PERNAH mengandalkan urutan yang
+    dikembalikan store. api-facts §C.1 jebakan 2: `search` mengurutkan `ORDER BY rank`
+    (bm25) dengan seri dipecah rowid = urutan INSERT, sehingga hasilnya berubah bila body
+    diedit atau urutan tulis berbeda. Urutan yang stabil bukan urutan yang kanonik.
+    Jumlah entri ikut di-hash supaya seksi kosong dan seksi hilang tidak pernah sama.
+    """
+    parts = [_frame(tag), _frame(str(len(mapping)))]
+    for key in sorted(mapping, key=lambda k: k.encode("utf-8")):
+        parts.append(_frame(key))
+        parts.append(_frame(canonical_json(mapping[key])))
+    return b"".join(parts)
 
 
 def _sorted_pairs(mapping: Mapping[str, Any]) -> list[list[Any]]:
@@ -228,6 +348,19 @@ def _keccak(data: bytes) -> bytes:
     return bytes(Web3.keccak(data))
 
 
+def decision_path_forward[F: Callable[..., Any]](fn: F) -> F:
+    """Sama dengan `@decision_path`, tetapi untuk fungsi yang berada di atas definisinya.
+
+    Penandaannya dilakukan sekali di akhir modul (`_register_forward_decision_paths`),
+    sehingga fungsi ini ikut diperiksa tes sumber & tes properti karantina yang sama.
+    """
+    _FORWARD_DECISION_PATHS.append(fn)
+    return fn
+
+
+_FORWARD_DECISION_PATHS: list[Callable[..., Any]] = []
+
+
 def _list_all(client: MemoryClient, category: str, *, status: str | None = None) -> list[dict[str, Any]]:
     """`list_entities` dengan batas EKSPLISIT dan penolakan pemotongan senyap.
 
@@ -241,6 +374,40 @@ def _list_all(client: MemoryClient, category: str, *, status: str | None = None)
             f"list_entities({category!r}) menyentuh batas {LIST_LIMIT}; hasil mungkin terpotong"
         )
     return rows
+
+
+@decision_path_forward
+def _reference_keys(reader: Any, prefix: str) -> list[str]:
+    """Enumerasi kunci `reference:<prefix>*` — MENANGANI KETIGA JEBAKAN api-facts §C.1.
+
+    1. BOCOR LINTAS PREFIKS. `prefix=True` bukan prefiks-kunci melainkan prefiks-TOKEN FTS
+       atas kunci DAN body: `search("pattern:")` mengembalikan `rubric:pattern:trap`,
+       `other:pattern-trap`, bahkan `rubric:defi` yang BODY-nya sekadar menyebut kata
+       "pattern". Hasil mentahnya SUPERSET → disaring `key.startswith(prefix)` di sini.
+    2. URUTAN. Hasil datang `ORDER BY rank` (bm25; seri dipecah rowid = urutan INSERT),
+       jadi TIDAK terurut kunci. Kami mengurutkan sendiri; `rank` dan `snippet` diabaikan.
+    3. POTONG SENYAP. `search` default `limit=20` dan tidak memberi tanda "masih ada sisa".
+       Batas diberikan EKSPLISIT, dan bila hasil MENYENTUHNYA batas dinaikkan sekali (10x)
+       sebelum menyerah — baru sesudah itu dilempar. Dua sisi yang harus ditutup sekaligus:
+       menerima hasil terpotong berarti reference hilang dari preimage tanpa satu pun pesan
+       (audit berbohong), sedangkan melempar pada percobaan PERTAMA membuat siapa pun yang
+       bisa menulis reference `other:*` berbody kata "pattern" mematikan agen dengan derau
+       yang bahkan tidak masuk cakupan root (kebocoran jebakan 1 dipakai balik sebagai DoS).
+
+    `body` hasil `search` juga TIDAK dipakai: setelah kunci diketahui, isinya diambil lewat
+    `get_reference` yang sudah ada di api-facts §C. Satu sumber kebenaran untuk body.
+    """
+    rows: list[dict[str, Any]] = []
+    for limit in (SEARCH_LIMIT, SEARCH_LIMIT * 10):
+        rows = reader.search_references(prefix, limit=limit)
+        if len(rows) < limit:
+            break
+    else:
+        raise MemoryIntegrityError(
+            f"search({prefix!r}) menyentuh batas {SEARCH_LIMIT * 10}; hasil mungkin terpotong"
+        )
+    keys = {str(row["key"]) for row in rows if str(row.get("key", "")).startswith(prefix)}
+    return sorted(keys, key=lambda k: k.encode("utf-8"))
 
 
 # ----------------------------------------------------------------------
@@ -428,38 +595,108 @@ class MemorySnapshot:
     saling menimpa setelah normalisasi nama akan menghasilkan root yang IDENTIK — artinya
     root tidak lagi mengikat isi memori yang diaudit.
 
+    Cakupan (ADR-020 keputusan 7): SELURUH memori yang boleh dibaca pengambil keputusan —
+    semua entity `provider`, semua `reference:pattern:*`, dan semua `reference:rubric:*`,
+    TERMASUK pattern YATIM yang tidak dirujuk provider mana pun. Entity `suspicion` TIDAK
+    ikut (ADR-002): ia tidak boleh dibaca jalur keputusan, jadi ia tidak dijangkar.
+
     Satu jalur mengisinya dari DB Sibyl (`load_snapshot`), jalur lain dari file JSON hasil
     ekspor (task 2.1b) — keduanya memakai `memory_root()` yang SAMA, bukan salinan.
     """
 
     providers: dict[str, Any] = field(default_factory=dict)
     patterns: dict[str, Any] = field(default_factory=dict)
+    rubrics: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_mapping(cls, providers: Mapping[str, Any], patterns: Mapping[str, Any]) -> MemorySnapshot:
-        """Membangun snapshot TANPA menormalkan kunci; tabrakan nama DITOLAK, bukan digabung."""
+    def from_mapping(
+        cls,
+        providers: Mapping[str, Any],
+        patterns: Mapping[str, Any],
+        rubrics: Mapping[str, Any] | None = None,
+    ) -> MemorySnapshot:
+        """Nama entity provider WAJIB sudah KANONIK: `name == normalize_address(name)`.
+
+        Ini inti ADR-020 keputusan 7, dan bukan sekadar kebersihan. Satu entity bernama
+        `"  0X5A5A…  "` sudah cukup — tanpa tabrakan apa pun — untuk membuat ekspor publik
+        bercerita lain daripada agen: root MENJANGKARNYA (risk 2, cap 250.000, 3 insiden),
+        tetapi `DecisionMemoryView.provider()` mencarinya dengan nama TERNORMALKAN, tidak
+        menemukannya, dan memakai profil kosong (risk 0, `cap_usdc=None` → `cap_to_onchain`
+        = 0 = TANPA BATAS, ADR-001). Root tetap cocok, mode tetap NORMAL, nol deteksi,
+        permanen. Menerima keduanya sebagai dua entri terpisah TIDAK menolong: yang salah
+        bukan tabrakannya, melainkan adanya entri yang dijangkar tapi tidak pernah dibaca.
+
+        Menuntut kanonisitas membuat tabrakan mustahil SECARA KONSTRUKSI (dua nama kanonik
+        yang menormalkan sama adalah nama yang sama), jadi tidak perlu aturan anti-tabrakan
+        terpisah. Ia juga tidak menambah permukaan DoS: fungsi ini memang sudah memanggil
+        `normalize_address` dan sudah melempar untuk nama yang bukan alamat; yang berubah
+        hanya kelas "alamat tetapi tidak kanonik", yang sebelumnya menghasilkan kebohongan
+        senyap. Penulisan lewat modul ini selalu kanonik (`save_provider` memakai
+        `ProviderProfile.address` yang ternormalkan).
+        """
         checked: dict[str, Any] = {}
-        seen: dict[str, str] = {}
         for name, body in providers.items():
-            normalized = normalize_address(name)
-            if normalized in seen:
+            kanonik = normalize_address(name)
+            if str(name) != kanonik:
                 raise MemoryIntegrityError(
-                    f"dua entity provider bertabrakan setelah normalisasi: {seen[normalized]!r} "
-                    f"dan {name!r} — satu di antaranya akan tersembunyi dari audit"
+                    f"nama entity provider {name!r} tidak kanonik (seharusnya {kanonik!r}) — "
+                    "ia akan dijangkar root tetapi TIDAK PERNAH dibaca jalur keputusan"
                 )
-            seen[normalized] = name
-            checked[name] = body
-        return cls(providers=checked, patterns={str(k): v for k, v in patterns.items()})
+            checked[kanonik] = body
+        return cls(
+            providers=checked,
+            patterns={str(k): v for k, v in patterns.items()},
+            rubrics={str(k): v for k, v in (rubrics or {}).items()},
+        )
 
     def to_canonical_obj(self) -> dict[str, Any]:
-        """Bentuk kanonik yang di-hash. Urutan penyisipan tidak berpengaruh."""
+        """Bentuk EKSPOR (task 2.1b): pasangan terurut + body yang sudah dikanonikkan.
+
+        Objek ini bebas dari bilangan JSON (semua integer sudah menjadi `{"$u":"…"}`),
+        jadi `JSON.parse` di JS tidak merusak uint256 di atas 2^53 dan pembaca lain bisa
+        menghitung ulang root dari file ekspor saja.
+        """
         return {
-            "providers": _sorted_pairs(self.providers),
-            "patterns": _sorted_pairs(self.patterns),
+            "version": MEMORY_ROOT_ENCODING_VERSION,
+            "providers": [[k, _canonical_value(v)] for k, v in _sorted_pairs(self.providers)],
+            "patterns": [[k, _canonical_value(v)] for k, v in _sorted_pairs(self.patterns)],
+            "rubrics": [[k, _canonical_value(v)] for k, v in _sorted_pairs(self.rubrics)],
         }
 
+    @classmethod
+    def from_export_obj(cls, obj: Mapping[str, Any]) -> MemorySnapshot:
+        """Kebalikan `to_canonical_obj` — dipakai alat audit (2.1b) dan vektor uji beku."""
+        version = obj.get("version")
+        if version != MEMORY_ROOT_ENCODING_VERSION:
+            raise MemoryIntegrityError(
+                f"ekspor memakai encoding {version!r}, modul ini {MEMORY_ROOT_ENCODING_VERSION!r}"
+            )
+        def pairs(name: str) -> dict[str, Any]:
+            out: dict[str, Any] = {}
+            for key, body in obj.get(name, []):
+                if key in out:
+                    raise MemoryIntegrityError(f"kunci {key!r} muncul dua kali di seksi {name!r}")
+                out[str(key)] = decanonical_value(body)
+            return out
+        return cls(providers=pairs("providers"), patterns=pairs("patterns"), rubrics=pairs("rubrics"))
+
     def preimage(self) -> bytes:
-        return canonical_json(self.to_canonical_obj()).encode("utf-8")
+        """PREIMAGE BEKU (ADR-020 keputusan 6). Urutan seksi bagian dari encoding.
+
+            frame(versi) || seksi(provider) || seksi(reference:pattern) || seksi(reference:rubric)
+
+        dengan `frame(s) = desimal(len(utf8(s))) || ":" || utf8(s) || ","` dan
+        `seksi(tag, m) = frame(tag) || frame(jumlah) || untuk tiap kunci TERURUT:
+        frame(kunci) || frame(canonical_json(body))`.
+        """
+        return b"".join(
+            [
+                _frame(MEMORY_ROOT_ENCODING_VERSION),
+                _frame_section(SECTION_PROVIDER, self.providers),
+                _frame_section(SECTION_PATTERN, self.patterns),
+                _frame_section(SECTION_RUBRIC, self.rubrics),
+            ]
+        )
 
 
 # ======================================================================
@@ -555,85 +792,182 @@ def _guard_category(category: Any) -> str:
     return category
 
 
+# ADR-020 keputusan 7 (task 2.1r): cakupan BACA jalur keputusan == cakupan JANGKAR root.
+# `rubric:` masuk kembali di sini PERSIS karena `memory_root` kini menjangkarnya; sebelum
+# 2.1r ia sengaja ditutup supaya tidak ada keadaan "dibaca tapi tidak dijangkar". Kedua
+# daftar ini WAJIB tetap sama — ada tes yang membandingkannya.
+DECISION_REFERENCE_PREFIXES: Final[tuple[str, ...]] = (
+    REFERENCE_PATTERN_PREFIX,
+    REFERENCE_RUBRIC_PREFIX,
+)
+
+
 @decision_path
 def _guard_reference_key(key: Any) -> str:
-    """Reference yang boleh dibaca jalur keputusan.
+    """Reference yang boleh dibaca jalur keputusan: `pattern:` dan `rubric:`.
 
-    HANYA `pattern:`. `rubric:` SENGAJA TIDAK diizinkan di sini meskipun ADR-020
-    keputusan 7 memasukkannya ke cakupan root: penjangkarannya (`reference:rubric:*` dan
-    pattern YATIM) baru mendarat di task 2.1r. Urutannya jangkar dulu, baru baca —
-    melebarkan baca lebih dulu justru MEMPERLUAS keadaan "dibaca tapi tidak dijangkar",
-    yaitu permukaan tempat teks pihak bisa memengaruhi keputusan tanpa mengubah root.
-    Sampai 2.1r hijau, batas ini juga tetap sama persis dengan spec §3 aturan 1 yang
-    belum diamandemen (`provider` + `reference:pattern`).
+    Keduanya, dan HANYA keduanya, dijangkar `memory_root` (ADR-020 keputusan 7). Aturannya
+    satu kalimat: root menjangkar persis himpunan yang boleh dibaca pengambil keputusan,
+    sehingga keadaan "saya membacanya tapi tidak menjangkarnya" mustahil.
     """
-    if not isinstance(key, str) or not key.startswith(REFERENCE_PATTERN_PREFIX):
+    if not isinstance(key, str) or not key.startswith(DECISION_REFERENCE_PREFIXES):
         raise ForbiddenReadError(
             f"jalur keputusan hanya boleh membaca reference berawalan "
-            f"{REFERENCE_PATTERN_PREFIX!r}, diminta {key!r} (docs/spec.md §3 aturan 1)"
+            f"{list(DECISION_REFERENCE_PREFIXES)}, diminta {key!r} (docs/spec.md §3 aturan 1)"
         )
     return key
+
+
+@decision_path
+def _guard_reference_prefix(prefix: Any) -> str:
+    """Awalan yang boleh DIENUMERASI. Pencocokan PERSIS, bukan `startswith`.
+
+    `search` mencocokkan token atas kunci DAN body, jadi awalan sembarang akan menarik
+    baris dari tier reference mana pun (api-facts §C.1 jebakan 1). Yang boleh diminta
+    hanya dua konstanta di `DECISION_REFERENCE_PREFIXES`.
+    """
+    if prefix not in DECISION_REFERENCE_PREFIXES:
+        raise ForbiddenReadError(
+            f"jalur keputusan hanya boleh mengenumerasi {list(DECISION_REFERENCE_PREFIXES)}, "
+            f"diminta {prefix!r} (docs/spec.md §3 aturan 1)"
+        )
+    return prefix
+
+
+# Registri identitas reader yang benar-benar dibuat `_guarded_reader()`. `WeakSet` supaya
+# view yang dibuang tidak menahan memori. Ini yang membuat penerimaan reader di
+# `DecisionMemoryView` sekaku penolakan subclass di `gate_job` — dua sisi pintu yang sama.
+_GENUINE_READERS: weakref.WeakSet[Any] = weakref.WeakSet()
 
 
 class _GuardedReader:
     """Klien memori TERBATAS: satu-satunya benda yang dipegang jalur keputusan.
 
-    Ini penegakan STRUKTURAL, bukan konvensi. Sebelumnya penjaga adalah panggilan
-    SUKARELA: metode `DecisionMemoryView` memegang klien Sibyl penuh, jadi satu baris
-    `self.__client.list_entities("suspicion")` (nama kategori boleh disamarkan agar tes
-    sumber buta, dan disyaratkan pada masukan yang tidak ada di ruang sampel tes properti)
-    melewati ketiga lapis tes sekaligus. Sekarang klien penuh TIDAK PERNAH terjangkau dari
-    jalur keputusan: yang dipegang adalah objek ini, dan objek ini melempar untuk kategori
-    /kunci di luar daftar putih, DAN untuk metode apa pun yang tidak tercantum di bawah
-    (`get_state`, `read_events`, `search`, `search_entities`, `set_*`, …).
+    KLAIMNYA, tepat sejauh yang benar: reader ini tidak punya satu pun atribut DATA —
+    `__slots__` kosong, tanpa `__dict__`, dan klien Sibyl penuh hidup hanya di dalam CLOSURE
+    metodenya. Jadi tidak ada `reader._GuardedReader__client`, tidak ada `vars(reader)`, dan
+    setiap nama lain jatuh ke `__getattr__` yang MELEMPAR — termasuk nama yang dirakit saat
+    runtime agar tes sumber buta.
 
-    Karena penjaga hidup di LAPISAN KLIEN, "lupa memanggil penjaga" bukan lagi mode
-    kegagalan yang mungkin.
+    YANG TIDAK DIKLAIM: kurungan. `type(reader).get_entity.__closure__[0].cell_contents`
+    adalah rantai atribut biasa dan MENYERAHKAN klien penuh; begitu pula `gc.get_referents`,
+    atau sekadar `import sibyl_memory_client` lalu membuat klien baru. Python tidak punya
+    kurungan yang sungguh-sungguh, jadi apa pun yang berbunyi seperti "klien tidak pernah
+    terjangkau" akan salah. Yang dibeli oleh bentuk ini hanyalah: "lupa memanggil penjaga"
+    dan "ambil klien lewat name-mangling" berhenti menjadi mode kegagalan yang WAJAR.
+    Kontrol sesungguhnya tetap tiga tes karantina (sumber, properti runtime, klien
+    mata-mata) — bukan kelas ini.
     """
 
-    __slots__ = ("__client",)
-
-    def __init__(self, client: MemoryClient) -> None:
-        self.__client = client
+    # `__weakref__` diperlukan registri identitas di atas; ia BUKAN atribut data.
+    __slots__ = ("__weakref__",)
 
     def get_entity(self, category: str, name: str) -> dict[str, Any]:
-        return self.__client.get_entity(_guard_category(category), name)
+        raise ForbiddenReadError("gunakan _guarded_reader() untuk membuat reader")
 
     def list_entities(
         self, category: str | None = None, *, status: str | None = None, limit: int = 100
     ) -> list[dict[str, Any]]:
-        return self.__client.list_entities(_guard_category(category), status=status, limit=limit)
+        raise ForbiddenReadError("gunakan _guarded_reader() untuk membuat reader")
 
     def get_reference(self, key: str) -> dict[str, Any] | None:
-        return self.__client.get_reference(_guard_reference_key(key))
+        raise ForbiddenReadError("gunakan _guarded_reader() untuk membuat reader")
+
+    def search_references(self, prefix: str, *, limit: int) -> list[dict[str, Any]]:
+        raise ForbiddenReadError("gunakan _guarded_reader() untuk membuat reader")
 
     def __getattr__(self, name: str) -> Any:
         raise ForbiddenReadError(
             f"jalur keputusan tidak boleh memanggil {name!r} pada memori; hanya "
-            "get_entity/list_entities('provider') dan get_reference('pattern:*') "
-            "(docs/spec.md §3 aturan 1)"
+            "get_entity/list_entities('provider'), get_reference('pattern:*'|'rubric:*') "
+            "dan search_references atas kedua awalan itu (docs/spec.md §3 aturan 1)"
         )
+
+
+@decision_path
+def _guarded_reader(client: MemoryClient) -> _GuardedReader:
+    """Membuat reader yang menyimpan `client` HANYA di closure, bukan di atribut.
+
+    Kelasnya dibuat per pemanggilan supaya metodenya bisa menutup `client` tanpa satu pun
+    slot/atribut instans. Biayanya satu objek kelas per view; imbalannya: `_GuardedReader`
+    tidak lagi punya atribut ber-name-mangling yang bisa dijangkau lewat lookup NORMAL.
+
+    Setiap instans didaftarkan di `_GENUINE_READERS` (identitas, bukan tipe). Itulah yang
+    dipakai `DecisionMemoryView` untuk menolak reader PALSU: subclass `_GuardedReader`
+    ber-`__slots__ = ()` yang meng-override `list_entities` lolos `isinstance` dengan mudah,
+    dan lewat situ `raw_providers()` bisa mengembalikan baris dari kategori entity LAIN
+    seolah-olah ia provider.
+    """
+
+    class GuardedReader(_GuardedReader):
+        __slots__ = ()
+
+        def get_entity(self, category: str, name: str) -> dict[str, Any]:
+            return client.get_entity(_guard_category(category), name)
+
+        def list_entities(
+            self, category: str | None = None, *, status: str | None = None, limit: int = 100
+        ) -> list[dict[str, Any]]:
+            return client.list_entities(_guard_category(category), status=status, limit=limit)
+
+        def get_reference(self, key: str) -> dict[str, Any] | None:
+            return client.get_reference(_guard_reference_key(key))
+
+        def search_references(self, prefix: str, *, limit: int) -> list[dict[str, Any]]:
+            """`search` DIKUNCI ke tier reference dan ke dua awalan yang sah.
+
+            api-facts §C.1: `tiers=("reference",)` RAPAT (tidak bocor lintas tier), tetapi
+            `prefix=True` mencocokkan TOKEN atas kunci DAN body sehingga hasilnya SUPERSET.
+            Penyaringan kunci, pengurutan, dan deteksi pemotongan dikerjakan pemanggil
+            (`_reference_keys`), bukan di sini — supaya ketiganya bisa diuji terpisah.
+            """
+            return client.search(
+                _guard_reference_prefix(prefix), limit=limit, prefix=True, tiers=("reference",)
+            )
+
+        def __repr__(self) -> str:  # pragma: no cover - hanya untuk pesan galat
+            return "<_GuardedReader provider+pattern/rubric>"
+
+    reader = GuardedReader()
+    _GENUINE_READERS.add(reader)
+    return reader
 
 
 class DecisionMemoryView:
     """Pintu baca TUNGGAL jalur keputusan.
 
     Empat hal yang disengaja:
-      1. Yang disimpan adalah `_GuardedReader`, BUKAN klien Sibyl. Jadi tidak ada jalan
-         dari dalam kelas ini menuju kategori `suspicion` — penjaga tidak bisa "tidak
-         dipanggil", karena ia ada di lapisan klien.
+      1. Yang disimpan adalah `_GuardedReader`, BUKAN klien Sibyl. Reader itu tidak punya
+         atribut data sama sekali (klien hidup di closure), jadi tidak ada JALUR ATRIBUT
+         dari dalam kelas ini menuju kategori `suspicion`, dan penjaga tidak bisa "tidak
+         dipanggil" karena ia ada di lapisan klien. Introspeksi runtime (`__closure__`,
+         `gc`) tetap bisa menembusnya — lihat catatan batas di `_GuardedReader`.
       2. Atribut ber-name-mangling + `__slots__`: tidak ada `view._client`, dan tidak ada
          atribut baru yang bisa ditanam dari modul lain.
       3. Penjaga membandingkan dengan KONSTANTA LITERAL, bukan daftar putih yang bisa
          dilebarkan dari file lain.
       4. `gate_job` menuntut tipe PERSIS kelas ini, jadi subclass yang melonggarkan
-         penjaga pun tidak diterima.
+         penjaga pun tidak diterima — dan pintu masuknya sama kaku: reader yang diterima
+         WAJIB yang benar-benar dibuat `_guarded_reader()` (dicek per IDENTITAS lewat
+         `_GENUINE_READERS`), bukan sekadar `isinstance(_GuardedReader)`. Tanpa itu
+         asimetrinya bisa dieksploitasi: subclass `_GuardedReader` ber-`__slots__ = ()`
+         yang meng-override `list_entities` membuat `raw_providers()` mengembalikan baris
+         `suspicion`, dan `gate_job` tetap lolos karena view-nya bertipe persis.
     """
 
     __slots__ = ("__reader",)
 
     def __init__(self, client: MemoryClient) -> None:
-        self.__reader = client if isinstance(client, _GuardedReader) else _GuardedReader(client)
+        if isinstance(client, _GuardedReader):
+            if client not in _GENUINE_READERS:
+                raise ForbiddenReadError(
+                    "reader ini bukan hasil _guarded_reader(); subclass _GuardedReader bisa "
+                    "meng-override list_entities dan menyuntikkan baris karantina sebagai "
+                    "provider (docs/spec.md §3 aturan 1)"
+                )
+            self.__reader = client
+        else:
+            self.__reader = _guarded_reader(client)
 
     # -- penjaga (dipertahankan sebagai API agar bisa diuji langsung) --
 
@@ -680,6 +1014,45 @@ class DecisionMemoryView:
         if body is None:
             return None
         return json.loads(body) if isinstance(body, str) else body
+
+    @decision_path
+    def raw_reference(self, key: str) -> Any | None:
+        """Isi reference APA ADANYA untuk kunci LENGKAP yang sudah lolos penjaga."""
+        row = self.__reader.get_reference(key)
+        return None if row is None else row["body"]
+
+    @decision_path
+    def rubric(self, category: str) -> dict[str, Any] | None:
+        """REFERENCE `rubric:<kategori>` (spec §3) — boleh dibaca sejak root menjangkarnya.
+
+        `set_reference` menyimpan dict sebagai STRING JSON (api-facts §C) → `json.loads`.
+        Isinya DATA, bukan instruksi: ia mengkalibrasi kriteria, dan tidak pernah menjadi
+        bukti (spec §3 aturan 3).
+        """
+        body = self.raw_reference(f"{REFERENCE_RUBRIC_PREFIX}{category}")
+        if body is None:
+            return None
+        return json.loads(body) if isinstance(body, str) else body
+
+    @decision_path
+    def reference_keys(self, prefix: str) -> list[str]:
+        """Semua kunci reference berawalan `prefix`, TERURUT dan lengkap (lihat `_reference_keys`)."""
+        return _reference_keys(self.__reader, prefix)
+
+    @decision_path
+    def raw_references(self, prefix: str) -> dict[str, Any]:
+        """{kunci lengkap: body MENTAH} untuk satu awalan — bahan preimage root."""
+        out: dict[str, Any] = {}
+        for key in self.reference_keys(prefix):
+            row = self.__reader.get_reference(key)
+            if row is None:
+                # Kunci yang baru saja dienumerasi tetapi hilang saat dibaca = memori
+                # berubah di tengah pembacaan (atau store tidak konsisten). Fail-closed.
+                raise MemoryIntegrityError(
+                    f"reference {key!r} muncul di enumerasi tetapi hilang saat dibaca"
+                )
+            out[key] = row["body"]
+        return out
 
 
 @decision_path
@@ -859,8 +1232,15 @@ def derive_cap(provider: ProviderProfile, mode: ModeDecision | None = None) -> C
     raksasa sendiri, minta ditolak, dan menaikkan capnya sendiri tanpa biaya. Itulah
     rantai yang dieksekusi security-reviewer (500.000 → 24.750.000 dalam tiga ronde).
 
-    Cap juga MONOTON TIDAK-NAIK per provider: bila profil sudah punya `cap_usdc`, hasilnya
-    tidak pernah melebihi nilai itu. Pemulihan reputasi adalah v2 dan DILARANG diklaim hidup.
+    Cap juga MONOTON TIDAK-NAIK per provider — DENGAN SATU PENGECUALIAN yang disebut apa
+    adanya: monoton diterapkan LEBIH DULU (`min(kandidat, cap sebelumnya)`), lalu LANTAI
+    `MIN_CAP_USDC` diterapkan pada hasilnya. Jadi cap tersimpan yang lebih kecil dari lantai
+    akan NAIK ke lantai: `previous=1, risk=2` menghasilkan 250_000, bukan 1. Itu disengaja
+    (ADR-020 keputusan 5: "blokir total" bukan keluaran sah `derive_cap`; satu-satunya jalur
+    berhenti-total adalah mode aman), dan batas atasnya tetap `BASELINE_CAP_USDC` karena
+    ADR-021 keputusan 1 memplafon kontribusi tiap job. Yang benar-benar dijamin: cap tidak
+    pernah melampaui `max(cap sebelumnya, MIN_CAP_USDC)`, dan riwayat baik tidak pernah
+    menaikkannya. Pemulihan reputasi adalah v2 dan DILARANG diklaim hidup.
     """
     risk = effective_risk(provider, mode)
     previous = provider.cap_usdc
@@ -984,38 +1364,44 @@ def gate_job(
 
 @decision_path
 def load_snapshot(client: MemoryClient) -> MemorySnapshot:
-    """Membaca preimage root dari DB: entity `provider` + reference `pattern:*`.
+    """Membaca preimage root dari DB: entity `provider` + `reference:pattern:*` + `reference:rubric:*`.
+
+    Cakupannya ADR-020 keputusan 7 apa adanya: SELURUH himpunan yang boleh dibaca pengambil
+    keputusan, TERMASUK pattern YATIM yang tidak dirujuk provider mana pun — bukan irisan
+    yang dirujuk. Sebelum 2.1r daftar pattern diturunkan dari `confirmed_patterns` provider,
+    sehingga menghapus sebuah pattern yatim tidak mengubah root sama sekali; enumerasi
+    reference lewat `search` (api-facts §C.1) yang menutup lubang itu.
 
     Yang dimasukkan adalah NAMA dan BODY apa adanya dari baris DB, bukan hasil parsing —
-    kalau tidak, field asing dan perbedaan tipe tidak akan mengubah root, dan root
-    berhenti menjadi bukti atas isi memori yang diaudit.
+    kalau tidak, field asing dan perbedaan tipe tidak akan mengubah root, dan root berhenti
+    menjadi bukti atas isi memori yang diaudit.
 
-    Daftar pattern diturunkan dari gabungan `confirmed_patterns` seluruh provider, bukan
-    dari enumerasi reference: paket 0.7.0 tidak punya `list_references` yang terverifikasi
-    (api-facts §C), dan promosi (BAGIAN 3) selalu menulis KEDUANYA sekaligus. Bila sebuah
-    pattern tercatat di provider tetapi referensinya hilang, itu memori yang rusak → dilempar,
-    dan pemanggil (task 2.4a) memperlakukannya sebagai mode AMAN.
+    Fungsi ini menerima `MemoryClient` PENUH dan langsung membungkusnya jadi
+    `DecisionMemoryView`; ia tidak memakai klien itu untuk apa pun yang lain. Batas §3
+    aturan 1 di sini ditegakkan oleh view, bukan oleh tipe argumennya.
+
+    Pattern yang tercatat di provider tetapi referensinya HILANG tetap memori yang rusak →
+    dilempar, dan pemanggil (task 2.4a) memperlakukannya sebagai mode AMAN.
     """
     view = DecisionMemoryView(client)
     raw = view.raw_providers()
-    snapshot = MemorySnapshot.from_mapping(dict(raw), {})
-    if len(snapshot.providers) != len(raw):
+    providers = {str(name): body for name, body in raw}
+    if len(providers) != len(raw):
         raise MemoryIntegrityError("nama entity provider duplikat pada hasil list_entities")
+    snapshot = MemorySnapshot.from_mapping(
+        providers,
+        view.raw_references(REFERENCE_PATTERN_PREFIX),
+        view.raw_references(REFERENCE_RUBRIC_PREFIX),
+    )
 
-    pattern_ids: set[str] = set()
     for name, body in raw:
-        pattern_ids.update(ProviderProfile.from_body(name, body).confirmed_patterns)
+        for pattern_id in ProviderProfile.from_body(name, body).confirmed_patterns:
+            if f"{REFERENCE_PATTERN_PREFIX}{pattern_id}" not in snapshot.patterns:
+                raise MemoryIntegrityError(
+                    f"pattern {pattern_id!r} tercatat di provider tetapi reference-nya hilang"
+                )
 
-    patterns: dict[str, Any] = {}
-    for pattern_id in sorted(pattern_ids):
-        body = view.raw_pattern(pattern_id)
-        if body is None:
-            raise MemoryIntegrityError(
-                f"pattern {pattern_id!r} tercatat di provider tetapi reference-nya hilang"
-            )
-        patterns[f"{REFERENCE_PATTERN_PREFIX}{pattern_id}"] = body
-
-    return MemorySnapshot(providers=snapshot.providers, patterns=patterns)
+    return snapshot
 
 
 @decision_path
@@ -1034,20 +1420,30 @@ def memory_root_hex(source: MemorySnapshot | MemoryClient) -> str:
     return "0x" + memory_root(source).hex()
 
 
-# ADR-020 keputusan 6: encoding preimage BELUM BEKU. Yang sudah mendarat di sini: preimage
-# dari body MENTAH, integer sebagai string desimal, dan penolakan tabrakan kunci. Yang BELUM
-# (milik task 2.1r): kunci panjang-berprefiks, dan cakupan penuh keputusan 7 — semua
-# `reference:pattern:*` TERMASUK YANG YATIM plus semua `reference:rubric:*`. `load_snapshot`
-# hari ini hanya menjangkau pattern yang dirujuk provider, jadi pattern yatim BELUM terjangkar.
-MEMORY_ROOT_ENCODING_FROZEN: Final = False
+# ADR-020 keputusan 6 — encoding preimage DIBEKUKAN (task 2.1r). Yang dibekukan, apa adanya:
+#   - preimage dari BODY MENTAH yang tersimpan, bukan proyeksi `ProviderProfile` yang lossy;
+#   - setiap integer menjadi STRING DESIMAL dalam pembungkus `{"$u": "…"}` (tidak ada satu pun
+#     bilangan JSON), sehingga `JSON.parse` di JS tidak merusak uint256 di atas 2^53;
+#   - setiap kunci & body dibingkai PANJANG-BERPREFIKS, sehingga dua kunci berbeda mustahil
+#     runtuh menjadi satu;
+#   - cakupan keputusan 7: semua entity `provider` + semua `reference:pattern:*` +
+#     semua `reference:rubric:*`, TERMASUK pattern yatim; `suspicion` TIDAK ikut (ADR-002);
+#   - label versi ikut ter-hash, jadi encoding baru tidak bisa menyamar sebagai yang lama.
+# Vektor uji beku ada di `agent/tests/fixtures/memory_root_vector.json` + root harapannya di
+# `tests/test_memory_policy.py`; perubahan encoding apa pun membuatnya MERAH. Skrip
+# `agent/tools/memory_root_check.mjs` menghitung ulang root yang sama di Node.
+MEMORY_ROOT_ENCODING_FROZEN: Final = True
 
 
 def memory_root_for_onchain(source: MemorySnapshot | MemoryClient) -> bytes:
     """Satu-satunya pintu root yang boleh dipakai `vault_client`/`postVerdict`.
 
-    Selama encoding belum dibekukan (task 2.1r), ia MENOLAK — mengumumkan root dari
-    encoding yang masih berubah berarti `knownRoots` di vault berisi nilai yang tidak bisa
-    direkonstruksi siapa pun, persis kegagalan yang dihancurkan juri fase 1.
+    Gerbang ini tetap ada SESUDAH pembekuan: ia yang membuat "modul lain memanggil
+    `memory_root` langsung" menjadi pelanggaran yang bisa dideteksi (tes memindai AST
+    setiap modul agen), dan ia yang akan menolak lagi bila suatu saat encoding dibuka
+    kembali. Mengumumkan root dari encoding yang masih berubah berarti `knownRoots` di
+    vault berisi nilai yang tidak bisa direkonstruksi siapa pun, persis kegagalan yang
+    dihancurkan juri fase 1.
     """
     if not MEMORY_ROOT_ENCODING_FROZEN:
         raise MemoryPolicyError(
@@ -1402,3 +1798,13 @@ def store_provider_cap(client: MemoryClient, provider_address: str, decision: Ca
     """Menyimpan cap terakhir ke profil provider (untuk audit; keputusan tetap dihitung ulang)."""
     profile = _load_provider_for_write(client, provider_address)
     return _save_provider_cas(client, replace(profile, cap_usdc=decision.cap_usdc), profile.version)
+
+
+# `@decision_path_forward` (fungsi yang berada di atas definisi `decision_path`) didaftarkan
+# di sini, supaya ia diperiksa tes sumber & tes properti karantina yang SAMA.
+def _register_forward_decision_paths() -> None:
+    for fn in _FORWARD_DECISION_PATHS:
+        DECISION_PATH_FUNCTIONS.add(fn.__qualname__)
+
+
+_register_forward_decision_paths()

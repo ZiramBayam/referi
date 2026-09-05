@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import pathlib
 import random
 
 import pytest
@@ -36,6 +37,11 @@ from agent import memory_policy as mp
 QUARANTINE_WORDS = ("suspicion", "quarantine", "karantina")
 
 DET_CHECK = "chain"
+
+FIXTURE_PATH = pathlib.Path(__file__).parent / "fixtures" / "memory_root_vector.json"
+# AC 2.1r (f): vektor uji BEKU. Angkanya BUKAN untuk "diperbarui" saat tes merah —
+# merah di sini berarti encoding root berubah, dan itu wajib lewat ADR baru.
+FROZEN_ROOT_HEX = "0x0af7c3728a04dd7e365d45c69b816afb0cc8ea99c355ace89a2cfe703b94f65b"
 
 ROOT_ZERO_HEX = "0x" + "00" * 32
 ROOT_A = bytes.fromhex("11" * 32)
@@ -73,6 +79,10 @@ class SpyClient:
     def search_entities(self, query, *, limit=20, prefix=False, category=None):
         self.reads.append(("search_entities", str(category)))
         return self._inner.search_entities(query, limit=limit, prefix=prefix, category=category)
+
+    def search(self, query, *, limit=20, prefix=False, tiers=None):
+        self.reads.append(("search", f"{query}|{tiers}"))
+        return self._inner.search(query, limit=limit, prefix=prefix, tiers=tiers)
 
     def get_reference(self, key):
         self.reads.append(("get_reference", key))
@@ -225,7 +235,13 @@ def test_decision_path_never_touches_quarantine_at_runtime(client):
     assert mp.CATEGORY_QUARANTINE not in kategori
     for method, key in spy.reads:
         if method == "get_reference":
-            assert key.startswith(mp.REFERENCE_PATTERN_PREFIX)
+            assert key.startswith(mp.DECISION_REFERENCE_PREFIXES)
+        elif method == "search":
+            # Enumerasi reference (api-facts §C.1) TERKUNCI: hanya dua awalan yang sah, dan
+            # hanya tier reference — tidak ada jalan ke tier entity tempat karantina hidup.
+            query, tiers = key.split("|", 1)
+            assert query in mp.DECISION_REFERENCE_PREFIXES
+            assert tiers == "('reference',)"
         else:
             assert key == mp.CATEGORY_PROVIDER, f"pembacaan terlarang: {method}({key})"
 
@@ -236,14 +252,19 @@ def test_view_refuses_forbidden_category_and_reference():
         view._guard_category(mp.CATEGORY_QUARANTINE)
     with pytest.raises(mp.ForbiddenReadError):
         view._guard_category(mp.CATEGORY_CLIENT)
-    # `rubric:` DITOLAK sampai 2.1r menjangkarnya (ADR-020 keputusan 6-7): melebarkan BACA
-    # sebelum penjangkarannya memperluas keadaan "dibaca tapi tidak dijangkar", yaitu
-    # permukaan tempat teks bisa memengaruhi keputusan tanpa mengubah memory_root.
+    # `rubric:` SAH dibaca sejak 2.1r menjangkarnya (ADR-020 keputusan 7): cakupan BACA
+    # jalur keputusan sama persis dengan cakupan JANGKAR root.
     assert view._guard_reference_key("pattern:x") == "pattern:x"
-    for terlarang in ("rubric:defi", "job:1", "suspicion:0x1", "pattern", "", None):
+    assert view._guard_reference_key("rubric:defi") == "rubric:defi"
+    for terlarang in ("job:1", "suspicion:0x1", "pattern", "rubric", "", None):
         with pytest.raises(mp.ForbiddenReadError):
             view._guard_reference_key(terlarang)
-    assert not hasattr(view, "rubric")
+    # Cakupan BACA == cakupan JANGKAR (ADR-020 keputusan 7), dibandingkan langsung.
+    assert mp.DECISION_REFERENCE_PREFIXES == (
+        mp.REFERENCE_PATTERN_PREFIX,
+        mp.REFERENCE_RUBRIC_PREFIX,
+    )
+    assert hasattr(view, "rubric")
 
 
 def test_view_hides_its_client_and_refuses_new_attributes(client):
@@ -254,6 +275,36 @@ def test_view_hides_its_client_and_refuses_new_attributes(client):
         view.ALLOWED_ENTITY_CATEGORIES = frozenset({"provider", mp.CATEGORY_QUARANTINE})
     with pytest.raises(AttributeError):
         view.apa_saja = 1
+
+
+def test_view_refuses_a_reader_it_did_not_create(client):
+    """Pintu masuk view sekaku `gate_job`: reader palsu ditolak per IDENTITAS.
+
+    Rantai reviewer: subclass `_GuardedReader` ber-`__slots__ = ()` yang meng-override
+    `list_entities` membuat `raw_providers()` mengembalikan baris `suspicion` sebagai
+    provider, dan `gate_job` tetap lolos karena view-nya bertipe PERSIS. `isinstance` saja
+    tidak cukup.
+    """
+    mp.record_suspicion(client, addr(0x9A9A), "pola", mp.Evidence(1, DET_CHECK))
+
+    class ReaderPalsu(mp._GuardedReader):
+        __slots__ = ()
+
+        def list_entities(self, category=None, *, status=None, limit=100):
+            return client.list_entities(mp.CATEGORY_QUARANTINE, limit=limit)
+
+        def get_entity(self, category, name):
+            return client.get_entity(mp.CATEGORY_QUARANTINE, name)
+
+    palsu = ReaderPalsu()
+    assert isinstance(palsu, mp._GuardedReader)  # lolos isinstance — itulah masalahnya
+    assert palsu.list_entities(mp.CATEGORY_PROVIDER), "reader palsu harus benar-benar bocor"
+    with pytest.raises(mp.ForbiddenReadError):
+        mp.DecisionMemoryView(palsu)
+
+    # Reader asli tetap diterima, dan hanya lewat pabriknya.
+    asli = mp._guarded_reader(client)
+    assert isinstance(mp.DecisionMemoryView(asli), mp.DecisionMemoryView)
 
 
 def test_gate_job_refuses_subclass_that_widens_the_guard(client):
@@ -505,13 +556,46 @@ def test_memory_root_binds_raw_body_not_a_lossy_projection(client, tmp_path):
         mp.memory_root(client)
 
 
-def test_colliding_provider_names_are_refused_not_merged(client):
-    """TINGGI: dua entity NYATA yang runtuh jadi satu kunci = satu entity tersembunyi."""
-    address = addr(0x5A5A)
-    client.set_entity(mp.CATEGORY_PROVIDER, address, {"risk_level": 0})
-    client.set_entity(mp.CATEGORY_PROVIDER, f"  {address.upper()}  ", {"risk_level": 2})
-    with pytest.raises(mp.MemoryIntegrityError):
+def test_root_nonCanonicalProviderNameIsRefused(client):
+    """AC 2.1r (b1): satu entity provider bernama TIDAK KANONIK sudah cukup untuk berbohong.
+
+    Ini rantai yang dijalankan security-reviewer, dan ia TIDAK butuh tabrakan sama sekali:
+    root menjangkar entri `"  0X…  "` (risk 2, cap 250.000, 3 insiden), tetapi jalur
+    keputusan mencarinya dengan nama TERNORMALKAN, tidak menemukannya, lalu memakai profil
+    kosong — risk 0, tanpa cap, `cap_to_onchain` = 0 = TANPA BATAS (ADR-001). Root tetap
+    cocok, mode tetap NORMAL, nol deteksi. Karena itu `memory_root` MENOLAK, bukan memilih.
+    """
+    aneh = f"  {addr(0x5A5A).upper()}  "
+    client.set_entity(
+        mp.CATEGORY_PROVIDER,
+        aneh,
+        {"risk_level": 2, "cap_usdc": 250_000, "incident_jobs": [1, 2, 3]},
+    )
+    with pytest.raises(mp.MemoryIntegrityError, match="tidak kanonik"):
         mp.memory_root(client)
+    with pytest.raises(mp.MemoryIntegrityError, match="tidak kanonik"):
+        mp.MemorySnapshot.from_mapping({aneh: {}}, {}, {})
+
+    # Kalau ia DITERIMA, inilah kebohongan yang lolos — dibuktikan pada nilai, bukan diklaim.
+    profil_dibaca = mp.DecisionMemoryView(client).provider(addr(0x5A5A))
+    assert (profil_dibaca.risk_level, profil_dibaca.cap_usdc, profil_dibaca.incident_jobs) == (
+        0,
+        None,
+        (),
+    )
+    assert mp.cap_to_onchain(mp.derive_cap(profil_dibaca)) == mp.ONCHAIN_UNLIMITED_CAP
+
+
+def test_root_anchorsExactlyWhatTheDecisionPathReads(client):
+    """AC 2.1r (b2): himpunan yang dijangkar == himpunan yang dibaca (ADR-020 keputusan 7)."""
+    for i in (0x11, 0x22, 0x33):
+        _seed_provider(client, addr(i), risk_level=i % 3)
+    snapshot = mp.load_snapshot(client)
+    view = mp.DecisionMemoryView(client)
+    assert set(snapshot.providers) == {p.address for p in view.list_providers()}
+    # Dan tabrakan setelah normalisasi kini MUSTAHIL secara konstruksi: dua nama kanonik
+    # yang menormalkan ke alamat sama adalah nama yang sama.
+    assert all(nama == mp.normalize_address(nama) for nama in snapshot.providers)
 
 
 def test_snapshot_refuses_provider_name_that_is_not_an_address():
@@ -537,8 +621,11 @@ def test_preimage_has_no_json_numbers_so_javascript_can_rebuild_it():
             return all(tanpa_bilangan(x) for x in node)
         return all(tanpa_bilangan(v) for v in node.values())
 
-    parsed = json.loads(preimage)
-    assert tanpa_bilangan(parsed), "preimage masih memuat bilangan JSON"
+    # Bentuk EKSPOR (yang dibaca ulang JS) sama sekali bebas bilangan JSON.
+    assert tanpa_bilangan(snapshot.to_canonical_obj()), "ekspor masih memuat bilangan JSON"
+    # Demikian pula setiap body yang masuk preimage.
+    for _, body in snapshot.to_canonical_obj()["providers"]:
+        assert tanpa_bilangan(json.loads(json.dumps(body)))
     assert str(besar).encode() in preimage
     assert b'"9007199254740993"' in preimage
     # Integer berbeda tetap menghasilkan preimage berbeda (tidak dibulatkan).
@@ -587,7 +674,9 @@ def test_memory_root_from_snapshot_matches_root_from_db(client):
 
     snapshot = mp.load_snapshot(client)
     assert snapshot.patterns  # promosi menulis reference-nya
-    ulang = mp.MemorySnapshot.from_mapping(dict(snapshot.providers), dict(snapshot.patterns))
+    ulang = mp.MemorySnapshot.from_mapping(
+        dict(snapshot.providers), dict(snapshot.patterns), dict(snapshot.rubrics)
+    )
     assert mp.memory_root(ulang) == mp.memory_root(client)
 
 
@@ -683,11 +772,18 @@ def test_safe_mode_halts_every_transaction_and_says_so_plainly():
         assert boleh.allow_set_provider_cap is True
 
 
-def test_memory_root_is_not_allowed_on_chain_until_the_encoding_is_frozen(client):
-    """ADR-020 keputusan 6 + AC task 2.1: `vault_client` tidak boleh memakai root ini."""
-    assert mp.MEMORY_ROOT_ENCODING_FROZEN is False
+def test_memory_root_for_onchain_is_open_now_that_the_encoding_is_frozen(client):
+    """ADR-020 keputusan 6 + AC 2.1r: gerbang terbuka, dan ia mengembalikan root yang SAMA."""
+    assert mp.MEMORY_ROOT_ENCODING_FROZEN is True
     _seed_provider(client, addr(0x9F9F))
     assert len(mp.memory_root(client)) == 32
+    assert mp.memory_root_for_onchain(client) == mp.memory_root(client)
+
+
+def test_memory_root_for_onchain_still_refuses_when_the_freeze_is_lifted(client, monkeypatch):
+    """Gerbangnya bukan hiasan: bila encoding dibuka lagi, ia menolak lagi."""
+    monkeypatch.setattr(mp, "MEMORY_ROOT_ENCODING_FROZEN", False)
+    _seed_provider(client, addr(0x9F9E))
     with pytest.raises(mp.MemoryPolicyError):
         mp.memory_root_for_onchain(client)
 
@@ -936,29 +1032,58 @@ def test_addresses_are_normalized_so_one_provider_is_one_entity(client):
 # ----------------------------------------------------------------------
 
 
-def test_decision_view_never_holds_a_full_memory_client(client):
-    """Jalur keputusan hanya memegang `_GuardedReader`, bukan klien Sibyl.
+def test_decision_view_reader_has_no_data_attributes_holding_a_full_client(client):
+    """Reader jalur keputusan tidak punya ATRIBUT DATA yang memegang klien penuh.
 
-    Inilah yang membuat batas §3 aturan 1 STRUKTURAL: metode jalur keputusan mana pun
-    yang mencoba `list_entities("suspicion")` akan MELEMPAR di lapisan klien, sehingga
-    "lupa memanggil penjaga" bukan lagi mode kegagalan yang mungkin.
+    Klaimnya sengaja dibatasi persis sejauh yang benar. Reviewer putaran-3 menembus versi
+    lama lewat `view._DecisionMemoryView__reader._GuardedReader__client`, yang merupakan
+    lookup NORMAL (slot = descriptor, jadi `__getattr__` tidak pernah terpanggil). Sekarang
+    reader tidak punya satu pun atribut data: klien hidup di closure metodenya.
+
+    YANG TIDAK DIKLAIM, dan sengaja DIBUKTIKAN di bawah supaya tidak ada yang membaca tes
+    ini lebih jauh dari isinya: `type(reader).get_entity.__closure__[0].cell_contents`
+    tetap menyerahkan klien penuh. Itu rantai atribut biasa, dan Python tidak punya cara
+    menutupnya. Kontrol sesungguhnya adalah tiga tes karantina, bukan bentuk kelas ini.
     """
     view = mp.DecisionMemoryView(client)
     reader = view._DecisionMemoryView__reader
     assert isinstance(reader, mp._GuardedReader)
     assert not isinstance(reader, MemoryClient)
 
+    # Persis jalur yang dipakai reviewer — sekarang ia melempar, bukan menyerahkan klien.
+    with pytest.raises(mp.ForbiddenReadError):
+        reader._GuardedReader__client  # noqa: B018
+    for nama in ("_GuardedReader__client", "__client", "_client", "client", "inner"):
+        with pytest.raises(mp.ForbiddenReadError):
+            getattr(reader, nama)
+
+    # Tidak ada atribut data sama sekali: bukan sekadar "namanya tidak ketebak".
+    with pytest.raises(mp.ForbiddenReadError):
+        reader.__dict__  # noqa: B018
+    assert type(reader).__slots__ == ()
+    # Basisnya hanya punya `__weakref__` (dipakai registri identitas), bukan atribut data.
+    assert mp._GuardedReader.__slots__ == ("__weakref__",)
+
+    # JUJUR: introspeksi runtime TETAP menembus. Ini bagian dari tes, bukan celah yang
+    # kelewat — supaya docstring dan kenyataan tidak pernah berbeda lagi.
+    tembus = type(reader).get_entity.__closure__[0].cell_contents
+    assert isinstance(tembus, MemoryClient)
+
 
 def test_guarded_reader_refuses_forbidden_reads_at_the_client_layer(client):
-    reader = mp._GuardedReader(client)
+    reader = mp._guarded_reader(client)
     for kategori in (mp.CATEGORY_QUARANTINE, mp.CATEGORY_CLIENT, mp.CATEGORY_JOB, None):
         with pytest.raises(mp.ForbiddenReadError):
             reader.list_entities(kategori, status="pending", limit=10)
         with pytest.raises(mp.ForbiddenReadError):
             reader.get_entity(kategori, "0x0")
-    for kunci in ("rubric:defi", "suspicion:x", "job:1"):
+    for kunci in ("suspicion:x", "job:1", "other:pattern-trap"):
         with pytest.raises(mp.ForbiddenReadError):
             reader.get_reference(kunci)
+    # Enumerasi dikunci ke DUA awalan itu saja, dengan pencocokan PERSIS.
+    for buruk in ("", "pattern", "pattern:x", "suspicion:", "rubric", None):
+        with pytest.raises(mp.ForbiddenReadError):
+            reader.search_references(buruk, limit=10)
     # Nama kategori yang disamarkan tidak menolong: penjaganya di lapisan klien.
     with pytest.raises(mp.ForbiddenReadError):
         reader.list_entities("".join(["sus", "picion"]), limit=10)
@@ -1148,3 +1273,501 @@ def test_no_agent_module_publishes_a_memory_derived_root_yet():
         if "memory_root(" in isi and "memory_root_for_onchain(" not in isi:
             pelanggar.append(berkas.name)
     assert pelanggar == [], f"modul memakai root yang encodingnya belum beku: {pelanggar}"
+
+
+# ----------------------------------------------------------------------
+# 2.1r — encoding kanonik `memory_root` DIBEKUKAN (ADR-020 keputusan 6-7)
+# ----------------------------------------------------------------------
+
+
+def test_root_changesOnForeignField(client, capsys):
+    """AC 2.1r (a): field asing di body provider MENGUBAH root.
+
+    Ini yang membedakan "root atas isi memori" dari "root atas ringkasan yang kita pilih":
+    kalau preimage dibangun dari proyeksi `ProviderProfile.to_body()`, `backdoor` di bawah
+    tidak akan terlihat sama sekali dan kedua root IDENTIK.
+    """
+    address = addr(0x4B4B)
+    dasar = {"risk_level": 1, "budgets": {"passed": [1]}}
+    client.set_entity(mp.CATEGORY_PROVIDER, address, dasar)
+    sebelum = mp.memory_root_hex(client)
+
+    client.set_entity(mp.CATEGORY_PROVIDER, address, {**dasar, "backdoor": "muatan tersembunyi"})
+    sesudah = mp.memory_root_hex(client)
+
+    print(f"tanpa field asing : {sebelum}")
+    print(f"dengan field asing: {sesudah}")
+    assert sebelum != sesudah
+    # Proyeksi lossy TIDAK melihat perbedaannya — buktinya di sini, bukan diklaim saja.
+    proyeksi = mp.ProviderProfile.from_body(address, {**dasar, "backdoor": "x"}).to_body()
+    assert proyeksi == mp.ProviderProfile.from_body(address, dasar).to_body()
+    assert sebelum in capsys.readouterr().out
+
+
+def test_root_orphanPatternCounts(client):
+    """AC 2.1r (c): `reference:pattern` YATIM ikut dijangkar; menghapusnya mengubah root.
+
+    Sebelum 2.1r daftar pattern diturunkan dari `confirmed_patterns` provider, jadi pola
+    yang tidak dirujuk siapa pun bisa disunting/dihapus tanpa jejak di root.
+    """
+    _seed_provider(client, addr(0x6B6B), risk_level=1)
+    kosong = mp.memory_root(client)
+
+    client.set_reference("pattern:yatim", {"pattern_id": "yatim", "detectors": ["chain"]})
+    dengan_yatim = mp.memory_root(client)
+    assert dengan_yatim != kosong
+    assert "pattern:yatim" in mp.load_snapshot(client).patterns
+
+    # Menyunting isinya juga terlihat.
+    client.set_reference("pattern:yatim", {"pattern_id": "yatim", "detectors": ["links"]})
+    assert mp.memory_root(client) != dengan_yatim
+
+    # PENGHAPUSAN: `sibyl-memory-client` 0.7.0 tidak punya `delete_reference` (api-facts §C),
+    # jadi keadaan "pattern yatim itu hilang" dibangun sebagai snapshot tanpa dia — dan root
+    # yang dihasilkannya BEDA dari root yang menyertakannya. Itulah yang membuat penghapusan
+    # tidak bisa lolos audit.
+    penuh = mp.load_snapshot(client)
+    tanpa = mp.MemorySnapshot.from_mapping(dict(penuh.providers), {}, dict(penuh.rubrics))
+    assert mp.memory_root(tanpa) != mp.memory_root(penuh)
+    assert mp.memory_root(tanpa) == kosong
+
+
+def test_root_rubricIsAnchoredBecauseItIsRead(client):
+    """ADR-020 keputusan 7: `rubric:*` dibaca jalur keputusan → WAJIB ikut dijangkar."""
+    _seed_provider(client, addr(0x6C6C))
+    sebelum = mp.memory_root(client)
+    mp.set_rubric(client, "defi", {"kriteria": ["angka cocok kontrak"]})
+    assert mp.memory_root(client) != sebelum
+
+    view = mp.DecisionMemoryView(client)
+    assert view.rubric("defi") == {"kriteria": ["angka cocok kontrak"]}
+    assert "rubric:defi" in mp.load_snapshot(client).rubrics
+    # Yang dibaca == yang dijangkar: menyunting rubric mengubah root.
+    tengah = mp.memory_root(client)
+    mp.set_rubric(client, "defi", {"kriteria": ["disunting"]})
+    assert mp.memory_root(client) != tengah
+
+
+def test_root_suspicionExcluded(client):
+    """AC 2.1r (d): entity `suspicion` TIDAK ikut ke preimage (ADR-002)."""
+    address = addr(0x7B7B)
+    _seed_provider(client, address, risk_level=1)
+    sebelum = mp.memory_root(client)
+
+    mp.record_suspicion(client, address, "pola-a", mp.Evidence(1, DET_CHECK, "bukti"))
+    mp.record_suspicion(client, address, "pola-a", mp.Evidence(2, DET_CHECK, "bukti"))
+    assert client.list_entities(mp.CATEGORY_QUARANTINE, limit=mp.LIST_LIMIT), "karantina harus ada"
+    assert mp.memory_root(client) == sebelum
+
+    # Sesudah PROMOSI barulah root berubah — lewat provider + reference:pattern, bukan
+    # lewat entity karantina.
+    mp.promote_suspicions(client, address)
+    assert mp.memory_root(client) != sebelum
+    preimage = mp.load_snapshot(client).preimage()
+    assert b"suspicion" not in preimage
+
+
+def test_root_frozenTestVector():
+    """AC 2.1r (f): vektor uji BEKU. Perubahan encoding apa pun membuat tes ini MERAH.
+
+    Fixture-nya juga yang dipakai skrip Node `agent/tools/memory_root_check.mjs` (AC (e)),
+    jadi kedua bahasa menghitung angka yang sama dari file yang sama.
+    """
+    fixture = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    snapshot = mp.MemorySnapshot.from_export_obj(fixture)
+    assert mp.memory_root_hex(snapshot) == FROZEN_ROOT_HEX
+    # Fixture WAJIB memuat angka di atas 2^53 — di situlah JSON.parse merusak diam-diam.
+    besar = [
+        int(v[mp.NUMBER_TAG])
+        for _, body in fixture["providers"]
+        for v in body.get("budgets", {}).get("passed", [])
+    ]
+    assert max(besar) > 2**53
+    assert mp.MEMORY_ROOT_ENCODING_VERSION == fixture["version"]
+
+
+def test_frozen_vector_matches_the_same_state_built_through_the_normal_api(client):
+    """Vektor beku bukan angka yang dikarang: ia state yang sama, dibangun lewat DB nyata."""
+    fixture = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    snapshot = mp.MemorySnapshot.from_export_obj(fixture)
+    for name, body in snapshot.providers.items():
+        client.set_entity(mp.CATEGORY_PROVIDER, name, body)
+    for key, body in {**snapshot.patterns, **snapshot.rubrics}.items():
+        client.set_reference(key, body)
+    assert mp.memory_root_hex(client) == FROZEN_ROOT_HEX
+
+
+def test_root_crossLanguage_node_recomputes_the_same_value():
+    """AC 2.1r (e): Node menghitung ulang root dari file ekspor yang SAMA.
+
+    Ini yang membuat kalimat spec §3 "siapa pun bisa merekonstruksi root" bisa diperiksa,
+    bukan sekadar dipercaya — dan yang menangkap perbedaan halus seperti escape non-ASCII
+    atau urutan kunci menurut UTF-16 alih-alih menurut byte.
+
+    JUJUR TENTANG CAKUPANNYA: `agent/memory_export.py` (task 2.1b) BELUM ada, jadi file yang
+    dibaca kedua bahasa adalah fixture yang ditulis dari `MemorySnapshot.to_canonical_obj()`,
+    bukan keluaran alat ekspor. Yang dibuktikan di sini: ENCODING-nya lintas bahasa. Yang
+    belum: rantai ekspor ujung-ke-ujung.
+    """
+    import shutil
+    import subprocess
+
+    if shutil.which("node") is None:
+        pytest.skip("node tidak tersedia di lingkungan ini")
+    skrip = pathlib.Path(mp.__file__).parent.parent / "tools" / "memory_root_check.mjs"
+    assert skrip.exists()
+    hasil = subprocess.run(
+        ["node", str(skrip), str(FIXTURE_PATH)], capture_output=True, text=True, timeout=120
+    )
+    if hasil.returncode != 0 and "keccak256 tidak ditemukan" in hasil.stderr:
+        pytest.skip("store pnpm belum terpasang (jalankan `pnpm install`)")
+    assert hasil.returncode == 0, hasil.stderr
+    print(hasil.stdout)
+
+    baris = {}
+    for b in hasil.stdout.strip().splitlines():
+        nama, _, nilai = b.partition(":")
+        baris[nama.strip()] = nilai
+    snapshot = mp.MemorySnapshot.from_export_obj(json.loads(FIXTURE_PATH.read_text(encoding="utf-8")))
+    assert baris["memory_root"].strip() == mp.memory_root_hex(snapshot) == FROZEN_ROOT_HEX
+    assert baris["preimage"].strip() == f"{len(snapshot.preimage())} byte"
+
+
+def test_body_keys_that_need_json_escaping_are_refused_by_both_languages(tmp_path):
+    """TINGGI: nama properti ber-escape adalah satu-satunya tempat dua `JSON.parse` bisa
+    berbeda pendapat — jadi tidak ada satu pun yang boleh masuk preimage.
+
+    Kunci seksi (nama provider, kunci reference) adalah NILAI string di dalam array ekspor,
+    jadi ia tidak pernah melewati jalur nama-properti. Yang tersisa hanyalah kunci di dalam
+    body, dan di situlah larangan ini berlaku. Karena Python dan skrip Node menolak himpunan
+    yang SAMA, keduanya sama-sama menghitung atau sama-sama berhenti — tidak pernah
+    menghasilkan dua angka berbeda dari satu file.
+    """
+    import shutil
+    import subprocess
+
+    for kunci in ('q"q', "bs\\bs", "lf\n", "cr\r", "tab\t", "ctl\x01", "nonascii\u00e9"):
+        with pytest.raises(mp.MemoryIntegrityError, match="escape"):
+            mp.canonical_json({kunci: "1"})
+    # Yang sah tetap sah — larangan ini tidak boleh menelan kunci normal.
+    for kunci in ("risk_level", "budgets", mp.NUMBER_TAG.replace("$u", "u$"), "a-b.c_d", "", "~!#%"):
+        assert mp.canonical_json({kunci: "1"})
+
+    # Sisi Node: file ekspor yang memuat kunci ber-escape WAJIB ditolak, bukan dihitung.
+    if shutil.which("node") is None:
+        pytest.skip("node tidak tersedia di lingkungan ini")
+    skrip = pathlib.Path(mp.__file__).parent.parent / "tools" / "memory_root_check.mjs"
+    jahat = tmp_path / "escaped-key.json"
+    jahat.write_text(
+        json.dumps(
+            {
+                "version": mp.MEMORY_ROOT_ENCODING_VERSION,
+                "providers": [[addr(1), {"k": {"kA": {mp.NUMBER_TAG: "0"}}, "k\n": {}}]],
+                "patterns": [],
+                "rubrics": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    hasil = subprocess.run(
+        ["node", str(skrip), str(jahat)], capture_output=True, text=True, timeout=120
+    )
+    assert hasil.returncode != 0, hasil.stdout
+    assert "butuh escape" in hasil.stderr
+    # Dan Python menolak file yang sama, dengan alasan yang sama.
+    with pytest.raises(mp.MemoryIntegrityError, match="escape"):
+        mp.memory_root(mp.MemorySnapshot.from_export_obj(json.loads(jahat.read_text())))
+
+
+def test_frozen_vector_exercises_escaped_string_values():
+    """Vektor beku WAJIB memuat nilai string yang butuh escape (kutip, backslash, kontrol,
+    astral) — kalau tidak, `asciiString` di Node bisa salah tanpa satu pun tes memerah."""
+    teks = FIXTURE_PATH.read_text(encoding="utf-8")
+    for potongan in ('\\"', "\\\\", "\\n", "\\r", "\\t", "\\u0001", "\\ud83c"):
+        assert potongan in teks, f"vektor beku kehilangan escape {potongan!r}"
+
+
+def test_validators_are_anchored_with_Z_not_dollar():
+    """`$` di Python juga cocok TEPAT SEBELUM newline penutup — `\\Z` tidak.
+
+    Ditemukan saat menutup temuan kunci ber-escape: `BODY_KEY_RE` ber-`$` meloloskan kunci
+    `"lf\\n"` yang justru menjadi alasan aturan itu ada. Kesalahan yang sama ada di
+    `PATTERN_ID_RE`, dan di sana akibatnya lebih tajam: id pola ber-newline masuk ke nama
+    entity karantina `f"{addr}:{pattern}"` dan ke kunci `reference:pattern`.
+    """
+    with pytest.raises(ValueError):
+        mp.validate_pattern_id("pola\n")
+    with pytest.raises(ValueError):
+        mp.validate_pattern_id("pola\n jahat")
+    with pytest.raises(mp.MemoryIntegrityError):
+        mp.canonical_json({"lf\n": "1"})
+    assert mp.validate_pattern_id("pola-sah") == "pola-sah"
+
+
+def test_export_roundtrip_is_lossless():
+    """`to_canonical_obj` → JSON → `from_export_obj` menghasilkan preimage yang IDENTIK."""
+    snapshot = mp.MemorySnapshot.from_mapping(
+        {addr(3): {"budgets": {"passed": [2**200 + 7]}, "teks": "π dan 日本語"}},
+        {"pattern:a": '{"x":1}'},
+        {"rubric:b": {"n": -12345678901234567890}},
+    )
+    ulang = mp.MemorySnapshot.from_export_obj(json.loads(json.dumps(snapshot.to_canonical_obj())))
+    assert ulang.preimage() == snapshot.preimage()
+    assert mp.memory_root(ulang) == mp.memory_root(snapshot)
+
+
+def test_export_refuses_json_numbers_and_foreign_encoding_versions():
+    with pytest.raises(mp.MemoryIntegrityError):
+        mp.MemorySnapshot.from_export_obj({"version": "lain/v9", "providers": []})
+    rusak = {
+        "version": mp.MEMORY_ROOT_ENCODING_VERSION,
+        "providers": [[addr(1), {"budget": 12345}]],
+        "patterns": [],
+        "rubrics": [],
+    }
+    with pytest.raises(mp.MemoryIntegrityError):
+        mp.MemorySnapshot.from_export_obj(rusak)
+    dobel = {
+        "version": mp.MEMORY_ROOT_ENCODING_VERSION,
+        "providers": [[addr(1), {}], [addr(1), {}]],
+        "patterns": [],
+        "rubrics": [],
+    }
+    with pytest.raises(mp.MemoryIntegrityError):
+        mp.MemorySnapshot.from_export_obj(dobel)
+
+
+def test_length_prefixed_framing_cannot_be_collided():
+    """Kunci panjang-berprefiks: pemisahnya angka yang ikut ter-hash, bukan tanda baca.
+
+    Tanpa bingkai, `("0xaa…", "b:c")` dan `("0xaa…:b", "c")` bisa menghasilkan byte yang
+    sama. Di sini keduanya berbeda, dan seksi kosong != seksi berisi entri kosong.
+    """
+    a = mp.MemorySnapshot.from_mapping({}, {"p": "a", "pa": ""}, {})
+    b = mp.MemorySnapshot.from_mapping({}, {"p": "", "pa": "a"}, {})
+    assert a.preimage() != b.preimage()
+
+    kosong = mp.MemorySnapshot.from_mapping({}, {}, {})
+    satu = mp.MemorySnapshot.from_mapping({}, {"": ""}, {})
+    assert kosong.preimage() != satu.preimage()
+    # Isi seksi tidak bisa berpindah seksi tanpa terlihat.
+    pola = mp.MemorySnapshot.from_mapping({}, {"x": "1"}, {})
+    rubrik = mp.MemorySnapshot.from_mapping({}, {}, {"x": "1"})
+    assert pola.preimage() != rubrik.preimage()
+
+
+def test_encoding_version_is_part_of_the_preimage():
+    """Encoding baru tidak boleh bisa menyamar sebagai root lama yang sudah di `knownRoots`."""
+    snapshot = mp.MemorySnapshot.from_mapping({addr(9): {"a": 1}}, {}, {})
+    assert snapshot.preimage().startswith(mp._frame(mp.MEMORY_ROOT_ENCODING_VERSION))
+    assert mp.MEMORY_ROOT_ENCODING_VERSION.encode() in snapshot.preimage()
+
+
+# ----------------------------------------------------------------------
+# api-facts §C.1 — TIGA jebakan `search`. Tanpa penanganan, root SALAH secara SENYAP.
+# ----------------------------------------------------------------------
+
+
+def test_reference_enumeration_filters_the_prefix_leak(client):
+    """JEBAKAN 1: `prefix=True` mencocokkan TOKEN atas kunci DAN body → hasilnya SUPERSET.
+
+    Kunci umpan diambil PERSIS dari probe api-verifier. Tes ini dua sisi: ia membuktikan
+    kebocoran memang terjadi pada hasil MENTAH `search`, lalu membuktikan kita menyaringnya.
+    """
+    client.set_reference("pattern:real", {"i": 1})
+    client.set_reference("rubric:pattern:trap", {"i": 2})
+    client.set_reference("other:pattern-trap", {"i": 3})
+    client.set_reference("rubric:defi", {"note": "this rubric mentions pattern matching"})
+
+    mentah = {r["key"] for r in client.search("pattern:", limit=100, prefix=True, tiers=("reference",))}
+    assert {"rubric:pattern:trap", "other:pattern-trap"} <= mentah, "umpan kebocoran tidak aktif"
+    assert "rubric:defi" in mentah, "kecocokan BODY-only tidak aktif"
+
+    snapshot = mp.load_snapshot(client)
+    assert set(snapshot.patterns) == {"pattern:real"}
+    assert set(snapshot.rubrics) == {"rubric:pattern:trap", "rubric:defi"}
+    # `other:*` bukan milik siapa pun: tidak dibaca, jadi tidak dijangkar.
+    assert "other:pattern-trap" not in snapshot.patterns
+    assert "other:pattern-trap" not in snapshot.rubrics
+
+
+def test_reference_enumeration_sorts_instead_of_trusting_search_order(tmp_path):
+    """JEBAKAN 2: urutan `search` = `ORDER BY rank` (bm25), seri dipecah urutan INSERT.
+
+    Dua DB dengan isi SAMA tetapi urutan tulis terbalik WAJIB menghasilkan root identik.
+    """
+    kunci = [f"pattern:p{i:03d}" for i in range(10)]
+    a = MemoryClient.local(str(tmp_path / "a.db"))
+    b = MemoryClient.local(str(tmp_path / "b.db"))
+    for k in kunci:
+        a.set_reference(k, {"body": "seragam"})
+    for k in reversed(kunci):
+        b.set_reference(k, {"body": "seragam"})
+
+    urut_mentah = [r["key"] for r in b.search("pattern:", limit=100, prefix=True, tiers=("reference",))]
+    assert urut_mentah != sorted(urut_mentah), "urutan search kebetulan terurut; tes jadi hampa"
+
+    assert mp.load_snapshot(a).patterns.keys() == mp.load_snapshot(b).patterns.keys()
+    assert mp.memory_root(a) == mp.memory_root(b)
+    assert list(mp.load_snapshot(b).to_canonical_obj()["patterns"]) == sorted(
+        list(mp.load_snapshot(b).to_canonical_obj()["patterns"])
+    )
+
+    # Panjang body yang berbeda menggeser rank, TIDAK menggeser root.
+    for i, k in enumerate(kunci):
+        b.set_reference(k, {"body": "x" * (i + 1)})
+        a.set_reference(k, {"body": "x" * (i + 1)})
+    assert mp.memory_root(a) == mp.memory_root(b)
+
+
+def test_reference_enumeration_refuses_silent_truncation(client, monkeypatch):
+    """JEBAKAN 3: `search` memotong tanpa error → pattern hilang dari root diam-diam."""
+    for i in range(40):
+        client.set_reference(f"pattern:p{i:03d}", {"i": i})
+    assert len(mp.load_snapshot(client).patterns) == 40
+
+    # Batas 3 → percobaan kedua 30 → masih terpotong (40 baris) → DILEMPAR.
+    monkeypatch.setattr(mp, "SEARCH_LIMIT", 3)
+    with pytest.raises(mp.MemoryIntegrityError, match="terpotong"):
+        mp.memory_root(client)
+
+
+def test_reference_enumeration_raises_the_limit_once_before_giving_up(client, monkeypatch):
+    """Derau `other:*` TIDAK boleh mematikan agen: batas dinaikkan sekali sebelum menyerah.
+
+    Kebocoran jebakan 1 bisa dipakai BALIK sebagai DoS — 30 reference `other:*` yang
+    body-nya menyebut "pattern" menghabiskan batas, padahal tak satu pun masuk cakupan root.
+    """
+    client.set_reference("pattern:asli", {"i": 1})
+    for i in range(30):
+        client.set_reference(f"other:derau{i:03d}", {"note": f"mentions pattern {i}"})
+
+    monkeypatch.setattr(mp, "SEARCH_LIMIT", 5)
+    snapshot = mp.load_snapshot(client)  # tidak melempar
+    assert set(snapshot.patterns) == {"pattern:asli"}
+
+
+def test_reference_enumeration_finds_pathological_keys(client):
+    """Nol false-negative atas kunci patologis (daftar probe api-facts §C.1)."""
+    aneh = [
+        "pattern:",
+        "pattern:x",
+        "pattern:---",
+        "pattern:\U0001f3af",
+        "pattern:\u65e5\u672c\u8a9e",
+        "pattern:" + "L" * 300,
+        "pattern:a b",
+        "pattern:NEAR",
+        "pattern:AND",
+        "pattern:OR",
+        "pattern:*",
+        "pattern:0x9aF3",
+    ]
+    for k in aneh:
+        client.set_reference(k, {"k": k})
+    ditemukan = set(mp.load_snapshot(client).patterns)
+    assert set(aneh) == ditemukan, f"hilang: {set(aneh) - ditemukan}"
+
+
+def test_reference_enumeration_is_sealed_to_the_reference_tier(client):
+    """`tiers=("reference",)` RAPAT — entity/state/journal senama tidak ikut terbaca."""
+    client.set_reference("pattern:sama", {"tier": "reference"})
+    client.set_state("pattern:sama", {"tier": "state"})
+    client.set_entity(mp.CATEGORY_QUARANTINE, "pattern:sama", {"tier": "entity"})
+    snapshot = mp.load_snapshot(client)
+    assert set(snapshot.patterns) == {"pattern:sama"}
+    assert snapshot.patterns["pattern:sama"] == '{"tier":"reference"}'
+
+
+# ----------------------------------------------------------------------
+# (h) gerbang root: pemindai AST, bukan pencocokan substring
+# ----------------------------------------------------------------------
+
+
+def _root_gate_violations(source: str) -> list[str]:
+    """Nama terlarang yang benar-benar DIPAKAI di satu modul, ditemukan lewat AST.
+
+    Substring `"memory_root("` bisa ditembus dua cara yang sudah dibuktikan reviewer:
+    `memory_root_hex(` tidak memuatnya, dan `from ... import memory_root as mr` mengubah
+    namanya. Karena itu: alias impor dilacak, atribut `mp.memory_root` dilacak, dan
+    `getattr(mp, "memory_root")` tertangkap lewat konstanta string.
+    """
+    import ast
+
+    def dotted(node):
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute):
+            induk = dotted(node.value)
+            return f"{induk}.{node.attr}" if induk else ""
+        return ""
+
+    tree = ast.parse(source)
+    terlarang = {"memory_root", "memory_root_hex", "load_snapshot"}
+    alias: set[str] = set()
+    modul: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and (node.module or "").endswith("memory_policy"):
+            for a in node.names:
+                if a.name == "*":
+                    alias |= terlarang
+                elif a.name in terlarang:
+                    alias.add(a.asname or a.name)
+        elif isinstance(node, ast.ImportFrom):
+            for a in node.names:
+                if a.name == "memory_policy":
+                    modul.add(a.asname or a.name)
+        elif isinstance(node, ast.Import):
+            for a in node.names:
+                if a.name.endswith("memory_policy"):
+                    modul.add(a.asname or a.name)
+
+    pelanggaran: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id in alias:
+            pelanggaran.append(f"{node.id}@{node.lineno}")
+        elif isinstance(node, ast.Attribute) and node.attr in terlarang:
+            induk = dotted(node.value)
+            if induk in modul or induk.endswith("memory_policy"):
+                pelanggaran.append(f"{induk}.{node.attr}@{node.lineno}")
+        elif isinstance(node, ast.Constant) and node.value in terlarang and (alias or modul):
+            # `getattr(mp, "memory_root")` tidak punya simpul Attribute sama sekali.
+            pelanggaran.append(f"str:{node.value}@{node.lineno}")
+    return pelanggaran
+
+
+def test_root_gate_scanner_catches_the_two_bypasses_the_reviewer_found():
+    """Pemindai itu sendiri diuji — kalau tidak, ia hanya hijau karena buta."""
+    assert _root_gate_violations("from agent.memory_policy import memory_root_hex\nmemory_root_hex(x)\n")
+    assert _root_gate_violations("from agent.memory_policy import memory_root as mr\nmr(x)\n")
+    assert _root_gate_violations("import agent.memory_policy as m\nm.memory_root(x)\n")
+    assert _root_gate_violations(
+        'from agent import memory_policy as mp\ngetattr(mp, "memory_root")(x)\n'
+    )
+    # Nama lokal yang KEBETULAN bernama sama (vault_client punya argumen `memory_root: bytes`)
+    # BUKAN pelanggaran — pemindai yang menandainya akan dimatikan orang, lalu tidak menjaga apa pun.
+    assert not _root_gate_violations("def post(job_id, memory_root: bytes):\n    return memory_root\n")
+    assert _root_gate_violations("from agent.memory_policy import load_snapshot\nload_snapshot(c)\n")
+    # Jalur yang SAH tidak ditandai.
+    assert not _root_gate_violations(
+        "from agent.memory_policy import memory_root_for_onchain\nmemory_root_for_onchain(c)\n"
+    )
+
+
+def test_only_memory_root_for_onchain_may_reach_a_memory_derived_root():
+    """ADR-020 keputusan 6: modul agen lain WAJIB lewat gerbang, bukan `memory_root` langsung.
+
+    Gerbangnya kini terbuka (encoding beku), tetapi tetap satu pintu: ia yang akan menolak
+    lagi bila encoding dibuka kembali, dan ia titik tunggal untuk mode aman (2.4a).
+    """
+    import pathlib
+
+    paket = pathlib.Path(mp.__file__).parent
+    pelanggar = {}
+    for berkas in sorted(paket.glob("*.py")):
+        if berkas.name == "memory_policy.py":
+            continue
+        temuan = _root_gate_violations(berkas.read_text(encoding="utf-8"))
+        if temuan:
+            pelanggar[berkas.name] = temuan
+    assert pelanggar == {}, f"modul memakai root tanpa lewat gerbang: {pelanggar}"
