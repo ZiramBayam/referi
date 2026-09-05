@@ -752,13 +752,26 @@ class CapPlan:
 
 @dataclass(frozen=True)
 class GateDecision:
-    """Keputusan gating saat `JobFunded` (spec §5 langkah 2)."""
+    """Keputusan gating saat `JobFunded` (spec §5 langkah 2).
+
+    `risk_level` + `incident_jobs` ikut dibawa karena keputusan ini adalah SATU-SATUNYA
+    bukti yang ada saat job masih `Funded`: belum ada deliverable, jadi belum ada
+    `Evaluation`. Bundel bukti `reasonHash` untuk penolakan gerbang (`vault_client
+    .verdict_evidence`) dibangun dari nilai-nilai ini, dan tanpa jobId insiden yang
+    mendasarinya bundel itu hanya berisi angka cap tanpa asal-usul — auditor tidak bisa
+    menelusuri kembali ke job yang melahirkan capnya.
+
+    Keduanya berasal dari entity `provider` (`DecisionMemoryView.provider`), bukan dari
+    karantina: spec §3 aturan 1 tetap berlaku utuh di sini.
+    """
 
     accept: bool
     reason: str
     cap: CapPlan
     mode: ModeDecision
     depth: str
+    risk_level: int = 0
+    incident_jobs: tuple[int, ...] = ()
 
 
 def _checked_reference_keys(
@@ -1695,21 +1708,30 @@ def gate_job(
     profile = view.provider(provider_address)
     cap = derive_cap(profile, mode)
     depth = check_depth(profile, mode)
+    risk = effective_risk(profile, mode)
+    incidents = tuple(int(j) for j in profile.incident_jobs)
 
     if cap.cap_usdc is not None and int(budget) > cap.cap_usdc:
-        incidents = len(profile.incident_jobs)
         return GateDecision(
             accept=False,
             reason=(
                 f"budget {budget} melebihi cap milestone provider ini "
-                f"({cap.cap_usdc}; riwayat: {incidents} insiden terkonfirmasi)"
+                f"({cap.cap_usdc}; riwayat: {len(incidents)} insiden terkonfirmasi)"
             ),
             cap=cap,
             mode=mode,
             depth=depth,
+            risk_level=risk,
+            incident_jobs=incidents,
         )
     return GateDecision(
-        accept=True, reason="budget dalam batas cap", cap=cap, mode=mode, depth=depth
+        accept=True,
+        reason="budget dalam batas cap",
+        cap=cap,
+        mode=mode,
+        depth=depth,
+        risk_level=risk,
+        incident_jobs=incidents,
     )
 
 

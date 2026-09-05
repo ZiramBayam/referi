@@ -25,6 +25,20 @@ nol `postVerdict`, nol `finalize`, nol `setProviderCap`. Latch-nya ada supaya ja
 lupa memeriksa nilai balik tetap berhenti, persis alasan `SafeModeStop` ditegakkan di `_send()`
 dan bukan di pemanggil.
 
+BUKTI VERDICT PUNYA DUA BENTUK, dan itu bukan kelengkapan melainkan urutan alur ACP.
+Gating cap terjadi saat job masih `Funded` (spec §5 langkah 2), yaitu SEBELUM provider
+`submit()` — jadi bundel yang menuntut `Evaluation` membuat verdict `budget > cap`
+MUSTAHIL diumumkan. Karena itu `verdict_evidence()` menerima keduanya: bukti dari cek
+deterministik (`Evaluation`) dan bukti dari `GateDecision` (cap + basisnya + jobId insiden
+yang melahirkannya). Penolakan gerbang hanya sah bersama verdict REJECT, dan `verdict_kind()`
+memaksanya persis seperti bunyi spec §5 langkah 2. Eksekusinya sah on-chain: api-facts §A
+mencatat `reject` boleh dipanggil evaluator saat status Funded MAUPUN Submitted.
+
+TIGA KODE KELUAR, bukan dua (`EXIT_STOPPED_MIDWAY`, `EXIT_REFUSED`, 0). Mode aman SAAT
+START adalah keadaan normal ber-ADR dan tetap 0; penolakan yang muncul SESUDAH gerbang
+start lolos (root asing di calldata, mode yang berubah di tengah pipa, bukti yang tidak
+cocok dengan verdict) TIDAK boleh memakai kode yang sama dengan run yang berhasil.
+
 MODE AMAN (spec §3 aturan 5 sebagaimana dibaca ulang ADR-023 dan DIKOREKSI ADR-024;
 ADR-007 + amandemennya, ADR-011, ADR-020 keputusan 8). Presedensi `decide_mode`, tepat ini:
 
@@ -76,6 +90,7 @@ import logging
 import os
 import sys
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -149,6 +164,15 @@ KIND_REJECT = 2
 EXIT_STOPPED_MIDWAY = 3
 EXIT_STOPPED_MIDWAY_MESSAGE = "PIPA BERHENTI DI TENGAH"
 
+# Kode keluar untuk PENOLAKAN yang bukan mode aman saat start: root asing di calldata,
+# mode yang berubah di tengah pipa, bukti yang tidak cocok dengan verdict. Keadaan itu
+# BUKAN jalur normal ber-ADR — ia bug atau perusakan — sedangkan `--job-id` yang SUKSES
+# juga mengembalikan 0. Tanpa kode tersendiri, otomasi 2.5 tidak bisa membedakan "verdict
+# mendarat" dari "agen menolak calldata-nya sendiri". Mode aman SAAT START tetap 0: ia
+# perilaku yang diinginkan (spec §3 aturan 5) dan keluar lebih awal, tidak lewat sini.
+EXIT_REFUSED = 4
+EXIT_REFUSED_MESSAGE = "AGEN MENOLAK MELANJUTKAN"
+
 # ----------------------------------------------------------------------
 # Root & reasonHash: TIDAK ADA KONSTANTA (task 2.4b)
 # ----------------------------------------------------------------------
@@ -169,8 +193,20 @@ EXIT_STOPPED_MIDWAY_MESSAGE = "PIPA BERHENTI DI TENGAH"
 # Label versi bundel bukti `reasonHash`. Ikut ter-hash supaya bentuk bundel yang berbeda
 # tidak pernah bisa menghasilkan hash yang sama dengan bentuk lama. Bentuk PENUH (bukti
 # per-kriteria + pin IPFS) milik task 2.5; yang ada di sini adalah bundel MINIMAL yang
-# seluruh isinya lahir dari `Evaluation` job itu — bukan konstanta.
-VERDICT_EVIDENCE_VERSION = "evaluator-verdict-evidence/v1"
+# seluruh isinya lahir dari job itu — bukan konstanta.
+#
+# NAIK ke v2 saat bundel PENOLAKAN GERBANG ditambahkan: bentuknya berubah (ada field
+# `kind`), dan label versi yang tidak ikut berubah membuat dua bentuk berbeda mengaku
+# sebagai satu skema di mata auditor.
+VERDICT_EVIDENCE_VERSION = "evaluator-verdict-evidence/v2"
+
+# DUA bentuk bukti yang sah, dan keduanya WAJIB ada. Alasannya bukan kelengkapan melainkan
+# urutan alur ACP: gating cap terjadi saat job masih `Funded` (spec §5 langkah 2), yaitu
+# JAUH sebelum provider `submit()`. Bundel yang menuntut `Evaluation` karena itu tidak
+# pernah bisa mengumumkan penolakan `budget > cap` — verdict itu mustahil diumumkan, dan
+# gagalnya senyap (`SafeModeStop` → exit 0, nol tx). Itu persis klaim inti PRD.
+EVIDENCE_KIND_EVALUATION = "evaluation"      # ada deliverable: skor cek deterministik
+EVIDENCE_KIND_GATE_REJECTION = "gate-rejection"  # belum ada deliverable: budget > cap
 
 # ----------------------------------------------------------------------
 # Konstanta mode aman (task 2.4a)
@@ -673,6 +709,29 @@ ROOT_UNREADABLE_TEMPLATE = (
     "ROOT TIDAK BISA DITURUNKAN: memori lokal di {db} {status}, jadi tidak ada memory_root "
     "untuk diumumkan; nol postVerdict/finalize/setProviderCap"
 )
+ROOT_EMPTY_AFTER_READ_TEMPLATE = (
+    "ROOT KOSONG DITOLAK: pipa ini SUDAH pernah membaca memori yang ADA di {db}, jadi root "
+    "memori KOSONG tidak boleh diumumkan sebagai keadaan yang melahirkan verdict ini; "
+    "nol postVerdict/finalize/setProviderCap"
+)
+# Mode yang dipakai saat RENCANA disusun WAJIB sama dengan mode saat transaksi dikirim.
+# Kalau tidak, `reasonHash` mengikat bundel yang menyatakan satu mode sementara root yang
+# diumumkan lahir dari mode lain — auditor yang merekonstruksi memori pelahir verdict
+# mendapat keadaan yang berbeda dari yang dinyatakan bundel.
+MODE_DRIFT_TEMPLATE = (
+    "MODE BERUBAH DI TENGAH PIPA: rencana jobId={job_id} disusun dalam mode {planned} "
+    "sementara gerbang saat mengirim membaca mode {current} atas {db}; bundel bukti dan "
+    "root yang diumumkan akan berasal dari dua keadaan berbeda; "
+    "nol postVerdict/finalize/setProviderCap"
+)
+# Bundel penolakan gerbang hanya boleh menemani verdict REJECT (spec §5 langkah 2:
+# "jika budget > cap → postVerdict(REJECT)"). `complete` dengan bukti penolakan adalah
+# verdict yang membantah buktinya sendiri.
+GATE_REJECTION_KIND_TEMPLATE = (
+    "BUKTI PENOLAKAN GERBANG TIDAK COCOK DENGAN VERDICT: jobId={job_id} kind={kind} "
+    "({kind_name}) sementara buktinya adalah penolakan cap; hanya reject yang sah; "
+    "nol postVerdict/finalize/setProviderCap"
+)
 
 
 def contract_call_root(func) -> bytes | None:
@@ -902,6 +961,15 @@ class VaultClient:
         # "berhenti bersih" dari "berhenti di tengah pipa" — dua keadaan yang akibatnya
         # sangat berbeda bagi client yang dananya masih di escrow.
         self.sent_transactions: list[str] = []
+        # LATCH ASAL-USUL ROOT (temuan SEDANG-1). True begitu klien ini SEKALI saja membaca
+        # `memory.db` yang ADA dan terbaca. Sejak itu root memori KOSONG (cabang NAIF)
+        # DILARANG diumumkan: kalau file hilang di tengah pipa, gerbang berubah menjadi
+        # NAIF dan `postVerdict` akan membawa root DB KOSONG sementara `reasonHash`
+        # mengikat bundel yang menyatakan mode sebelumnya. Auditor yang merekonstruksi
+        # memori pelahir verdict itu mendapat DB kosong — persis klaim yang ditutup 2.4b.
+        # Prasyaratnya (`lastMemoryRoot == 0`) memang tidak berlaku di vault beku, tetapi
+        # BERLAKU di Anvil / vault segar yang dipakai TASKS 2.5 AC (e).
+        self.observed_readable_memory = False
         # KUNCI SEKALI-JALAN. Sekali diisi, `_send()` menolak setiap transaksi sampai proses
         # ini mati. Diisi oleh dua penolakan yang bukan verdict: job milik evaluator lain,
         # dan deliverable yang tidak terverifikasi (ADR-019 keputusan 2). Ia ada karena
@@ -942,6 +1010,8 @@ class VaultClient:
                 "tidak ada transaksi yang boleh dikirim (spec §3 aturan 5, ADR-023)"
             )
         gate = evaluate_memory_gate(self, self.db_path)
+        if gate.local.local_memory_readable:
+            self.observed_readable_memory = True
         self.memory_gate = gate
         return gate
 
@@ -982,6 +1052,12 @@ class VaultClient:
         # KOSONG: dihitung dari encoding beku, bukan konstanta. Semua cabang lain yang
         # kehilangan root sudah MODE AMAN dan tidak pernah sampai ke sini.
         if gate.decision.mode == MODE_NAIVE:
+            # SATU pengecualian atas cabang itu: klien yang pernah membaca memori yang ADA
+            # tidak boleh "kembali" menjadi naif. Lihat `observed_readable_memory`.
+            if self.observed_readable_memory:
+                raise MemoryRootMismatch(
+                    ROOT_EMPTY_AFTER_READ_TEMPLATE.format(db=gate.db_path)
+                )
             return empty_memory_root()
         raise MemoryRootMismatch(
             ROOT_UNREADABLE_TEMPLATE.format(db=gate.db_path, status=gate.local.status)
@@ -1221,30 +1297,85 @@ class JobPlan:
         )
 
 
+def gate_rejection_body(plan: JobPlan) -> dict:
+    """Isi bukti penolakan GERBANG — lahir dari `GateDecision`, tanpa `Evaluation`.
+
+    Ini bukan ringkasan: ia memuat seluruh rantai sebab yang membuat job ditolak saat masih
+    `Funded`, sehingga auditor bisa menghitung ulang keputusannya dari memori yang
+    dijangkar `memory_root` di bundel yang sama —
+      - `budget` job ini dan `cap` yang dilanggarnya (nilai + `basis` perhitungannya +
+        besar sampel + apakah milestone diwajibkan);
+      - `risk_level` yang menentukan rumus cap (spec §3 aturan 4);
+      - `incident_jobs`, yaitu jobId yang MELAHIRKAN cap itu. Tanpa daftar ini bundelnya
+        hanya angka tanpa asal-usul, dan TASKS 2.5 AC (c) menuntut kedua jobId insiden
+        ada di dalamnya.
+    Semuanya berasal dari entity `provider` + hasil cek deterministik sendiri; tidak ada
+    satu pun nilai yang datang dari teks pihak (spec §3 aturan 3).
+    """
+    cap = plan.gate.cap
+    return {
+        "job": int(plan.job.job_id),
+        "provider": plan.job.provider,
+        "budget": int(plan.job.budget),
+        "accept": bool(plan.gate.accept),
+        "reason": plan.gate.reason,
+        "depth": plan.gate.depth,
+        "risk_level": int(plan.gate.risk_level),
+        "incident_jobs": [int(j) for j in plan.gate.incident_jobs],
+        "cap": {
+            "usdc": None if cap.cap_usdc is None else int(cap.cap_usdc),
+            "basis": cap.basis,
+            "sample_size": int(cap.sample_size),
+            "require_milestone": bool(cap.require_milestone),
+        },
+    }
+
+
 def verdict_evidence(plan: JobPlan, memory_root: bytes) -> dict:
     """Bundel bukti satu verdict — bahan `reasonHash`. NOL konstanta di dalamnya.
 
-    Isinya seluruhnya turunan job itu: hasil cek deterministik (`Evaluation.to_body()`),
-    mode memori yang berlaku, dan `memory_root` yang SAMA yang diumumkan `postVerdict`.
-    Root ikut masuk supaya `reasonHash` mengikat verdict pada keadaan memori yang
-    melahirkannya; dua nilai yang diumumkan terpisah bisa berasal dari dua keadaan berbeda.
+    DUA bentuk, dan keduanya sah karena verdict lahir di DUA titik alur yang berbeda:
 
-    Bentuk PENUH (bukti per-kriteria yang dipublikasikan + pin IPFS) milik task 2.5. Yang
-    dijamin di sini hanya: tidak ada satu pun byte hardcoded, dan hasilnya deterministik
-    atas masukan yang sama.
+      1. `EVIDENCE_KIND_EVALUATION` — job sudah `Submitted`: isinya hasil cek deterministik
+         (`Evaluation.to_body()`).
+      2. `EVIDENCE_KIND_GATE_REJECTION` — job masih `Funded` dan gerbang cap MENOLAKnya
+         (spec §5 langkah 2). Di sini deliverable belum ada sama sekali, jadi menuntut
+         `Evaluation` berarti verdict `budget > cap` tidak pernah bisa diumumkan — bentuk
+         lama menolaknya dan agen berhenti dengan NOL transaksi.
+
+    Yang sama di kedua bentuk: `mode` memori yang berlaku dan `memory_root` yang SAMA yang
+    diumumkan `postVerdict`. Root ikut masuk supaya `reasonHash` mengikat verdict pada
+    keadaan memori yang melahirkannya; dua nilai yang diumumkan terpisah bisa berasal dari
+    dua keadaan berbeda.
+
+    Yang TETAP ditolak: job tanpa `Evaluation` yang gerbangnya LOLOS. Di sana memang belum
+    ada apa pun untuk dinilai, dan verdict tanpa bukti adalah persis yang dicabut 2.4b.
     """
-    if plan.evaluation is None:
-        raise MemoryRootMismatch(
-            "tidak ada hasil evaluasi untuk jobId="
-            f"{plan.job.job_id} — tidak ada bukti yang bisa di-hash jadi reasonHash, "
-            "jadi tidak ada verdict yang boleh diumumkan"
-        )
-    return {
+    dasar = {
         "version": VERDICT_EVIDENCE_VERSION,
         "mode": plan.mode.mode,
         "memory_root": "0x" + bytes(memory_root).hex(),
-        "evaluation": plan.evaluation.to_body(),
     }
+    if plan.evaluation is not None:
+        return {
+            **dasar,
+            "kind": EVIDENCE_KIND_EVALUATION,
+            "evaluation": plan.evaluation.to_body(),
+        }
+    if not plan.gate.accept:
+        return {**dasar, "kind": EVIDENCE_KIND_GATE_REJECTION, "gate": gate_rejection_body(plan)}
+    raise MemoryRootMismatch(
+        f"BELUM ADA YANG BISA DIUMUMKAN untuk jobId={plan.job.job_id}: gerbang MELOLOSKAN "
+        f"budget {plan.job.budget} (status job {plan.job.status}) dan provider belum "
+        "submit(), jadi belum ada hasil cek maupun penolakan cap yang bisa di-hash jadi "
+        "reasonHash; tunggu JobSubmitted (spec §5 langkah 2 vs 3). "
+        "Nol postVerdict/finalize/setProviderCap"
+    )
+
+
+def evidence_kind(bundle: Mapping[str, object]) -> str:
+    """`kind` bundel bukti. Dipakai penjaga di `run_live`, bukan untuk menebak isi."""
+    return str(bundle.get("kind", ""))
 
 
 def verdict_reason_hash(bundle: dict) -> bytes:
@@ -1346,6 +1477,29 @@ def record_outcome(client: VaultClient, plan: JobPlan) -> None:
     )
 
 
+def verdict_kind(plan: JobPlan, requested: int) -> int:
+    """Verdict yang benar-benar diumumkan untuk satu rencana job.
+
+    SATU aturan, dan ia berasal dari spec §5 langkah 2 apa adanya: *"jika budget > cap →
+    `postVerdict(REJECT)`"*. Gating itu terjadi saat job masih `Funded`, jadi ia mendahului
+    `--kind` yang diminta operator — job yang capnya dilanggar tidak boleh diumumkan
+    `complete` hanya karena baris perintahnya default.
+
+    Selain itu `requested` diteruskan apa adanya. Pemilihan verdict dari hasil cek
+    deterministik adalah milik task 2.5 dan sengaja TIDAK dikerjakan di sini.
+    """
+    if plan.evaluation is None and not plan.gate.accept and requested != KIND_REJECT:
+        log.info(
+            "GERBANG MENOLAK jobId=%d (%s) — verdict dipaksa REJECT (spec §5 langkah 2), "
+            "bukan %s yang diminta",
+            plan.job.job_id,
+            plan.gate.reason,
+            "complete" if requested == KIND_COMPLETE else str(requested),
+        )
+        return KIND_REJECT
+    return requested
+
+
 def run_job(
     client: VaultClient,
     job_id: int,
@@ -1379,7 +1533,7 @@ def run_job(
         client.refuse(str(exc) if str(exc).startswith(REFUSAL_LINE) else f"{REFUSAL_LINE}: {exc}")
         return 0
     log.info("%s", plan.line)
-    return run_live(client, job_id, kind, plan=plan)
+    return run_live(client, job_id, verdict_kind(plan, kind), plan=plan)
 
 
 # ----------------------------------------------------------------------
@@ -1421,8 +1575,14 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
     (langkah 5 sesudah langkah 4), dan konsekuensinya sudah dicatat ADR-023: root lokal
     selalu satu tulisan di depan root on-chain, jadi keduanya TIDAK PERNAH dibandingkan.
 
-    `plan` WAJIB ada dan WAJIB punya `evaluation`: tanpa itu tidak ada bukti yang bisa
-    di-hash menjadi `reasonHash`, dan verdict tanpa bukti adalah persis yang dicabut 2.4b.
+    `plan` WAJIB ada, dan buktinya boleh datang dari DUA sumber (`verdict_evidence`):
+    hasil cek deterministik bila job sudah `Submitted`, atau `GateDecision` bila job masih
+    `Funded` dan capnya dilanggar. Yang tetap dilarang adalah verdict TANPA bukti apa pun
+    — itu yang dicabut 2.4b.
+
+    `record_outcome` dipanggil di KEDUA cabang (verdict baru maupun verdict yang sudah ada
+    di vault). Ia idempoten per `job_id`; melewatinya di cabang "sudah ada" berarti hasil
+    job hilang dari memori SELAMANYA setiap kali run diulang.
     """
     kind_name = "complete" if kind == KIND_COMPLETE else "reject"
     log.info("LIVE jobId ACP NYATA=%d kind=%d (%s)", job_id, kind, kind_name)
@@ -1433,11 +1593,32 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
         )
     # Gerbang dibaca ULANG lebih dulu supaya root yang dicetak/diumumkan adalah root yang
     # SAMA yang akan diperiksa `_send()`. `_send()` tetap membacanya lagi — itu yang mengikat.
-    client.refresh_memory_gate()
+    gate = client.refresh_memory_gate()
+    # Mode saat RENCANA disusun WAJIB masih berlaku saat verdict diumumkan (temuan SEDANG-1).
+    # `plan.mode` ikut ter-hash ke `reasonHash`; bila gerbang sudah berubah, bundel dan root
+    # menggambarkan dua keadaan memori yang berbeda dan verdict itu tidak bisa diaudit.
+    if gate.decision.mode != plan.mode.mode:
+        raise MemoryRootMismatch(
+            MODE_DRIFT_TEMPLATE.format(
+                job_id=job_id,
+                planned=plan.mode.mode,
+                current=gate.decision.mode,
+                db=client.db_path,
+            )
+        )
     memory_root = client.derived_memory_root()
-    reason_hash = verdict_reason_hash(verdict_evidence(plan, memory_root))
+    bundle = verdict_evidence(plan, memory_root)
+    if evidence_kind(bundle) == EVIDENCE_KIND_GATE_REJECTION and kind != KIND_REJECT:
+        raise MemoryRootMismatch(
+            GATE_REJECTION_KIND_TEMPLATE.format(job_id=job_id, kind=kind, kind_name=kind_name)
+        )
+    reason_hash = verdict_reason_hash(bundle)
     log.info("memory_root TURUNAN memory.db di %s = 0x%s", client.db_path, memory_root.hex())
-    log.info("reason_hash (TURUNAN bukti job)=0x%s", reason_hash.hex())
+    log.info(
+        "reason_hash (TURUNAN bukti job, kind bukti=%s)=0x%s",
+        evidence_kind(bundle),
+        reason_hash.hex(),
+    )
 
     existing = client.verdict(job_id)
     if existing.finalized:
@@ -1459,6 +1640,15 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
         )
         ready_at = existing.ready_at
         post_hash = "(sudah ada sebelumnya)"
+        # spec §5 langkah 5 TETAP berlaku di cabang ini (temuan TINGGI-2). Rerun sesudah
+        # `postVerdict` mendarat — `EXIT_STOPPED_MIDWAY`, timeout receipt, atau `--job-id`
+        # yang dijalankan ulang tangan — dulu melewati `record_outcome` SELAMANYA, sehingga
+        # insiden job A tidak pernah lahir, `promote_suspicions` tidak pernah mencapai
+        # count >= 2, `risk` tetap 0, `derive_cap` mengembalikan NO_CAP, dan
+        # `cap_to_onchain` = 0 = TANPA BATAS (ADR-001): job C tidak pernah ditolak.
+        # `record_job_outcome` idempoten per `job_id` (dedup di sisi memori), jadi memanggil
+        # di KEDUA cabang aman dan tidak pernah menghitung satu job dua kali.
+        record_outcome(client, plan)
     else:
         post_hash = client.post_verdict(job_id, kind, reason_hash, memory_root)
         post_receipt = client.wait_receipt(post_hash)
@@ -1471,8 +1661,7 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
         if post_receipt.status != 1:
             raise RuntimeError(f"postVerdict gagal on-chain: 0x{post_hash}")
         # spec §5 langkah 5: memori ditulis SESUDAH verdict diumumkan, sebelum finalize.
-        if plan is not None:
-            record_outcome(client, plan)
+        record_outcome(client, plan)
         # readyAt dari event di receipt (RPC publik bisa tertinggal di belakang receipt).
         ready_at = read_ready_at(client, job_id, post_receipt)
 
@@ -1589,7 +1778,10 @@ def main(argv: list[str] | None = None) -> int:
         # jalur baru mencoba mengirim tx tanpa lewat sana. `DeliverableUnverifiedError`
         # ikut di sini karena ADR-019 keputusan 2 menuntut perlakuan SEKELAS mode aman —
         # termasuk pembedaan "berhenti bersih" dari "berhenti di tengah pipa" di bawah.
-        log.info("%s", exc)
+        # `log.error`, bukan `log.info`: yang sampai ke sini adalah penolakan SESUDAH
+        # gerbang start lolos — mode aman yang muncul di tengah jalan, root asing, bukti
+        # yang tidak cocok. Semuanya keadaan yang harus terlihat di log, bukan catatan.
+        log.error("%s", exc)
         terkirim = dibangun["client"].sent_transactions if "client" in dibangun else []
         if terkirim:
             # BERHENTI DI TENGAH PIPA. Ini BUKAN "berhenti bersih": sebagian tx sudah
@@ -1604,7 +1796,13 @@ def main(argv: list[str] | None = None) -> int:
                 ", ".join("0x" + h for h in terkirim),
             )
             return EXIT_STOPPED_MIDWAY
-        return 0
+        # Nol tx, tetapi tetap BUKAN sukses: gerbang start sudah lolos, jadi sesuatu
+        # menolak di tengah jalan. Exit 0 di sini adalah laporan sukses palsu.
+        log.error(
+            "%s: nol transaksi terkirim, dan run ini TIDAK menghasilkan verdict",
+            EXIT_REFUSED_MESSAGE,
+        )
+        return EXIT_REFUSED
     except JobVoidedError as exc:
         # Penjaga: tidak ada tx yang dikirim, keluar 0 (bukan kegagalan).
         log.info("%s", voided_message(exc.job_id, exc.status))

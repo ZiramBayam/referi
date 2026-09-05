@@ -141,7 +141,12 @@ def db(tmp_path) -> pathlib.Path:
     return path
 
 
-AGENT_MODULES = sorted(pathlib.Path(mp.__file__).parent.glob("*.py"))
+# `rglob`, BUKAN `glob`: AC 2.4b berbunyi `agent/`, dan `glob("*.py")` melewatkan
+# `agent/agent/checks/*.py` seluruhnya — sebuah konstanta 32-byte di sana lolos pemindai
+# ini tanpa satu pun tes merah.
+AGENT_MODULES = sorted(
+    b for b in pathlib.Path(mp.__file__).parent.rglob("*.py") if "__pycache__" not in b.parts
+)
 
 
 # ----------------------------------------------------------------------
@@ -344,6 +349,30 @@ def test_an_empty_database_exports_the_same_root_the_naive_branch_announces(tmp_
     gerbang = client.refresh_memory_gate()
     assert gerbang.decision.mode == mp.MODE_NAIVE
     assert client.derived_memory_root() == mp.empty_memory_root()
+
+
+def test_an_unreadable_memory_yields_no_root_at_all_not_the_empty_one(tmp_path):
+    """Cabang fail-closed `ROOT_UNREADABLE_TEMPLATE` — DIUJI, bukan sekadar ditulis.
+
+    Mutan `if gate.decision.mode == MODE_NAIVE:` → `if True:` di `derived_memory_root()`
+    dulu LOLOS nol tes merah: setiap tes lain berhenti lebih dulu di `_require_memory_gate`,
+    jadi cabangnya tidak pernah dieksekusi. Konsekuensi mutan itu persis kebalikan
+    fail-closed: memori yang RUSAK (kita tidak tahu isinya) diumumkan sebagai memori KOSONG.
+    """
+    rusak = tmp_path / "memory.db"
+    rusak.write_bytes(b"ini bukan basis data sqlite")
+    client = build_client(rusak)
+
+    gerbang = client.refresh_memory_gate()
+    assert gerbang.local.status == mp.LOCAL_MEMORY_ERROR
+    assert gerbang.decision.mode == mp.MODE_SAFE
+    assert gerbang.local.root is None
+
+    with pytest.raises(vc.MemoryRootMismatch) as exc:
+        client.derived_memory_root()
+    assert "ROOT TIDAK BISA DITURUNKAN" in str(exc.value)
+    assert mp.empty_memory_root().hex() not in str(exc.value)
+    assert_nothing_was_sent(client)
 
 
 def test_a_missing_memory_never_yields_a_root_outside_naive_mode(tmp_path):
