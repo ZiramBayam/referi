@@ -108,7 +108,16 @@ contract AgenticCommerce {
     uint256 public platformFeeBP = 100;
 
     mapping(address => bool) public whitelistedHooks;
-    mapping(uint256 => Job) internal jobs;
+    /// @dev PUBLIK, bukan `internal`: kontrak asli mengekspos getter `jobs(uint256)` (api-facts §A,
+    ///      selector `0x180aedf3`) yang mengembalikan DELAPAN nilai
+    ///      `(address,uint8,address,uint48,address,address,uint256,string)`, dan agen memanggilnya persis
+    ///      begitu (`agent/agent/vault_client.py`, fragmen `ACP_ABI`). Saat mapping ini `internal`, mock
+    ///      TIDAK punya getter itu, mock tidak punya fallback, dan agen REVERT di Anvil — mock gagal
+    ///      sebagai harness tepat di titik yang dipakai. Dikunci `test_selectors_matchAcpAbi`
+    ///      (keberadaan selector atas runtime code) dan `test_jobsGetter_returndataLayout_matchesAcpTuple`
+    ///      (urutan + tipe tiap field). Perhatikan: keluaran getter mapping TIDAK dibungkus offset tuple
+    ///      seperti `getJob`, karena ia delapan nilai terpisah, bukan satu struct.
+    mapping(uint256 => Job) public jobs;
     /// @dev Job pertama ber-id 1. Kontrak asli mengekspos `jobCounter()` (= id terakhir); nama berbeda
     ///      dipakai di sini supaya tidak ada yang mengira semantiknya identik. Kode kita tidak memanggilnya.
     uint256 public nextJobId = 1;

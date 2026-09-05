@@ -755,12 +755,20 @@ contract AgenticCommerceTest is Test {
         assertEq(abi.decode(rlogs[1].data, (bytes32)), REASON, "JobRejected.reason di data");
     }
 
-    /// Mengunci KESEMBILAN selector yang dipanggil kode kita terhadap konstanta literal dari ABI
+    /// Mengunci KESEPULUH selector yang dipanggil kode kita terhadap konstanta literal dari ABI
     /// acp-node-v2 (api-facts §A). Konstanta sengaja ditulis sebagai literal, bukan diturunkan ulang
     /// dari string di file ini: mock yang salah dan tes yang salah dengan cara yang sama akan hijau
     /// sempurna di lokal lalu ditolak ACP asli di Sepolia — persis kegagalan yang dijaga tes ini.
-    /// Sumber angka: `cast sig "<signature>"`, 2026-09-03.
-    function test_selectors_matchAcpAbi() public pure {
+    /// Sumber angka: `cast sig "<signature>"`, 2026-09-03 (`jobs(uint256)`: `cast sig`, 2026-09-06).
+    ///
+    /// Yang KESEPULUH, `jobs(uint256)`, tidak diperiksa lewat `AgenticCommerce.jobs.selector`: ia
+    /// getter mapping PUBLIK, jadi menurunkan visibilitasnya akan membuat ekspresi itu gagal KOMPILASI
+    /// (seluruh suite mati) alih-alih memberi satu tes merah yang menyebut penyebabnya. Karena itu
+    /// keberadaannya dibuktikan atas RUNTIME CODE mock: staticcall dengan selector literal. Mock tanpa
+    /// getter itu tidak punya fallback → panggilan revert → tes ini merah. Getter ini bukan hiasan:
+    /// agen memanggilnya persis begitu (`agent/agent/vault_client.py`, fragmen `ACP_ABI`), dan mock
+    /// yang tidak punya membuat agen revert di Anvil.
+    function test_selectors_matchAcpAbi() public view {
         // `fund` punya parameter kedua `expectedBudget` (api-facts §A), BUKAN `fund(uint256)`
         // seperti teks EIP-8183 — ini penyimpangan yang paling sering dihalusinasikan.
         assertEq(AgenticCommerce.fund.selector, bytes4(0xd2e13f50), "fund(uint256,uint256,bytes)");
@@ -775,6 +783,12 @@ contract AgenticCommerceTest is Test {
         assertEq(AgenticCommerce.reject.selector, bytes4(0x41dd26f5), "reject(uint256,bytes32,bytes)");
         assertEq(AgenticCommerce.claimRefund.selector, bytes4(0x5b7baf64), "claimRefund(uint256)");
         assertEq(AgenticCommerce.getJob.selector, bytes4(0xbf22c457), "getJob(uint256)");
+
+        (bool ok, bytes memory ret) = address(acp).staticcall(abi.encodeWithSelector(bytes4(0x180aedf3), uint256(0)));
+        assertTrue(ok, "jobs(uint256) 0x180aedf3 HARUS ada di ABI mock (getter mapping publik)");
+        // 8 field, satu di antaranya dinamis: 8 word head + panjang + isi string. Untuk job nol,
+        // `description` kosong → 9 word (head + panjang, tanpa word isi).
+        assertEq(ret.length, 9 * 32, "returndata jobs(uint256) untuk job tak dikenal");
     }
 
     /// KESEBELAS custom error PROYEK milik kontrak asli, dikunci ke selector literal (api-facts §A,
@@ -1407,6 +1421,71 @@ contract AgenticCommerceTest is Test {
         assertEq(description_, S_DESCRIPTION, "field 8 description");
     }
 
+    /// Mengunci RETURNDATA MENTAH getter mapping PUBLIK `jobs(uint256)` (selector literal 0x180aedf3)
+    /// word demi word ke daftar keluaran ACP asli
+    /// `(address client, uint8 status, address provider, uint48 expiredAt, address evaluator, address hook,
+    /// uint256 budget, string description)` (api-facts §A; fragmen `ACP_ABI` agen memakai urutan yang sama).
+    ///
+    /// Beda dari `getJob`: `getJob` mengembalikan SATU struct → encoding-nya berawal offset tuple (0x20).
+    /// Getter mapping mengembalikan DELAPAN nilai terpisah → tidak ada offset pembungkus itu. Konsumen
+    /// (web3.py di agen) mendekode sesuai bentuk kedua; menyamakan keduanya adalah kesalahan tersendiri.
+    ///
+    /// Tes ini juga penjaga keberadaan getter: bila mapping `jobs` kembali `internal`/`private`, mock
+    /// tidak punya fallback sehingga staticcall di bawah revert dan tes merah di baris pertama.
+    function test_jobsGetter_returndataLayout_matchesAcpTuple() public {
+        uint256 jobId = _sentinelJob();
+
+        (bool ok, bytes memory ret) = address(acp).staticcall(abi.encodeWithSelector(bytes4(0x180aedf3), jobId));
+        assertTrue(ok, "getter publik jobs(uint256) harus ada dan sukses");
+
+        // 8 field + panjang string + 1 word isi string. TANPA offset tuple pembungkus (lihat catatan).
+        assertEq(ret.length, 10 * 32, "panjang returndata jobs(uint256)");
+
+        assertEq(address(uint160(uint256(_word(ret, 0)))), S_CLIENT, "word0 = client (BUKAN provider)");
+        assertEq(uint256(_word(ret, 1)), uint256(uint8(AgenticCommerce.Status.Submitted)), "word1 = status (uint8)");
+        assertEq(address(uint160(uint256(_word(ret, 2)))), S_PROVIDER, "word2 = provider (BUKAN client)");
+        assertEq(uint256(_word(ret, 3)), S_EXPIRED_AT, "word3 = expiredAt (uint48)");
+        assertEq(address(uint160(uint256(_word(ret, 4)))), S_EVALUATOR, "word4 = evaluator (BUKAN hook)");
+        assertEq(address(uint160(uint256(_word(ret, 5)))), S_HOOK, "word5 = hook (BUKAN evaluator)");
+        assertEq(uint256(_word(ret, 6)), S_BUDGET, "word6 = budget");
+        assertEq(uint256(_word(ret, 7)), 8 * 32, "word7 = offset string relatif awal returndata");
+        assertEq(uint256(_word(ret, 8)), bytes(S_DESCRIPTION).length, "word8 = panjang description");
+        assertEq(_word(ret, 9), bytes32(bytes(S_DESCRIPTION)), "word9 = isi description");
+
+        // Dekode ulang dengan daftar tipe EKSPLISIT — bentuk yang sama dengan `ACP_ABI` di agen.
+        (
+            address client_,
+            uint8 status_,
+            address provider_,
+            uint48 expiredAt_,
+            address evaluator_,
+            address hook_,
+            uint256 budget_,
+            string memory description_
+        ) = abi.decode(ret, (address, uint8, address, uint48, address, address, uint256, string));
+
+        assertEq(client_, S_CLIENT, "field 1 client");
+        assertEq(uint256(status_), 2, "field 2 status = Submitted");
+        assertEq(provider_, S_PROVIDER, "field 3 provider");
+        assertEq(uint256(expiredAt_), S_EXPIRED_AT, "field 4 expiredAt");
+        assertEq(evaluator_, S_EVALUATOR, "field 5 evaluator");
+        assertEq(hook_, S_HOOK, "field 6 hook");
+        assertEq(budget_, S_BUDGET, "field 7 budget");
+        assertEq(description_, S_DESCRIPTION, "field 8 description");
+
+        // Getter mapping dan `getJob` WAJIB menjawab hal yang sama; agen memakai yang pertama,
+        // vault memakai yang kedua.
+        AgenticCommerce.Job memory viaGetJob = acp.getJob(jobId);
+        assertEq(viaGetJob.client, client_, "getJob.client == jobs.client");
+        assertEq(uint256(uint8(viaGetJob.status)), uint256(status_), "getJob.status == jobs.status");
+        assertEq(viaGetJob.provider, provider_, "getJob.provider == jobs.provider");
+        assertEq(uint256(viaGetJob.expiredAt), uint256(expiredAt_), "getJob.expiredAt == jobs.expiredAt");
+        assertEq(viaGetJob.evaluator, evaluator_, "getJob.evaluator == jobs.evaluator");
+        assertEq(viaGetJob.hook, hook_, "getJob.hook == jobs.hook");
+        assertEq(viaGetJob.budget, budget_, "getJob.budget == jobs.budget");
+        assertEq(viaGetJob.description, description_, "getJob.description == jobs.description");
+    }
+
     /// Mengunci isi `JobCreated.data` ke `(address evaluator, uint256 expiredAt, address hook)`.
     /// topic0 tidak bisa mendeteksi pertukaran ini (urutan tipe tetap sama), padahal watcher (task 2.2)
     /// WAJIB mengambil `evaluator` dari `data` — ia tidak `indexed` (api-facts §A).
@@ -1481,6 +1560,22 @@ contract AgenticCommerceTest is Test {
         for (uint256 i; i < 8; ++i) {
             assertEq(fieldNames[i], expectedFieldNames[i], "urutan nama field struct Job");
             assertEq(fieldTypes[i], expectedFieldTypes[i], "urutan tipe field struct Job");
+        }
+
+        // Getter mapping `jobs(uint256)` — DELAPAN keluaran terpisah (bukan satu komponen tuple seperti
+        // `getJob`). Inilah bentuk yang disalin ke fragmen `ACP_ABI` agen; nama DAN tipe harus sama
+        // dengan daftar di api-facts §A. `vm.parseJson` mengembalikan array kosong bila getter tidak ada,
+        // jadi cek panjang di bawah sekaligus menangkap hilangnya getter dari ABI hasil build.
+        string[] memory outNames =
+            abi.decode(vm.parseJson(json, "$.abi[?(@.name == 'jobs')].outputs[*].name"), (string[]));
+        string[] memory outTypes =
+            abi.decode(vm.parseJson(json, "$.abi[?(@.name == 'jobs')].outputs[*].type"), (string[]));
+
+        assertEq(outNames.length, 8, "jobs(uint256) punya 8 keluaran (getter HARUS ada di ABI)");
+        assertEq(outTypes.length, 8, "jobs(uint256) punya 8 tipe keluaran");
+        for (uint256 i; i < 8; ++i) {
+            assertEq(outNames[i], expectedFieldNames[i], "urutan nama keluaran jobs(uint256)");
+            assertEq(outTypes[i], expectedFieldTypes[i], "urutan tipe keluaran jobs(uint256)");
         }
     }
 
