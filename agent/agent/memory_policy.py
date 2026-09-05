@@ -1810,6 +1810,26 @@ def memory_root_for_onchain(source: MemorySnapshot | MemoryClient) -> bytes:
     return memory_root(source)
 
 
+def empty_memory_root() -> bytes:
+    """Root memori KOSONG — nol provider, nol pattern, nol rubric (task 2.4b).
+
+    Dipakai HANYA oleh mode NAIF (ADR-024 keputusan 2 cabang 2: `memory.db` belum ada DAN
+    vault belum pernah mengumumkan root). Di sana agen memang tidak punya satu pun profil,
+    dan yang diumumkan `postVerdict` haruslah pernyataan yang BENAR tentang memori itu:
+    "kosong". Membiarkan cabang naif memakai konstanta apa pun mengembalikan persis lubang
+    yang ditutup 2.4b; menolak berjalan sama sekali akan mengubah mode naif menjadi mode
+    aman, yang bertentangan dengan ADR-024 keputusan 3 tanpa ADR baru.
+
+    Nilainya DIHITUNG dari encoding beku, bukan ditulis sebagai hex: ia otomatis ikut
+    berubah bila encoding disentuh, dan ia identik dengan yang dicetak
+    `python -m agent.memory_export --db <db kosong>` (dijaga tes). File memori yang hilang
+    dan file memori yang ada tetapi kosong berisi hal yang SAMA — nol entri; yang dibedakan
+    ADR-024 di antara keduanya adalah asal-usul, bukan isi, dan asal-usul bukan yang
+    dijangkar root.
+    """
+    return memory_root_for_onchain(MemorySnapshot.from_mapping({}, {}, {}))
+
+
 @decision_path
 def count_job_outcomes(snapshot: MemorySnapshot) -> int:
     """Banyaknya JOB BERBEDA yang meninggalkan jejak di entity `provider` (ADR-023 2b).

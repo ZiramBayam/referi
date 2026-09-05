@@ -101,7 +101,9 @@ from agent.memory_policy import (
     GateDecision,
     LocalMemoryEvidence,
     ModeDecision,
+    canonical_json,
     decide_mode,
+    empty_memory_root,
     gate_job,
     local_memory_evidence,
     record_job_outcome,
@@ -148,35 +150,27 @@ EXIT_STOPPED_MIDWAY = 3
 EXIT_STOPPED_MIDWAY_MESSAGE = "PIPA BERHENTI DI TENGAH"
 
 # ----------------------------------------------------------------------
-# Konstanta selftest
+# Root & reasonHash: TIDAK ADA KONSTANTA (task 2.4b)
 # ----------------------------------------------------------------------
 
-# jobId sintetis dari rentang tinggi. `jobCounter()` ACP Base Sepolia masih ratusan
-# (408 pada 3 Sep 2026), jadi id >= 9.000.000 dijamin BUKAN job nyata: `jobs()` mengembalikan
-# struct nol dan `finalize` PASTI ditolak ACP → `FinalizeFailed`. Id persis yang terpakai
-# dicetak di output selftest.
-SELFTEST_JOB_ID_BASE = 9_000_000
-SELFTEST_JOB_ID_MAX_PROBE = 64
+# Yang DIHAPUS di sini, dan alasannya — jangan dikembalikan tanpa ADR baru:
+#   - pasangan root/reasonHash tetap milik jalur `--selftest` (task 1.3b), berikut jalurnya.
+#     Ia mengumumkan root hasil keccak atas sebuah label uji, atas jobId sintetis, dan
+#     `postVerdict` menulis setiap root ke `knownRoots` TANPA penghapus (ADR-011): satu
+#     konstanta uji menjadi root sah selamanya di vault yang dibekukan ADR-022.
+#   - pasangan root/reasonHash tetap milik pipa hidup (task 1.3d). Keduanya konstanta yang
+#     tidak bisa diturunkan dari `memory.db` mana pun, sehingga klaim "memori yang bisa
+#     diaudit" tidak punya jangkar sama sekali — temuan T2 laporan fase-1.
+# SATU-SATUNYA sumber `memory_root` sekarang adalah `memory_policy.memory_root` lewat
+# gerbang `memory_root_for_onchain`, yaitu nilai yang sudah dibawa `MemoryGate.local.root`
+# dan fungsi yang SAMA yang dipakai `agent/memory_export.py` (task 2.1b). Penegakannya ada
+# di `_send()` (`_require_derived_root`), bukan di pemanggil.
 
-# memory_root uji TETAP = keccak256("the-evaluator/selftest/memory-root/v1").
-# PERINGATAN: `postVerdict` menulis root ini ke `knownRoots` dan TIDAK ADA penghapusnya
-# (ADR-011), jadi konstanta ini MENJANGKARKAN root uji di vault SECARA PERMANEN. Karena itu
-# ia satu nilai tetap dan dicatat di sini, bukan diacak per run.
-SELFTEST_MEMORY_ROOT = bytes.fromhex("5ff921fda73362d23f66dcac204d1ace7a287fa0a2cf3bde12e4b37c6812a19e")
-
-# reasonHash uji TETAP = keccak256("the-evaluator/selftest/reason/v1").
-SELFTEST_REASON_HASH = bytes.fromhex("a5bd14a91be2154eef37dbc7ef79f1fca1ec71454832bce0e16a82807085e87e")
-
-# ----------------------------------------------------------------------
-# Konstanta pipa hidup (task 1.3d)
-# ----------------------------------------------------------------------
-
-# SENGAJA BERBEDA dari konstanta selftest supaya jejak on-chain job NYATA tidak tertukar
-# dengan jejak jobId sintetis. 1.3d mengizinkan verdict hardcoded + memori kosong.
-# LIVE_MEMORY_ROOT = keccak256("the-evaluator/live/memory-root/v1")
-LIVE_MEMORY_ROOT = bytes.fromhex("1fa62c3db5c16f4c831ee1d9ee4c083745b8c8bae86bda3587b8b02ba52f7bf0")
-# LIVE_REASON_HASH = keccak256("the-evaluator/live/reason/v1")
-LIVE_REASON_HASH = bytes.fromhex("6478e788a7953cf990091291d8d1b4f3f046567a915e5158d4dcf57d9fd845b0")
+# Label versi bundel bukti `reasonHash`. Ikut ter-hash supaya bentuk bundel yang berbeda
+# tidak pernah bisa menghasilkan hash yang sama dengan bentuk lama. Bentuk PENUH (bukti
+# per-kriteria + pin IPFS) milik task 2.5; yang ada di sini adalah bundel MINIMAL yang
+# seluruh isinya lahir dari `Evaluation` job itu — bukan konstanta.
+VERDICT_EVIDENCE_VERSION = "evaluator-verdict-evidence/v1"
 
 # ----------------------------------------------------------------------
 # Konstanta mode aman (task 2.4a)
@@ -308,10 +302,12 @@ ACP_ABI = [
     },
 ]
 
-# Nilai terverifikasi docs/api-facts.md §A (`cast sig-event`, 2026-09-03). Dipakai tes untuk
-# membuktikan fragmen ABI di atas menghasilkan topic yang sama — kalau nama/urutan tipe
-# salah ketik, filter log akan diam-diam kosong dan agen menolak setiap deliverable.
-JOB_SUBMITTED_TOPIC0 = "0x80c17db79857f338a6a6df68a6883ecc0ce78e2202fe61ed979733573f40538e"
+# Nilai terverifikasi topic0 `JobSubmitted` (docs/api-facts.md §A, `cast sig-event`,
+# 2026-09-03) ada di `tests/test_job_pipeline.py`, BUKAN di modul ini: task 2.4b melarang
+# konstanta 32-byte apa pun di jalur produksi, dan nilai itu memang hanya dipakai untuk
+# membuktikan bahwa fragmen ABI di atas menghasilkan topic yang sama. Penjaganya tetap ada
+# (salah ketik nama/urutan tipe = filter log diam-diam kosong = setiap deliverable ditolak),
+# hanya pindah ke tempat yang memang memakainya.
 
 # contracts/src/EvaluatorVault.sol
 VAULT_ABI = [
@@ -650,6 +646,53 @@ class SafeModeStop(RuntimeError):
     """
 
 
+class MemoryRootMismatch(SafeModeStop):
+    """`postVerdict` dipanggil dengan root yang BUKAN `memory_root` saat itu (task 2.4b).
+
+    Turunan `SafeModeStop` dengan sengaja: akibatnya identik — nol transaksi, berhenti
+    bersih, dan `main()` tetap bisa membedakan "berhenti sebelum apa pun terkirim" dari
+    "berhenti di tengah pipa". Ia BUKAN kegagalan teknis melainkan penolakan: root yang
+    tidak bisa direkonstruksi dari `memory.db` akan tertanam PERMANEN di `knownRoots`
+    (ADR-011, tidak ada penghapus) dan membatalkan seluruh klaim memori yang bisa diaudit.
+    """
+
+
+# Nama fungsi vault yang membawa `memory_root` + posisi argumennya. Diambil dari
+# `contracts/src/EvaluatorVault.sol`: `postVerdict(uint256 jobId, uint8 kind,
+# bytes32 reasonHash, bytes32 memoryRoot)` → indeks 3.
+POST_VERDICT_FN = "postVerdict"
+POST_VERDICT_ROOT_ARG = 3
+POST_VERDICT_ROOT_KWARG = "memoryRoot"
+
+ROOT_MISMATCH_TEMPLATE = (
+    "ROOT BUKAN TURUNAN MEMORI: postVerdict membawa {given} sementara memory_root atas "
+    "{db} saat ini {derived}; menolak mengumumkan root yang tidak bisa direkonstruksi dari "
+    "memori; nol postVerdict/finalize/setProviderCap"
+)
+ROOT_UNREADABLE_TEMPLATE = (
+    "ROOT TIDAK BISA DITURUNKAN: memori lokal di {db} {status}, jadi tidak ada memory_root "
+    "untuk diumumkan; nol postVerdict/finalize/setProviderCap"
+)
+
+
+def contract_call_root(func) -> bytes | None:
+    """`memoryRoot` yang BENAR-BENAR masuk calldata `postVerdict`, dibaca dari fungsi kontrak.
+
+    web3.py 7.16.0 menyimpan argumen pemanggilan di `ContractFunction.args`/`.kwargs`
+    (`web3/_utils/contracts.py:404` — `copy_contract_function` menyalin keduanya ke klon
+    yang dikembalikan `ContractFunction.__call__`). Yang diperiksa karena itu adalah nilai
+    yang akan di-encode, bukan salinan yang dioper terpisah ke penjaga — penjaga yang
+    memeriksa variabel lain adalah penjaga yang bisa dilewati dengan satu salah ketik.
+    """
+    args = getattr(func, "args", None) or ()
+    kwargs = getattr(func, "kwargs", None) or {}
+    if POST_VERDICT_ROOT_KWARG in kwargs:
+        return bytes(kwargs[POST_VERDICT_ROOT_KWARG])
+    if len(args) > POST_VERDICT_ROOT_ARG:
+        return bytes(args[POST_VERDICT_ROOT_ARG])
+    return None
+
+
 def agent_root() -> Path:
     """Direktori paket agen (`…/agent`), yaitu jangkar path memori yang RELATIF.
 
@@ -916,6 +959,46 @@ class VaultClient:
             log.info("alasan: %s", gate.decision.reason)
             raise SafeModeStop(f"{action}: {gate.line}")
 
+    def derived_memory_root(self) -> bytes:
+        """`memory_root` atas `memory.db` klien ini, dari pembacaan gerbang TERAKHIR.
+
+        Nilainya lahir di `memory_policy.local_memory_evidence()` → `memory_root_for_onchain`
+        → `memory_root`, yaitu fungsi yang SAMA yang dipakai `agent/memory_export.py`
+        (task 2.1b) — satu implementasi, bukan salinan. Diambil dari snapshot gerbang, bukan
+        dari pembacaan DB tersendiri: root dan keputusan mode WAJIB menggambarkan satu
+        keadaan DB yang sama (Sibyl 0.7.0 tanpa transaksi, api-facts §C).
+
+        Pemanggil WAJIB memastikan gerbangnya baru (`refresh_memory_gate()`); di jalur tx
+        hal itu dilakukan `_require_memory_gate()` satu baris sebelum penjaga ini.
+        """
+        gate = self.memory_gate
+        if gate is None:
+            gate = self.refresh_memory_gate()
+        if gate.local.root is not None:
+            return gate.local.root
+        # SATU cabang yang tidak punya root dari file: MODE NAIF (ADR-024 keputusan 2
+        # cabang 2) — `memory.db` belum ada DAN vault belum pernah mengumumkan root. Agen
+        # di sana benar-benar tidak punya profil, jadi yang diumumkan adalah root memori
+        # KOSONG: dihitung dari encoding beku, bukan konstanta. Semua cabang lain yang
+        # kehilangan root sudah MODE AMAN dan tidak pernah sampai ke sini.
+        if gate.decision.mode == MODE_NAIVE:
+            return empty_memory_root()
+        raise MemoryRootMismatch(
+            ROOT_UNREADABLE_TEMPLATE.format(db=gate.db_path, status=gate.local.status)
+        )
+
+    def _require_derived_root(self, given: bytes | None) -> None:
+        """Penjaga WAJIB sebelum `postVerdict`: root yang diumumkan == `memory_root`."""
+        derived = self.derived_memory_root()
+        if given is None or bytes(given) != derived:
+            raise MemoryRootMismatch(
+                ROOT_MISMATCH_TEMPLATE.format(
+                    given="(tidak ada)" if given is None else "0x" + bytes(given).hex(),
+                    db=self.db_path,
+                    derived="0x" + derived.hex(),
+                )
+            )
+
     # -- pembacaan ------------------------------------------------------
 
     def job(self, job_id: int) -> JobView:
@@ -1003,6 +1086,12 @@ class VaultClient:
         # sebelum `get_transaction_count`, dan sebelum penandatanganan.
         action = getattr(func, "fn_name", "tx")
         self._require_memory_gate(action)
+        # Root turunan memori (task 2.4b). Ditegakkan DI SINI, atas nilai yang benar-benar
+        # masuk calldata, dan atas gerbang yang BARU SAJA dibaca ulang di baris di atas —
+        # bukan di `post_verdict()`, karena jalur baru yang membangun `postVerdict` sendiri
+        # tetap harus berhenti. Alasannya sama persis dengan mode aman ditegakkan di sini.
+        if action == POST_VERDICT_FN:
+            self._require_derived_root(contract_call_root(func))
         # Kunci penolakan (task 2.4-min): job milik evaluator lain, atau deliverable yang
         # tidak terverifikasi (ADR-019 keputusan 2). Diperiksa SESUDAH gerbang memori supaya
         # agen yang berhenti karena memorinya tetap melaporkan `MODE AMAN` — sebab itulah
@@ -1033,6 +1122,11 @@ class VaultClient:
         dilaporkan HARUS `MODE AMAN`, bukan `VERDICT DIANULIR PIHAK KETIGA` yang kebetulan
         ikut benar. `_send()` membaca gerbangnya SEKALI LAGI — itu yang mengikat; pembacaan
         di sini hanya menentukan pesan mana yang muncul.
+
+        `memory_root` TETAP argumen, dan `_send()` MENOLAK setiap nilai yang bukan
+        `memory_root` atas `memory.db` saat itu (task 2.4b). Argumennya dipertahankan
+        justru supaya penolakan itu bisa diuji: pemanggil boleh menyodorkan konstanta apa
+        pun, dan yang terjadi adalah `MemoryRootMismatch` + nol transaksi.
         """
         self._require_memory_gate("postVerdict")
         self.guard(job_id, "postVerdict")
@@ -1125,6 +1219,42 @@ class JobPlan:
                 else ("LOLOS" if self.evaluation.passed else f"GAGAL {list(self.evaluation.failed_checks)}")
             ),
         )
+
+
+def verdict_evidence(plan: JobPlan, memory_root: bytes) -> dict:
+    """Bundel bukti satu verdict — bahan `reasonHash`. NOL konstanta di dalamnya.
+
+    Isinya seluruhnya turunan job itu: hasil cek deterministik (`Evaluation.to_body()`),
+    mode memori yang berlaku, dan `memory_root` yang SAMA yang diumumkan `postVerdict`.
+    Root ikut masuk supaya `reasonHash` mengikat verdict pada keadaan memori yang
+    melahirkannya; dua nilai yang diumumkan terpisah bisa berasal dari dua keadaan berbeda.
+
+    Bentuk PENUH (bukti per-kriteria yang dipublikasikan + pin IPFS) milik task 2.5. Yang
+    dijamin di sini hanya: tidak ada satu pun byte hardcoded, dan hasilnya deterministik
+    atas masukan yang sama.
+    """
+    if plan.evaluation is None:
+        raise MemoryRootMismatch(
+            "tidak ada hasil evaluasi untuk jobId="
+            f"{plan.job.job_id} — tidak ada bukti yang bisa di-hash jadi reasonHash, "
+            "jadi tidak ada verdict yang boleh diumumkan"
+        )
+    return {
+        "version": VERDICT_EVIDENCE_VERSION,
+        "mode": plan.mode.mode,
+        "memory_root": "0x" + bytes(memory_root).hex(),
+        "evaluation": plan.evaluation.to_body(),
+    }
+
+
+def verdict_reason_hash(bundle: dict) -> bytes:
+    """`reasonHash` = keccak256 dari bundel bukti dalam JSON KANONIK.
+
+    `canonical_json` (memory_policy) dipakai apa adanya: kunci terurut, tanpa spasi, ASCII
+    murni, dan setiap integer sebagai STRING DESIMAL — sehingga bundel yang sama menghasilkan
+    hash yang sama di Python maupun di alat audit lain, termasuk untuk angka di atas 2^53.
+    """
+    return bytes(Web3.keccak(text=canonical_json(bundle)))
 
 
 def plan_job(
@@ -1253,17 +1383,8 @@ def run_job(
 
 
 # ----------------------------------------------------------------------
-# Selftest
+# Pipa verdict (jalur --job-id)
 # ----------------------------------------------------------------------
-
-
-def pick_selftest_job_id(client: VaultClient) -> int:
-    """jobId sintetis pertama di rentang tinggi yang belum punya verdict (postVerdict sekali per job)."""
-    for offset in range(SELFTEST_JOB_ID_MAX_PROBE):
-        job_id = SELFTEST_JOB_ID_BASE + offset
-        if client.verdict(job_id).kind == 0:
-            return job_id
-    raise RuntimeError("tidak ada jobId sintetis bebas di rentang uji")
 
 
 def read_ready_at(client: VaultClient, job_id: int, post_receipt) -> int:
@@ -1281,83 +1402,42 @@ def read_ready_at(client: VaultClient, job_id: int, post_receipt) -> int:
     raise RuntimeError(f"tidak bisa membaca readyAt untuk jobId={job_id}")
 
 
-def run_selftest(client: VaultClient) -> int:
-    job_id = pick_selftest_job_id(client)
-    log.info("SELFTEST jobId SINTETIS=%d (bukan job ACP nyata; jobCounter ACP masih ratusan)", job_id)
-    log.info("memory_root uji (TETAP)=0x%s", SELFTEST_MEMORY_ROOT.hex())
-    log.info("reason_hash uji (TETAP)=0x%s", SELFTEST_REASON_HASH.hex())
-
-    post_hash = client.post_verdict(job_id, KIND_COMPLETE, SELFTEST_REASON_HASH, SELFTEST_MEMORY_ROOT)
-    post_receipt = client.wait_receipt(post_hash)
-    log.info(
-        "TX 1 postVerdict = 0x%s (status=%d, blok=%d)",
-        post_hash,
-        post_receipt.status,
-        post_receipt.blockNumber,
-    )
-    if post_receipt.status != 1:
-        raise RuntimeError(f"postVerdict gagal on-chain: 0x{post_hash}")
-
-    # readyAt DIBACA dari chain, bukan angka hardcode. Sumber utama = event `VerdictPosted`
-    # di receipt (tidak bisa basi); `verdicts(jobId)` hanya cadangan, dengan retry karena RPC
-    # publik Base Sepolia melayani `eth_call` dari node yang kadang tertinggal beberapa blok
-    # (terukur: pembacaan tepat sesudah receipt pernah mengembalikan readyAt = 0).
-    ready_at = read_ready_at(client, job_id, post_receipt)
-    log.info("menunggu jendela challenge sampai readyAt=%d (dibaca dari verdicts(jobId))", ready_at)
-    while True:
-        now = client.w3.eth.get_block("latest")["timestamp"]
-        if now > ready_at:
-            break
-        log.info("  block.timestamp=%d, sisa %d detik", now, ready_at - now + 1)
-        time.sleep(min(20, max(2, ready_at - now + 1)))
-
-    final_hash = client.finalize(job_id)
-    final_receipt = client.wait_receipt(final_hash)
-    log.info(
-        "TX 2 finalize    = 0x%s (status=%d, blok=%d)",
-        final_hash,
-        final_receipt.status,
-        final_receipt.blockNumber,
-    )
-
-    if final_receipt.status != 1:
-        raise RuntimeError(f"finalize REVERT on-chain: 0x{final_hash}")
-
-    failed = client.vault.events.FinalizeFailed().process_receipt(final_receipt, errors=DISCARD)
-    finalized = client.vault.events.Finalized().process_receipt(final_receipt, errors=DISCARD)
-    log.info("log receipt finalize: FinalizeFailed=%d, Finalized=%d", len(failed), len(finalized))
-    if failed and not finalized:
-        log.info(
-            "HASIL: finalize menghasilkan event FinalizeFailed(jobId=%d) — BUKAN JobCompleted. "
-            "Ini DIHARAPKAN: jobId %d sintetis, tidak ada di ACP, jadi acp.complete() revert dan "
-            "ditangkap `catch` vault (ADR-015). Bukan artefak pipa hidup (JobCompleted milik 1.3d).",
-            failed[0]["args"]["jobId"],
-            job_id,
-        )
-    else:
-        raise RuntimeError(
-            f"receipt finalize tidak sesuai harapan: FinalizeFailed={len(failed)} Finalized={len(finalized)}"
-        )
-
-    log.info("SELFTEST SELESAI. postVerdict=0x%s finalize=0x%s", post_hash, final_hash)
-    return 0
-
-
 def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None = None) -> int:
     """Pipa atas jobId ACP NYATA: postVerdict -> tunggu CHALLENGE_WINDOW -> finalize.
 
-    Jalur dan penjaganya sama persis dengan selftest; yang berbeda hanya asal jobId dan
-    hasil yang diharapkan: `Finalized` ADA dan `FinalizeFailed` TIDAK ADA.
+    Hasil yang diharapkan: `Finalized` ADA dan `FinalizeFailed` TIDAK ADA.
 
     `plan` (task 2.4-min) menyisipkan tulisan memori DI ANTARA `postVerdict` dan `finalize`,
-    persis urutan spec §5 langkah 5→6. `memory_root`/`reason_hash` di sini MASIH konstanta
-    pipa 1.3d: menurunkannya dari memori adalah task 2.4b, dan ADR-020 keputusan 6 melarang
-    root turunan-memori diumumkan on-chain sebelum encoding kanoniknya beku.
+    persis urutan spec §5 langkah 5→6.
+
+    `memory_root` DITURUNKAN dari `memory.db` (task 2.4b, ADR-020 keputusan 6): ia
+    `memory_policy.memory_root` atas snapshot gerbang yang baru dibaca — fungsi yang SAMA
+    yang dipakai `agent/memory_export.py`. `reason_hash` diturunkan dari bundel bukti job
+    itu. Tidak ada satu pun konstanta di jalur ini, dan `_send()` menolak setiap `postVerdict`
+    yang membawa root lain.
+
+    Karena root dibaca SEBELUM `record_outcome`, yang diumumkan adalah memori PADA SAAT
+    verdict diputuskan — bukan memori sesudah job ini ditulis. Itu memang urutan spec §5
+    (langkah 5 sesudah langkah 4), dan konsekuensinya sudah dicatat ADR-023: root lokal
+    selalu satu tulisan di depan root on-chain, jadi keduanya TIDAK PERNAH dibandingkan.
+
+    `plan` WAJIB ada dan WAJIB punya `evaluation`: tanpa itu tidak ada bukti yang bisa
+    di-hash menjadi `reasonHash`, dan verdict tanpa bukti adalah persis yang dicabut 2.4b.
     """
     kind_name = "complete" if kind == KIND_COMPLETE else "reject"
     log.info("LIVE jobId ACP NYATA=%d kind=%d (%s)", job_id, kind, kind_name)
-    log.info("memory_root live (TETAP)=0x%s", LIVE_MEMORY_ROOT.hex())
-    log.info("reason_hash live (TETAP)=0x%s", LIVE_REASON_HASH.hex())
+    if plan is None:
+        raise MemoryRootMismatch(
+            f"run_live jobId={job_id} tanpa rencana job — tidak ada bukti dan tidak ada "
+            "keadaan memori yang bisa diumumkan; nol postVerdict/finalize/setProviderCap"
+        )
+    # Gerbang dibaca ULANG lebih dulu supaya root yang dicetak/diumumkan adalah root yang
+    # SAMA yang akan diperiksa `_send()`. `_send()` tetap membacanya lagi — itu yang mengikat.
+    client.refresh_memory_gate()
+    memory_root = client.derived_memory_root()
+    reason_hash = verdict_reason_hash(verdict_evidence(plan, memory_root))
+    log.info("memory_root TURUNAN memory.db di %s = 0x%s", client.db_path, memory_root.hex())
+    log.info("reason_hash (TURUNAN bukti job)=0x%s", reason_hash.hex())
 
     existing = client.verdict(job_id)
     if existing.finalized:
@@ -1380,7 +1460,7 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
         ready_at = existing.ready_at
         post_hash = "(sudah ada sebelumnya)"
     else:
-        post_hash = client.post_verdict(job_id, kind, LIVE_REASON_HASH, LIVE_MEMORY_ROOT)
+        post_hash = client.post_verdict(job_id, kind, reason_hash, memory_root)
         post_receipt = client.wait_receipt(post_hash)
         log.info(
             "TX 1 postVerdict = 0x%s (status=%d, blok=%d)",
@@ -1447,7 +1527,8 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="vault_client", description="Klien EvaluatorVault minimal")
-    parser.add_argument("--selftest", action="store_true", help="postVerdict + finalize atas jobId sintetis")
+    # `--selftest` DICABUT (task 2.4b): ia mengumumkan root konstanta atas jobId sintetis,
+    # dan `postVerdict` menulis setiap root ke `knownRoots` tanpa penghapus (ADR-011).
     parser.add_argument("--guard", type=int, metavar="JOB_ID", help="hanya pra-baca status job di ACP")
     parser.add_argument(
         "--job-id", type=int, metavar="JOB_ID", help="jalankan pipa penuh atas jobId ACP NYATA"
@@ -1462,7 +1543,7 @@ def main(argv: list[str] | None = None) -> int:
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
 
-    if not args.selftest and args.guard is None and args.job_id is None:
+    if args.guard is None and args.job_id is None:
         parser.print_usage(sys.stdout)
         return 2
 
@@ -1501,7 +1582,8 @@ def main(argv: list[str] | None = None) -> int:
                 # Job NYATA yang sudah terminal = verdict yatim: kegagalan pipa, bukan hasil normal.
                 log.error("%s", voided_message(exc.job_id, exc.status))
                 return 1
-        return run_selftest(client)
+        parser.print_usage(sys.stdout)
+        return 2
     except (SafeModeStop, DeliverableUnverifiedError) as exc:
         # Jaring kedua: gerbang di atas sudah menahan, jadi ini hanya terjadi bila sebuah
         # jalur baru mencoba mengirim tx tanpa lewat sana. `DeliverableUnverifiedError`

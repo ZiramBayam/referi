@@ -285,10 +285,16 @@ def test_zero_onchain_root_is_naive_mode_and_actually_sends(db):
     assert gate.is_safe is False
     assert gate.line.startswith("MODE NAIF: ")
 
-    tx_hash = client.post_verdict(1, vc.KIND_COMPLETE, b"\x01" * 32, b"\x02" * 32)
+    # Mode naif TIDAK punya `memory.db`, jadi rootnya adalah root memori KOSONG —
+    # dihitung dari encoding beku, bukan konstanta (task 2.4b). Root lain DITOLAK.
+    root = mp.empty_memory_root()
+    tx_hash = client.post_verdict(1, vc.KIND_COMPLETE, b"\x01" * 32, root)
     assert tx_hash
     assert client.w3.eth.sent, "mode naif seharusnya benar-benar mengirim (kontrol negatif)"
     assert client.w3.eth.built == ["postVerdict"]
+    with pytest.raises(vc.MemoryRootMismatch):
+        client.post_verdict(1, vc.KIND_COMPLETE, b"\x01" * 32, b"\x02" * 32)
+    assert client.w3.eth.built == ["postVerdict"], "root asing tidak boleh membangun tx"
 
 
 class _SigningAccount(FakeAccount):
@@ -496,7 +502,7 @@ def test_the_gate_is_reread_before_every_transaction_local_side(db):
     client.account = _SigningAccount()
     assert client.refresh_memory_gate().decision.mode == mp.MODE_NORMAL
 
-    client.post_verdict(1, vc.KIND_COMPLETE, b"\x01" * 32, b"\x02" * 32)
+    client.post_verdict(1, vc.KIND_COMPLETE, b"\x01" * 32, client.memory_gate.local.root)
     assert client.w3.eth.built == ["postVerdict"]
 
     for suffix in vc.MEMORY_DB_SUFFIXES:
@@ -682,7 +688,7 @@ def test_main_exits_nonzero_when_the_gate_stops_a_half_finished_pipeline(db, mon
         return client
 
     def _run_live(client, job_id, kind, plan=None):
-        client.post_verdict(job_id, kind, b"\x01" * 32, b"\x02" * 32)
+        client.post_verdict(job_id, kind, b"\x01" * 32, client.derived_memory_root())
         for suffix in vc.MEMORY_DB_SUFFIXES:  # memori lenyap DI TENGAH pipa
             db.with_name(db.name + suffix).unlink(missing_ok=True)
         return client.finalize(job_id)

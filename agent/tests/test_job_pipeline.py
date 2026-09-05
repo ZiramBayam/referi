@@ -41,6 +41,12 @@ DESCRIPTION = "Tulis ringkasan singkat pekerjaan"
 DELIVERABLE_TEXT = "# Summary\nRingkasan pekerjaan yang sudah selesai dan lengkap.\n"
 DELIVERABLE_HASH = bytes(Web3.keccak(text=DELIVERABLE_TEXT))
 
+# topic0 `JobSubmitted` terverifikasi (docs/api-facts.md §A, `cast sig-event`, 2026-09-03).
+# Nilainya hidup DI TES, bukan di modul: task 2.4b melarang konstanta 32-byte di jalur
+# produksi, dan satu-satunya gunanya memang membuktikan fragmen ABI `vault_client.ACP_ABI`
+# menghasilkan topic yang sama.
+JOB_SUBMITTED_TOPIC0 = "0x80c17db79857f338a6a6df68a6883ecc0ce78e2202fe61ed979733573f40538e"
+
 
 # ----------------------------------------------------------------------
 # RPC palsu — mencatat setiap langkah menuju sebuah transaksi
@@ -225,7 +231,7 @@ def test_job_submitted_fragment_produces_the_verified_topic0():
     fragment = next(f for f in vc.ACP_ABI if f.get("name") == "JobSubmitted")
     signature = "JobSubmitted(" + ",".join(i["type"] for i in fragment["inputs"]) + ")"
     assert signature == "JobSubmitted(uint256,address,bytes32)"
-    assert "0x" + Web3.keccak(text=signature).hex() == vc.JOB_SUBMITTED_TOPIC0
+    assert "0x" + Web3.keccak(text=signature).hex() == JOB_SUBMITTED_TOPIC0
     # Hanya jobId & provider yang indexed (docs/api-facts.md §A) — deliverable ada di `data`.
     assert [i["indexed"] for i in fragment["inputs"]] == [True, True, False]
 
