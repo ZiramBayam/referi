@@ -23,7 +23,7 @@
  * multi-provider, hook, x402.
  */
 
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -40,6 +40,8 @@ import {
   createPublicClient,
   createWalletClient,
   http,
+  keccak256,
+  toHex,
   type Address,
   type Call,
   type Hex,
@@ -93,8 +95,32 @@ const EXPIRY_SECONDS = 3600;
 const JOB_DESCRIPTION =
   "the-evaluator smoke job: provider menyerahkan satu deliverable, EvaluatorVault yang menilai.";
 
-/** Isi deliverable tidak dinilai di task ini; rubrik/kriteria baru masuk di task 2.3. */
-const DELIVERABLE = "ipfs://bafkreiacp1p3cminimalrundeliverableplaceholder";
+/**
+ * Teks deliverable yang benar-benar diserahkan.
+ *
+ * ADR-019 keputusan 1: yang dikirim on-chain adalah `keccak256` dari byte UTF-8 teks INI
+ * (SDK: `keccak256(toHex(deliverable))`), dan teks yang sama ditulis apa adanya ke
+ * `demo/deliverables/<jobId>.json` supaya `agent/` punya preimage untuk diverifikasi ulang.
+ * Salinan off-chain resmi Virtuals TIDAK tersedia bagi wallet simulator kita
+ * (`postDeliverable` → 404 "Agent not found"), jadi file itulah satu-satunya sumber teks.
+ *
+ * Isinya bisa diganti lewat env `DELIVERABLE_TEXT` (skenario provider jujur / angka salah /
+ * setengah jadi pada spec §7) tanpa mengubah kode.
+ */
+const DEFAULT_DELIVERABLE_TEXT = [
+  "# Summary",
+  "Laporan token escrow ACP di Base Sepolia untuk satu putaran alur minimal.",
+  "",
+  "## Supply",
+  "- Decimals: 6",
+  "",
+  "## Sources",
+  "- https://sepolia.basescan.org/address/0xECc22a8F6fD62388498fBa19813E214605a2BDb3",
+  "",
+].join("\n");
+
+/** Nama direktori artefak deliverable (ADR-019 keputusan 2: `DELIVERABLE_DIR`). */
+const DELIVERABLE_DIR_PARTS = ["demo", "deliverables"] as const;
 
 /** Batas percobaan baca ulang state setelah sebuah transaksi ter-mining. */
 const READ_RETRIES = 12;
@@ -186,6 +212,33 @@ function scrub(text: string): string {
 function log(event: string, fields: Record<string, unknown> = {}): void {
   const parts = Object.entries(fields).map(([k, v]) => `${k}=${String(v)}`);
   console.log(scrub([`[client_min] ${event}`, ...parts].join(" ")));
+}
+
+/**
+ * Menulis `demo/deliverables/<jobId>.json` = `{jobId, text, sha_keccak}` (ADR-019 kep. 1).
+ *
+ * `sha_keccak` dihitung dengan fungsi yang SAMA yang dipakai SDK saat submit
+ * (`keccak256(toHex(text))`, docs/api-facts.md §B.1), sehingga nilai on-chain dan nilai di
+ * file dijamin berasal dari satu string. `agent/` tetap menghitungnya ULANG dan tetap
+ * membandingkannya dengan slot on-chain — file ini tidak dipercaya, ia hanya mengusulkan
+ * preimage.
+ */
+function writeDeliverableArtifact(jobId: bigint, text: string): Hex {
+  const id = jobId.toString();
+  const dir = join(REPO_ROOT, ...DELIVERABLE_DIR_PARTS);
+  mkdirSync(dir, { recursive: true });
+  const shaKeccak = keccak256(toHex(text));
+  const path = join(dir, `${id}.json`);
+  // `jobId` ditulis sebagai STRING: JSON.stringify melempar untuk bigint, dan id job bisa
+  // melewati 2^53 sehingga number bukan pilihan yang jujur.
+  writeFileSync(path, JSON.stringify({ jobId: id, text, sha_keccak: shaKeccak }), "utf8");
+  log("deliverable.artifact", {
+    jobId: id,
+    path,
+    sha_keccak: shaKeccak,
+    bytes: new TextEncoder().encode(text).length,
+  });
+  return shaKeccak;
 }
 
 // ---------------------------------------------------------------------------
@@ -512,7 +565,11 @@ async function main(): Promise<void> {
   // `complete()` dari vault pasti revert `WrongStatus()`.
   await fetchJobUntil(providerSession, "submit", (job) => job.status === "FUNDED");
   const markSubmit = provider.provider.sentTxHashes.length;
-  await providerSession.submit(DELIVERABLE);
+  const deliverableText = process.env.DELIVERABLE_TEXT ?? DEFAULT_DELIVERABLE_TEXT;
+  // Artefak DITULIS SEBELUM submit: `agent/` menolak menilai job yang teksnya tidak ada
+  // (REFUSE, ADR-019 keputusan 2), jadi urutan ini yang membuat job bisa dievaluasi.
+  writeDeliverableArtifact(jobId, deliverableText);
+  await providerSession.submit(deliverableText);
   const submitHash = newHashes(provider.provider, markSubmit)[0];
   log("submit.ok", { jobId, tx: submitHash });
 
