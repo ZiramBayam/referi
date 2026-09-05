@@ -778,12 +778,29 @@ class UnlimitedCapRefused(SafeModeStop):
     """`setProviderCap` dengan nilai 0 = TANPA BATAS (ADR-001) tanpa jalur sadar."""
 
 
+class CapRaiseRefused(SafeModeStop):
+    """`setProviderCap` yang MELONGGARKAN cap yang sedang ditegakkan vault, tanpa jalur sadar.
+
+    Monoton-tidak-naik yang dijanjikan `derive_cap` berjangkar pada `previous` di
+    `memory.db` — file lokal yang kuncinya KOOPERATIF (`memory_policy.py`, blok "BATAS YANG
+    DIAKUI"). Selama `set_provider_cap` tidak punya pemanggil produksi, memori yang
+    dimundurkan tidak bisa menyentuh penegakan on-chain; sejak ia punya, `providerCap()`
+    adalah satu-satunya `previous` yang TIDAK bisa dipalsukan penulis file lokal.
+    """
+
+
 # Nama fungsi vault yang membawa `memory_root` + posisi argumennya. Diambil dari
 # `contracts/src/EvaluatorVault.sol`: `postVerdict(uint256 jobId, uint8 kind,
 # bytes32 reasonHash, bytes32 memoryRoot)` → indeks 3.
 POST_VERDICT_FN = "postVerdict"
 POST_VERDICT_ROOT_ARG = 3
 POST_VERDICT_ROOT_KWARG = "memoryRoot"
+
+# `setProviderCap(address provider, uint256 capUsdc)` (`contracts/src/EvaluatorVault.sol:287`)
+# → provider di indeks 0, cap di indeks 1. Dibaca dari calldata dengan alasan yang sama
+# seperti `memoryRoot`: yang dijaga adalah nilai yang benar-benar akan di-encode.
+SET_PROVIDER_CAP_FN = "setProviderCap"
+SET_PROVIDER_CAP_ARGS = (("provider", 0), ("capUsdc", 1))
 
 ROOT_MISMATCH_TEMPLATE = (
     "ROOT BUKAN TURUNAN MEMORI: postVerdict membawa {given} sementara memory_root atas "
@@ -903,6 +920,17 @@ UNLIMITED_CAP_TEMPLATE = (
 NEGATIVE_CAP_TEMPLATE = (
     "CAP NEGATIF DITOLAK: setProviderCap({provider}, {cap}) bukan uint256; nol setProviderCap"
 )
+# LANTAI MONOTON ON-CHAIN. `providerCap()` yang sedang ditegakkan vault MENGIKAT: cap baru
+# boleh sama atau lebih ketat, tidak pernah lebih longgar. Tanpa ini, penulis `memory.db`
+# (dan operator yang menjalankan ulang dari snapshot lama) bisa MENAIKKAN cap on-chain —
+# yaitu melonggarkan satu-satunya penegakan yang didemokan spec §7 langkah 2 — tanpa satu
+# baris pun yang mengatakannya. Nilai 0 on-chain BUKAN cap terkecil melainkan TANPA BATAS
+# (ADR-001), jadi ia tidak pernah menjadi lantai.
+CAP_RAISE_TEMPLATE = (
+    "CAP DINAIKKAN DITOLAK: setProviderCap({provider}, {cap}) MELONGGARKAN cap yang sedang "
+    "ditegakkan vault ({onchain}); memori di {db} mungkin dimundurkan ke snapshot lama. "
+    "Kirim hanya lewat jalur sadar (set_provider_cap(..., allow_raise=True)); nol setProviderCap"
+)
 # `--kind` TIDAK punya default (temuan TINGGI-B). Default `complete` berarti baris perintah
 # terpendek adalah baris yang MEMBAYAR provider; verdict adalah milik cek, dan pilihan
 # operator di atasnya harus diketik.
@@ -928,6 +956,26 @@ def contract_call_root(func) -> bytes | None:
     if len(args) > POST_VERDICT_ROOT_ARG:
         return bytes(args[POST_VERDICT_ROOT_ARG])
     return None
+
+
+def contract_call_cap(func) -> tuple[str, int] | None:
+    """`(provider, capUsdc)` yang BENAR-BENAR masuk calldata `setProviderCap`.
+
+    Sumbernya sama dengan `contract_call_root`: `ContractFunction.args`/`.kwargs`, bukan
+    salinan yang dioper terpisah ke penjaga.
+    """
+    args = getattr(func, "args", None) or ()
+    kwargs = getattr(func, "kwargs", None) or {}
+    keluar: list = []
+    for name, index in SET_PROVIDER_CAP_ARGS:
+        if name in kwargs:
+            keluar.append(kwargs[name])
+        elif len(args) > index:
+            keluar.append(args[index])
+        else:
+            return None
+    provider, cap = keluar
+    return str(provider), int(cap)
 
 
 def agent_root() -> Path:
@@ -1342,7 +1390,29 @@ class VaultClient:
 
     # -- penulisan ------------------------------------------------------
 
-    def _send(self, func, extra: dict | None = None) -> str:
+    def _require_onchain_cap_floor(self, func) -> None:
+        """LANTAI MONOTON ON-CHAIN untuk `setProviderCap` (temuan TINGGI-1).
+
+        Ditegakkan DI SINI, atas nilai yang benar-benar masuk calldata, dengan alasan yang
+        sama seperti mode aman dan root turunan: pemanggil baru yang membangun
+        `setProviderCap` sendiri tetap harus berhenti. `providerCap()` yang sedang
+        ditegakkan vault adalah satu-satunya `previous` yang tidak bisa dipalsukan penulis
+        `memory.db`; cap yang MELONGGARKANNYA ditolak. Nilai 0 on-chain bukan lantai — ia
+        TANPA BATAS (ADR-001), jadi apa pun di atasnya justru mengetatkan.
+        """
+        panggilan = contract_call_cap(func)
+        if panggilan is None:
+            return
+        provider, cap = panggilan
+        onchain = self.provider_cap(provider)
+        if onchain > 0 and cap > onchain:
+            raise CapRaiseRefused(
+                CAP_RAISE_TEMPLATE.format(
+                    provider=provider, cap=cap, onchain=onchain, db=self.db_path
+                )
+            )
+
+    def _send(self, func, extra: dict | None = None, *, allow_raise: bool = False) -> str:
         # SATU-SATUNYA tempat transaksi dibangun & dikirim, jadi SATU-SATUNYA tempat yang
         # harus menegakkan mode aman. Penjaga ini berjalan SEBELUM `build_transaction`,
         # sebelum `get_transaction_count`, dan sebelum penandatanganan.
@@ -1360,6 +1430,11 @@ class VaultClient:
         # yang lebih dalam; keduanya sama-sama nol transaksi.
         if self.refusal is not None:
             raise SafeModeStop(f"{action}: {self.refusal}")
+        # Lantai cap dibaca SESUDAH gerbang memori dan kunci penolakan: agen yang berhenti
+        # karena memorinya tidak boleh membuang panggilan RPC lebih dulu, dan pesannya
+        # harus tetap `MODE AMAN`.
+        if action == SET_PROVIDER_CAP_FN and not allow_raise:
+            self._require_onchain_cap_floor(func)
         if self.account is None:
             raise RuntimeError(
                 "klien vault dibangun tanpa kunci privat (baca-saja) — tidak ada tx yang bisa dikirim"
@@ -1396,7 +1471,14 @@ class VaultClient:
         log.info("postVerdict terkirim: 0x%s", tx_hash)
         return tx_hash
 
-    def set_provider_cap(self, provider: str, cap_usdc: int, *, allow_unlimited: bool = False) -> str:
+    def set_provider_cap(
+        self,
+        provider: str,
+        cap_usdc: int,
+        *,
+        allow_unlimited: bool = False,
+        allow_raise: bool = False,
+    ) -> str:
         """`setProviderCap` (spec §3 aturan 4). ADR-020 keputusan 8: ikut ditahan mode aman.
 
         Ia tidak menyentuh job tertentu, jadi TIDAK ada penjaga status job di sini —
@@ -1409,6 +1491,16 @@ class VaultClient:
         `derive_cap`: monoton-tidak-naik di sana bersandar pada `previous`, dan serangan
         yang membuat `NO_CAP` justru MENGHAPUS profil yang menyimpan `previous` itu.
         `allow_unlimited=True` adalah satu-satunya jalur sadar — ia harus diketik pemanggil.
+
+        NILAI YANG MELONGGARKAN JUGA DITOLAK, dengan alasan yang sepenuhnya sejajar. Klaim
+        monoton-tidak-naik `derive_cap` berjangkar pada `previous` yang tersimpan di
+        `memory.db`, sementara `providerCap()` adalah keadaan yang tidak bisa disentuh
+        penulis file lokal. Jadi cap yang sedang ditegakkan vault dipakai sebagai LANTAI:
+        `cap > providerCap(provider)` saat `providerCap` > 0 ditolak kecuali
+        `allow_raise=True`. `providerCap == 0` bukan lantai — ia TANPA BATAS (ADR-001), dan
+        nilai apa pun di atasnya justru MENGETATKAN. Penjaganya sendiri duduk di `_send()`
+        (`_require_onchain_cap_floor`), sesudah gerbang memori: jalur baru yang membangun
+        `setProviderCap` tanpa lewat metode ini pun tetap berhenti.
         """
         cap = int(cap_usdc)
         if cap < 0:
@@ -1418,7 +1510,8 @@ class VaultClient:
                 UNLIMITED_CAP_TEMPLATE.format(provider=provider, cap=cap, db=self.db_path)
             )
         tx_hash = self._send(
-            self.vault.functions.setProviderCap(Web3.to_checksum_address(provider), cap)
+            self.vault.functions.setProviderCap(Web3.to_checksum_address(provider), cap),
+            allow_raise=allow_raise,
         )
         log.info("setProviderCap terkirim: 0x%s", tx_hash)
         return tx_hash
@@ -1839,9 +1932,22 @@ def record_outcome(client: VaultClient, plan: JobPlan) -> ProviderProfile | None
     `JobFunded` (api-facts §A). Tanpa argumen itu ADR-021 keputusan 2 mati diam-diam dan
     provider bisa mendanai jobnya sendiri untuk mengangkat capnya sendiri.
 
-    Yang ditulis HANYA hasil cek deterministik agen (`failed_checks` selalu subset
+    Yang MEMUTUSKAN hanya hasil cek deterministik agen (`failed_checks` selalu subset
     `DETERMINISTIC_CHECK_IDS`, `Incident.evidence.check_id` divalidasi ulang di
-    `record_suspicion`) — tidak ada jalur dari teks pihak ke memori (spec §3 aturan 3).
+    `record_suspicion`) — nol angka/keputusan di memori lahir dari teks pihak (spec §3
+    aturan 3).
+
+    TEKS PIHAK TETAP MASUK MEMORI, dan itu harus disebut apa adanya. `Evidence.proof`
+    membawa KUTIPAN deliverable (mis. jendela 60 karakter di sekitar temuan cek `format`),
+    dan `promote_suspicions` menyalinnya ke `reference:pattern:{id}.examples` — tier yang
+    BOLEH dibaca jalur keputusan (`DECISION_REFERENCE_PREFIXES`) dan yang ikut ter-hash ke
+    `memory_root` yang diumumkan on-chain. Yang menahannya: kutipan itu DATA, bukan
+    instruksi (alasan lengkap di `Evidence.__post_init__`), disanitasi di SATU tempat
+    (`checks.base.excerpt`: non-printable → spasi, whitespace diciutkan, potong di 160;
+    batas keras `MAX_PROOF_LEN` 512 divalidasi ulang di konstruktor), dan nol keputusan
+    hari ini membaca isinya. Siapa pun yang menambahkan `view.pattern(...)` ke sebuah
+    keputusan sedang mengonsumsi teks yang dikendalikan pihak lain — perlakukan begitu, dan
+    jangan melemahkan sanitasinya.
     Seluruhnya idempoten per `job_id`: bukti berulang dari job yang sama tidak menggerakkan
     ambang promosi (dedup `(job_id, check_id)`), dan karantina yang sudah `promoted` tidak
     pernah dipromosikan dua kali.
@@ -1892,6 +1998,22 @@ def record_outcome(client: VaultClient, plan: JobPlan) -> ProviderProfile | None
     return profile
 
 
+def store_cap_in_memory(client: VaultClient, provider_address: str, cap: CapPlan) -> None:
+    """Menuliskan cap yang BENAR-BENAR berlaku on-chain ke profil provider.
+
+    Dipanggil di KEDUA cabang `sync_provider_cap` — sesudah tx yang mendarat, dan juga saat
+    vault sudah memegang nilainya. Cabang kedua dulu melewatinya, sehingga `cap_usdc` tetap
+    `None` di body yang masuk preimage `memory_root` (temuan RENDAH-1).
+    """
+    if client.db_path is None:
+        return
+    memori = MemoryClient.local(str(client.db_path))
+    try:
+        store_provider_cap(memori, provider_address, cap)
+    finally:
+        close_memory_client(memori)
+
+
 def sync_provider_cap(
     client: VaultClient, mode: ModeDecision, profile: ProviderProfile | None
 ) -> str | None:
@@ -1910,10 +2032,17 @@ def sync_provider_cap(
       - nilai on-chain sudah sama dengan cap hari ini (rerun/idempotensi) — gas dan nonce
         tidak dibakar untuk menulis nilai yang sama.
 
-    Cap yang benar-benar mendarat DISIMPAN ke profil (`store_provider_cap`) supaya
-    `derive_cap` berikutnya punya `previous` untuk aturan monoton-tidak-naik. Penyimpanan
-    dilakukan SESUDAH receipt berstatus 1: memori tidak boleh mengklaim cap yang tidak
-    pernah ada di chain.
+    `providerCap()` on-chain DIPAKAI SEBAGAI LANTAI, bukan sekadar pembanding kesetaraan
+    (temuan TINGGI-1). Cap yang lebih longgar dari yang sedang ditegakkan vault DIKLEM ke
+    nilai on-chain: monoton-tidak-naik milik `derive_cap` berjangkar pada `previous` di
+    `memory.db`, dan file itu bisa dimundurkan ke snapshot lama, sedangkan nilai on-chain
+    tidak bisa. `set_provider_cap` menolaknya lagi di batas kirim (`allow_raise`).
+
+    Cap yang benar-benar BERLAKU on-chain DISIMPAN ke profil (`store_provider_cap`) supaya
+    `derive_cap` berikutnya punya `previous` untuk aturan monoton-tidak-naik, dan supaya
+    body provider yang masuk preimage `memory_root` tidak mengaku "tanpa cap" sementara
+    vault menegakkan angka. Untuk cap yang baru dikirim, penyimpanan dilakukan SESUDAH
+    receipt berstatus 1: memori tidak boleh mengklaim cap yang tidak pernah ada di chain.
     """
     if profile is None:
         return None
@@ -1937,13 +2066,34 @@ def sync_provider_cap(
                 provider=profile.address, cap=int(cap.cap_usdc), db=client.db_path
             )
         )
+    # LANTAI MONOTON ON-CHAIN (temuan TINGGI-1). `derive_cap` hanya bisa menjanjikan
+    # monoton-tidak-naik terhadap `previous` yang tersimpan di `memory.db`, dan file itu
+    # bisa ditulis pihak lain (kunci `flock` KOOPERATIF) atau dikembalikan ke snapshot
+    # lama. `providerCap()` adalah satu-satunya nilai yang tidak bisa dipalsukan dari sisi
+    # file, jadi ia yang mengikat: cap yang lebih longgar DIKLEM ke nilai on-chain, bukan
+    # dikirim. Nilai 0 on-chain bukan lantai — ia TANPA BATAS (ADR-001).
     onchain = client.provider_cap(profile.address)
+    if onchain > 0 and int(cap.cap_usdc) > onchain:
+        log.warning(
+            "cap provider=%s DIKLEM ke lantai on-chain: memori menghitung %d (basis=%s) "
+            "sementara vault menegakkan %d — nilai yang MELONGGARKAN tidak dikirim",
+            profile.address,
+            int(cap.cap_usdc),
+            cap.basis,
+            onchain,
+        )
+        cap = replace(cap, cap_usdc=onchain, basis=f"onchain-floor({cap.basis})")
     if onchain == int(cap.cap_usdc):
         log.info(
             "cap provider=%s sudah %d di vault — tidak dikirim ulang",
             profile.address,
             onchain,
         )
+        # Tetap DITULIS ke memori (temuan RENDAH-1). Body provider ikut preimage
+        # `memory_root`: tanpa tulisan ini auditor yang merekonstruksi memori pada root
+        # yang diumumkan melihat "tanpa cap" sementara vault menegakkan nilai nyata, dan
+        # `derive_cap` berikutnya kehilangan `previous`-nya.
+        store_cap_in_memory(client, profile.address, cap)
         return None
     log.info(
         "cap provider=%s: %d → %d (risk=%d, basis=%s, milestone=%s, sampel=%d)",
@@ -1965,12 +2115,7 @@ def sync_provider_cap(
     )
     if receipt.status != 1:
         raise RuntimeError(f"setProviderCap gagal on-chain: 0x{tx_hash}")
-    if client.db_path is not None:
-        memori = MemoryClient.local(str(client.db_path))
-        try:
-            store_provider_cap(memori, profile.address, cap)
-        finally:
-            close_memory_client(memori)
+    store_cap_in_memory(client, profile.address, cap)
     return tx_hash
 
 
@@ -2375,6 +2520,33 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
 # ----------------------------------------------------------------------
 
 
+def report_stopped_midway(sent: list[str], cause: str) -> int:
+    """BERHENTI DI TENGAH PIPA: sebagian tx sudah mendarat, sisanya tidak akan pernah.
+
+    Dipakai oleh SEMUA jalur galat `main()`, bukan hanya `SafeModeStop` (temuan SEDANG-2).
+    Jendela antara `postVerdict` dan `finalize` kini memuat TIGA tx (`setProviderCap` di
+    tengahnya), dan kegagalan di sana — receipt berstatus 0, galat/timeout RPC, penulisan
+    memori yang kalah CAS — dulu jatuh ke `except Exception` generik: exit 1 TANPA satu
+    baris pun yang mengatakan job menggantung sampai `expiredAt`, dan tanpa daftar tx yang
+    sudah mendarat. Dampaknya terbatas (`finalize` permissionless, rerun pulih bersih);
+    yang hilang adalah SINYAL untuk operator, dan justru itu gunanya kode keluar ini.
+    """
+    log.error(
+        "%s: %d transaksi sudah mendarat sebelum %s (%s) — job MENGGANTUNG sampai "
+        "expiredAt, dan run ini TIDAK selesai",
+        EXIT_STOPPED_MIDWAY_MESSAGE,
+        len(sent),
+        cause,
+        ", ".join("0x" + h for h in sent),
+    )
+    return EXIT_STOPPED_MIDWAY
+
+
+def landed_transactions(dibangun: Mapping[str, VaultClient]) -> list[str]:
+    client = dibangun.get("client")
+    return list(client.sent_transactions) if client is not None else []
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="vault_client", description="Klien EvaluatorVault minimal")
     # `--selftest` DICABUT (task 2.4b): ia mengumumkan root konstanta atas jobId sintetis,
@@ -2439,6 +2611,9 @@ def main(argv: list[str] | None = None) -> int:
             except JobVoidedError as exc:
                 # Job NYATA yang sudah terminal = verdict yatim: kegagalan pipa, bukan hasil normal.
                 log.error("%s", voided_message(exc.job_id, exc.status))
+                terkirim = landed_transactions(dibangun)
+                if terkirim:
+                    return report_stopped_midway(terkirim, "job dianulir pihak ketiga")
                 return 1
         parser.print_usage(sys.stdout)
         return 2
@@ -2451,20 +2626,13 @@ def main(argv: list[str] | None = None) -> int:
         # gerbang start lolos — mode aman yang muncul di tengah jalan, root asing, bukti
         # yang tidak cocok. Semuanya keadaan yang harus terlihat di log, bukan catatan.
         log.error("%s", exc)
-        terkirim = dibangun["client"].sent_transactions if "client" in dibangun else []
+        terkirim = landed_transactions(dibangun)
         if terkirim:
             # BERHENTI DI TENGAH PIPA. Ini BUKAN "berhenti bersih": sebagian tx sudah
             # mendarat (mis. postVerdict) sementara sisanya (finalize) tidak akan pernah,
             # jadi job menggantung sampai `expiredAt`. Exit 0 di sini membuat otomasi 2.5
             # melaporkan sukses palsu — karena itu kode keluarnya BERBEDA.
-            log.error(
-                "%s: %d transaksi sudah mendarat sebelum gerbang menahan sisanya (%s) — "
-                "job MENGGANTUNG sampai expiredAt, dan run ini TIDAK selesai",
-                EXIT_STOPPED_MIDWAY_MESSAGE,
-                len(terkirim),
-                ", ".join("0x" + h for h in terkirim),
-            )
-            return EXIT_STOPPED_MIDWAY
+            return report_stopped_midway(terkirim, "gerbang menahan sisanya")
         # Nol tx, tetapi tetap BUKAN sukses: gerbang start sudah lolos, jadi sesuatu
         # menolak di tengah jalan. Exit 0 di sini adalah laporan sukses palsu.
         log.error(
@@ -2478,6 +2646,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except Exception as exc:  # noqa: BLE001 — pesan disensor sebelum dicetak
         log.error("GAGAL: %s: %s", type(exc).__name__, redact(str(exc), private_key))
+        terkirim = landed_transactions(dibangun)
+        if terkirim:
+            # Galat teknis SESUDAH sebuah tx mendarat adalah kelas keadaan yang sama
+            # dengan penolakan di tengah pipa: sisanya tidak akan pernah dikirim run ini.
+            return report_stopped_midway(terkirim, f"{type(exc).__name__} menghentikan pipa")
         return 1
 
 

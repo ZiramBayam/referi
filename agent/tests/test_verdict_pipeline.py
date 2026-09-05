@@ -504,9 +504,9 @@ def test_the_fresh_verdict_branch_records_between_postverdict_and_finalize(db, a
     asli_send = vc.VaultClient._send
     asli_record = vc.record_outcome
 
-    def send(self, func, extra=None):
+    def send(self, func, extra=None, **kwargs):
         urutan.append(getattr(func, "fn_name", "tx"))
-        return asli_send(self, func, extra)
+        return asli_send(self, func, extra, **kwargs)
 
     def record(client_, plan_):
         urutan.append("record_outcome")

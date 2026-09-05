@@ -405,3 +405,213 @@ def test_sync_provider_cap_refuses_to_send_zero(db, artifacts, bundles, monkeypa
         vc.sync_provider_cap(client, plan_mode, profil)
     assert client.w3.eth.built == []
     assert client.w3.eth.sent == []
+
+
+# ======================================================================
+# (4) TINGGI-1 — `providerCap()` on-chain adalah LANTAI, bukan sekadar
+#     pembanding kesetaraan
+# ======================================================================
+#
+# `derive_cap` mengklaim monoton-tidak-naik, tetapi jangkarnya (`previous`) hidup di
+# `memory.db` — file lokal yang model ancaman proyek ini SUDAH akui bisa ditulis pihak
+# lain (kunci `flock` bersifat KOOPERATIF). Sejak `setProviderCap` punya pemanggil
+# produksi, memori yang dimundurkan bisa MELONGGARKAN penegakan on-chain, yaitu
+# satu-satunya mekanisme yang didemokan spec §7 langkah 2. Nilai on-chain sudah dibaca;
+# ia harus MENGIKAT, bukan hanya dibandingkan sama/tidak.
+
+
+def restore(snapshot: dict[str, bytes], db: pathlib.Path) -> None:
+    for suffix in vc.MEMORY_DB_SUFFIXES:
+        path = db.with_name(db.name + suffix)
+        isi = snapshot.get(suffix)
+        if isi is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_bytes(isi)
+
+
+def snapshot_of(db: pathlib.Path) -> dict[str, bytes]:
+    keluar = {}
+    for suffix in vc.MEMORY_DB_SUFFIXES:
+        path = db.with_name(db.name + suffix)
+        if path.is_file():
+            keluar[suffix] = path.read_bytes()
+    return keluar
+
+
+def test_a_restored_memory_snapshot_cannot_raise_the_cap_the_vault_enforces(db, artifacts, bundles):
+    """Serangan yang dijalankan reviewer: `memory.db` dimundurkan ke snapshot sebelum job B.
+
+    Memori lokal lalu menurunkan cap 1.000.000 (risk 1) sementara vault menegakkan 250.000.
+    Tanpa lantai on-chain, satu job berikutnya MENAIKKAN cap 4x lewat `setProviderCap`.
+    """
+    run_submitted_job(db, artifacts, JOB_A, DELIVERABLE_A)
+    sebelum_b = snapshot_of(db)
+    run_submitted_job(db, artifacts, JOB_B, DELIVERABLE_B, provider_cap_onchain=1_000_000)
+    assert view(db).provider(PROVIDER).cap_usdc == 250_000
+
+    restore(sebelum_b, db)
+    assert mp.derive_cap(view(db).provider(PROVIDER)).cap_usdc == 1_000_000, (
+        "prasyarat serangan: memori yang dimundurkan memang menghitung cap yang LEBIH LONGGAR"
+    )
+
+    client = run_submitted_job(
+        db, artifacts, JOB_C, DELIVERABLE_OK, provider_cap_onchain=250_000
+    )
+
+    naik = [args for args in cap_args(client) if int(args[1]) > 250_000]
+    assert naik == [], f"cap on-chain DINAIKKAN oleh memori yang dimundurkan: {naik}"
+    # Lantai on-chain juga MENJANGKARKAN ulang memori: `previous` berikutnya bukan 1.000.000.
+    assert view(db).provider(PROVIDER).cap_usdc == 250_000
+
+
+def test_a_tighter_cap_set_by_hand_is_never_raised_by_the_agent(db, artifacts, bundles):
+    """Varian tanpa penyerang: arbiter/operator memasang cap lebih ketat langsung di vault."""
+    run_submitted_job(db, artifacts, JOB_A, DELIVERABLE_A)
+    client = run_submitted_job(
+        db, artifacts, JOB_B, DELIVERABLE_B, provider_cap_onchain=100_000
+    )
+
+    assert cap_args(client) == [], "cap 100.000 di vault DINAIKKAN diam-diam jadi 250.000"
+    assert "setProviderCap" not in sent_names(client)
+    assert view(db).provider(PROVIDER).cap_usdc == 100_000
+
+
+def test_set_provider_cap_refuses_a_raise_at_the_send_boundary(db, artifacts, bundles):
+    """Lapis kedua, sepola `allow_unlimited`: batas kirim menolak kenaikan diam-diam."""
+    client = build_client(db=db, job_id=JOB_B, status=2)
+    client.w3.eth.provider_caps[PROVIDER.lower()] = 250_000
+    with pytest.raises(vc.CapRaiseRefused):
+        client.set_provider_cap(PROVIDER, 1_000_000)
+    assert client.w3.eth.built == []
+    assert client.sent_transactions == []
+
+
+def test_set_provider_cap_raises_only_through_the_explicit_conscious_path(db, artifacts, bundles):
+    """Kenaikan tetap MUNGKIN — tetapi hanya bila pemanggil mengetiknya."""
+    client = build_client(db=db, job_id=JOB_B, status=2)
+    client.w3.eth.provider_caps[PROVIDER.lower()] = 250_000
+    client.set_provider_cap(PROVIDER, 1_000_000, allow_raise=True)
+    assert cap_args(client) == [(Web3.to_checksum_address(PROVIDER), 1_000_000)]
+
+
+def test_lowering_the_cap_is_always_allowed(db, artifacts, bundles):
+    """Kontrol dua arah: lantai on-chain TIDAK boleh membekukan cap yang MENGETAT."""
+    client = build_client(db=db, job_id=JOB_B, status=2)
+    client.w3.eth.provider_caps[PROVIDER.lower()] = 1_000_000
+    client.set_provider_cap(PROVIDER, 250_000)
+    assert cap_args(client) == [(Web3.to_checksum_address(PROVIDER), 250_000)]
+
+
+def test_the_first_cap_may_be_set_while_the_vault_still_says_unlimited(db, artifacts, bundles):
+    """Kontrol: on-chain 0 = TANPA BATAS (ADR-001), jadi nilai apa pun di atasnya MENGETAT."""
+    client = run_submitted_job(db, artifacts, JOB_A, DELIVERABLE_A, provider_cap_onchain=0)
+    assert cap_args(client) == [(Web3.to_checksum_address(PROVIDER), 1_000_000)]
+
+
+# ======================================================================
+# (5) RENDAH-1 — cabang "sudah sinkron" tetap menuliskan cap ke memori
+# ======================================================================
+
+
+def test_cap_is_stored_in_memory_even_when_the_vault_already_holds_it(db, artifacts, bundles):
+    """Tanpa ini, `provider.cap_usdc` tetap `None` di body yang masuk preimage `memory_root`:
+    auditor yang merekonstruksi memori pada root yang DIUMUMKAN melihat "tanpa cap"
+    sementara vault menegakkan 250.000."""
+    run_submitted_job(db, artifacts, JOB_A, DELIVERABLE_A)
+    client = run_submitted_job(db, artifacts, JOB_B, DELIVERABLE_B, provider_cap_onchain=250_000)
+
+    assert cap_args(client) == [], "nilai sama tidak boleh dikirim ulang (gas + nonce)"
+    assert view(db).provider(PROVIDER).cap_usdc == 250_000
+
+
+# ======================================================================
+# (6) SEDANG-2 — gagal SESUDAH postVerdict wajib melapor BERHENTI DI TENGAH
+# ======================================================================
+
+
+def test_a_failure_after_postverdict_reports_stopped_midway_with_its_tx_list(
+    db, artifacts, bundles, monkeypatch, caplog
+):
+    """`setProviderCap` disisipkan tepat di jendela antara `postVerdict` dan `finalize`.
+    Kegagalannya (receipt status 0, galat RPC, penulisan memori yang kalah CAS) dulu jatuh
+    ke `except Exception` generik → exit 1 TANPA satu pun baris yang mengatakan job
+    MENGGANTUNG sampai `expiredAt` dan tanpa daftar tx yang sudah mendarat."""
+    import logging
+
+    run_submitted_job(db, artifacts, JOB_A, DELIVERABLE_A)
+
+    digest = write_artifact(artifacts, JOB_B, DELIVERABLE_B)
+    client = build_client(db=db, job_id=JOB_B, status=2, deliverable=digest)
+    client.w3.eth.provider_caps[PROVIDER.lower()] = 1_000_000
+
+    asli = client.wait_receipt
+    panggilan = {"n": 0}
+
+    def receipt_kedua_gagal(tx_hash):
+        panggilan["n"] += 1
+        return asli(tx_hash) if panggilan["n"] == 1 else FakeReceipt(status=0)
+
+    monkeypatch.setattr(client, "wait_receipt", receipt_kedua_gagal)
+    monkeypatch.setenv(vc.DELIVERABLE_DIR_ENV, str(artifacts))
+    monkeypatch.setattr(vc, "build_client", lambda private_key=None: client)
+    monkeypatch.setattr(vc, "load_private_key", lambda: "0x" + "11" * 32)
+    monkeypatch.setattr(vc.Account, "from_key", staticmethod(lambda key: SigningAccount()))
+
+    with caplog.at_level(logging.INFO, logger="vault_client"):
+        kode = vc.main(["--job-id", str(JOB_B), "--kind", "reject"])
+
+    assert sent_names(client) == ["postVerdict", "setProviderCap"]
+    assert "finalize" not in sent_names(client)
+    assert kode == vc.EXIT_STOPPED_MIDWAY
+    assert vc.EXIT_STOPPED_MIDWAY_MESSAGE in caplog.text
+    assert "MENGGANTUNG" in caplog.text
+    for tx_hash in client.sent_transactions:
+        assert "0x" + tx_hash in caplog.text
+
+
+def test_the_conscious_escape_hatches_have_zero_production_callers():
+    """`allow_raise=True`/`allow_unlimited=True` adalah jalur SADAR: ia harus diketik, dan
+    hari ini tidak seorang pun di jalur produksi mengetiknya. Tes ini yang membuat kalimat
+    itu tetap benar besok.
+
+    Pemindaiannya AST, bukan substring: pesan galat dan docstring MEMUAT kata itu apa
+    adanya (dan memang harus), jadi pemindai substring akan merah pada teks yang benar.
+    Yang ditandai: (a) argumen kata kunci itu dengan nilai apa pun selain `False` literal,
+    dan (b) `**kwargs` pada panggilan `set_provider_cap`/`_send` — jalur yang bisa
+    menyelundupkan keduanya tanpa mengetik namanya.
+    """
+    import ast
+
+    def nama_fungsi(simpul: ast.Call) -> str:
+        target = simpul.func
+        if isinstance(target, ast.Attribute):
+            return target.attr
+        if isinstance(target, ast.Name):
+            return target.id
+        return ""
+
+    paket = pathlib.Path(vc.__file__).parent
+    pelanggar: list[str] = []
+    for berkas in sorted(paket.rglob("*.py")):
+        pohon = ast.parse(berkas.read_text(encoding="utf-8"), filename=str(berkas))
+        for simpul in ast.walk(pohon):
+            if not isinstance(simpul, ast.Call):
+                continue
+            for kata in simpul.keywords:
+                if kata.arg in ("allow_raise", "allow_unlimited"):
+                    literal_false = (
+                        isinstance(kata.value, ast.Constant) and kata.value.value is False
+                    )
+                    # SATU pengecualian: pipa internal `set_provider_cap` → `_send` yang
+                    # meneruskan parameter bernama SAMA. Ia tidak memilih apa pun.
+                    diteruskan = (
+                        nama_fungsi(simpul) == "_send"
+                        and isinstance(kata.value, ast.Name)
+                        and kata.value.id == kata.arg
+                    )
+                    if not (literal_false or diteruskan):
+                        pelanggar.append(f"{berkas.relative_to(paket)}:{simpul.lineno}")
+                elif kata.arg is None and nama_fungsi(simpul) in ("set_provider_cap", "_send"):
+                    pelanggar.append(f"{berkas.relative_to(paket)}:{simpul.lineno} (**kwargs)")
+    assert pelanggar == [], f"escape hatch cap dipakai di jalur produksi: {pelanggar}"

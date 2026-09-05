@@ -155,6 +155,9 @@ def build_client(
         # memori, bukan penyaringan "job milik siapa" (itu tests/test_job_pipeline.py).
         "jobs": (CLIENT, job_status, PROVIDER, 0, VAULT_ADDRESS, "0x" + "00" * 20, 1, ""),
         "verdicts": (0, ZERO, ZERO, 0, False, "0x" + "00" * 20),
+        # Lantai monoton on-chain (`_require_onchain_cap_floor`): 0 = TANPA BATAS
+        # (ADR-001), jadi nilai ini TIDAK menahan `setProviderCap` di tes gerbang ini.
+        "providerCap": 0,
     }
     w3 = FakeWeb3(returns)
     return vc.VaultClient(
