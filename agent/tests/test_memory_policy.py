@@ -1500,7 +1500,9 @@ def test_no_agent_module_publishes_a_memory_derived_root_yet():
     panggilan_root = re.compile(r"(?<![A-Za-z0-9_])memory_root\s*\(")
     paket = pathlib.Path(mp.__file__).parent
     pelanggar = []
-    for berkas in sorted(paket.glob("*.py")):
+    # `rglob`, BUKAN `glob`: `agent/checks/*.py` adalah modul produksi juga, dan `glob("*.py")`
+    # melewatkannya seluruhnya — pemindai yang buta pada separuh paket tidak menjaga apa pun.
+    for berkas in sorted(b for b in paket.rglob("*.py") if "__pycache__" not in b.parts):
         if berkas.name == "memory_policy.py":
             continue
         isi = berkas.read_text()
@@ -2032,7 +2034,8 @@ def test_only_memory_root_for_onchain_may_reach_a_memory_derived_root():
 
     paket = pathlib.Path(mp.__file__).parent
     pelanggar = {}
-    for berkas in sorted(paket.glob("*.py")):
+    # `rglob` — alasan yang sama seperti pemindai teks di atas.
+    for berkas in sorted(b for b in paket.rglob("*.py") if "__pycache__" not in b.parts):
         if berkas.name == "memory_policy.py":
             continue
         temuan = [
