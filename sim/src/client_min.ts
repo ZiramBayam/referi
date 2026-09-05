@@ -3,6 +3,11 @@
  *
  * createJob (CLIENT) -> setBudget (PROVIDER) -> fund (CLIENT) -> submit (PROVIDER)
  *
+ * SATU putaran = SATU job. Rantai A/B/C spec §7 langkah 1-3 dijalankan dengan MEMANGGIL file ini
+ * tiga kali, bukan dengan menambah alur baru di sini; yang berbeda antar panggilan hanya tiga
+ * variabel lingkungan (lihat "Tombol skenario" di bawah): `DELIVERABLE_TEXT`, `BUDGET_RAW`,
+ * `STOP_AFTER`. Urutan panggilan ACP dan pemegang tanda tangan tiap langkah TIDAK berubah.
+ *
  * SEMUA transaksi lewat SDK `@virtuals-protocol/acp-node-v2@0.1.12`. File ini TIDAK
  * meng-encode satu pun calldata ACP sendiri: kalender panggilan, ABI, dan urutan approve+fund
  * datang dari SDK. Yang kita sediakan hanya adapter penanda tangan (viem) yang diminta
@@ -77,8 +82,60 @@ const ESCROW_TOKEN_ADDRESS = "0xECc22a8F6fD62388498fBa19813E214605a2BDb3" as Add
 /** Alamat wallet agen/evaluator. Ia TIDAK boleh muncul sebagai client maupun provider. */
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 
-/** Budget 1 USDC (6 desimal). Saldo client demo hanya 2 USDC. */
-const BUDGET_RAW = 1_000_000n;
+// ---------------------------------------------------------------------------
+// Tombol skenario (spec §7 langkah 1-3)
+//
+// Ketiganya dibaca dari `process.env` SAJA — sengaja TIDAK lewat configValue()/.env root.
+// Nilainya berganti tiap job dalam satu rantai A/B/C, jadi nilai yang mengendap di `.env`
+// akan diam-diam ikut ke job berikutnya: `STOP_AFTER=fund` yang tertinggal membuat job A/B
+// tidak pernah `submit`, dan `BUDGET_RAW` yang tertinggal membuat job A/B melebihi cap.
+// Rahasia tetap dari `.env` (kunci privat, RPC); tombol skenario diberikan per-perintah.
+// ---------------------------------------------------------------------------
+
+const BUDGET_RAW_ENV = "BUDGET_RAW";
+const STOP_AFTER_ENV = "STOP_AFTER";
+const DELIVERABLE_TEXT_ENV = "DELIVERABLE_TEXT";
+
+/**
+ * Budget default 1 USDC (6 desimal) — nilai yang dipakai job 1.3c/1.3d, dipertahankan supaya
+ * pemanggil lama tidak berubah perilaku. Job C rantai 2.5 melebihi cap dengan `BUDGET_RAW=2000000`.
+ */
+const DEFAULT_BUDGET_RAW = 1_000_000n;
+
+/** Unit MENTAH token escrow (6 desimal): "2000000" = 2 USDC. Bukan angka desimal berkoma. */
+export function parseBudgetRaw(raw: string | undefined): bigint {
+  const text = (raw ?? "").trim();
+  if (!text) return DEFAULT_BUDGET_RAW;
+  if (!/^[0-9][0-9_]*$/.test(text)) {
+    throw new Error(
+      `${BUDGET_RAW_ENV}="${text}" bukan bilangan bulat unit mentah token (6 desimal, mis. 2000000 = 2 USDC)`,
+    );
+  }
+  const value = BigInt(text.split("_").join(""));
+  if (value <= 0n) throw new Error(`${BUDGET_RAW_ENV} harus > 0, dapat "${text}"`);
+  return value;
+}
+
+/**
+ * Sampai langkah mana putaran ini berjalan.
+ *
+ * `submit` (default) = alur penuh 1.3c, job berakhir `Submitted`.
+ * `fund` = BERHENTI sesudah `fund`, job SENGAJA ditinggal berstatus `Funded`. Itu yang dituntut
+ * job C spec §7 langkah 3: agen harus menolaknya SAAT Funded, yaitu sebelum provider menyerahkan
+ * apa pun (spec §5 langkah 2). Kalau `submit` sempat jalan, klaim intinya hilang.
+ */
+const STOP_AFTER_VALUES = ["fund", "submit"] as const;
+type StopAfter = (typeof STOP_AFTER_VALUES)[number];
+
+export function parseStopAfter(raw: string | undefined): StopAfter {
+  const text = (raw ?? "").trim().toLowerCase();
+  if (!text) return "submit";
+  const match = STOP_AFTER_VALUES.find((value) => value === text);
+  if (!match) {
+    throw new Error(`${STOP_AFTER_ENV}="${text}" tidak dikenal; pilih ${STOP_AFTER_VALUES.join(" atau ")}`);
+  }
+  return match;
+}
 
 /**
  * `expiredAt` = now + 1 jam.
@@ -118,6 +175,18 @@ const DEFAULT_DELIVERABLE_TEXT = [
   "- https://sepolia.basescan.org/address/0xECc22a8F6fD62388498fBa19813E214605a2BDb3",
   "",
 ].join("\n");
+
+/**
+ * Teks deliverable. `DELIVERABLE_TEXT` yang DISETEL tapi kosong ditolak: `DELIVERABLE_TEXT=$VAR`
+ * dengan `VAR` yang salah ketik akan menyerahkan string kosong dan meng-hash keccak256("") ke
+ * on-chain — job "berhasil" dengan deliverable yang tidak pernah ada. Hapus variabelnya bila
+ * memang menginginkan teks default.
+ */
+export function parseDeliverableText(raw: string | undefined): { text: string; source: "env" | "default" } {
+  if (raw === undefined) return { text: DEFAULT_DELIVERABLE_TEXT, source: "default" };
+  if (!raw.trim()) throw new Error(`${DELIVERABLE_TEXT_ENV} disetel tapi kosong/spasi saja`);
+  return { text: raw, source: "env" };
+}
 
 /** Nama direktori artefak deliverable (ADR-019 keputusan 2: `DELIVERABLE_DIR`). */
 const DELIVERABLE_DIR_PARTS = ["demo", "deliverables"] as const;
@@ -222,8 +291,11 @@ function log(event: string, fields: Record<string, unknown> = {}): void {
  * file dijamin berasal dari satu string. `agent/` tetap menghitungnya ULANG dan tetap
  * membandingkannya dengan slot on-chain — file ini tidak dipercaya, ia hanya mengusulkan
  * preimage.
+ *
+ * Mengembalikan path yang BENAR-BENAR ditulis, supaya ringkasan akhir tidak menyusun ulang path
+ * yang sama di tempat kedua (dua sumber = dua kesempatan untuk berbeda).
  */
-function writeDeliverableArtifact(jobId: bigint, text: string): Hex {
+function writeDeliverableArtifact(jobId: bigint, text: string): { path: string; shaKeccak: Hex } {
   const id = jobId.toString();
   const dir = join(REPO_ROOT, ...DELIVERABLE_DIR_PARTS);
   mkdirSync(dir, { recursive: true });
@@ -238,7 +310,7 @@ function writeDeliverableArtifact(jobId: bigint, text: string): Hex {
     sha_keccak: shaKeccak,
     bytes: new TextEncoder().encode(text).length,
   });
-  return shaKeccak;
+  return { path, shaKeccak };
 }
 
 // ---------------------------------------------------------------------------
@@ -449,6 +521,52 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Satu-satunya fungsi ERC-20 yang dibaca skrip ini. Read-only; tidak ada `approve` buatan sendiri. */
+const ERC20_BALANCE_OF_ABI = [
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
+
+/**
+ * Memastikan CLIENT punya cukup token escrow untuk `BUDGET_RAW` SEBELUM `createJob`.
+ *
+ * Tanpa ini, kekurangan saldo baru muncul sebagai revert simulasi `approve`/`fund` — sesudah
+ * `createJob` + `setBudget` membakar gas dan meninggalkan job yatim berstatus Open.
+ *
+ * Pembacaan DIULANG: `balanceOf` = 0 tepat sesudah `mint` yang sukses adalah kejadian TERUKUR di
+ * RPC publik Base Sepolia (docs/api-facts.md §E.1 kasus 2), jadi nol sekali baca berarti "belum
+ * terlihat", BUKAN "tidak ada". Skrip ini tidak mengasumsikan angka saldo tertentu — hanya
+ * menuntut >= budget yang diminta, dan bila kurang ia berhenti tanpa mengirim transaksi apa pun.
+ */
+async function assertClientCanFund(
+  reader: LocalKeyEvmProvider,
+  token: Address,
+  owner: Address,
+  neededRaw: bigint,
+): Promise<bigint> {
+  let balance = 0n;
+  for (let attempt = 1; attempt <= READ_RETRIES; attempt += 1) {
+    balance = (await reader.readContract(CHAIN_ID, {
+      address: token,
+      abi: ERC20_BALANCE_OF_ABI,
+      functionName: "balanceOf",
+      args: [owner],
+    })) as bigint;
+    if (balance >= neededRaw) return balance;
+    log("balance.retry", { attempt, token, owner, balanceRaw: balance, neededRaw });
+    await sleep(READ_DELAY_MS);
+  }
+  throw new Error(
+    `saldo token escrow CLIENT tidak cukup: ${owner} memegang ${balance} unit token ${token}, ` +
+      `butuh ${neededRaw} (${BUDGET_RAW_ENV}). Top-up dulu lalu jalankan ulang — nol transaksi terkirim.`,
+  );
+}
+
 /**
  * Baca ulang job sampai `predicate` terpenuhi.
  * RPC publik bisa menjawab dari node yang tertinggal di belakang receipt yang baru saja ia
@@ -496,6 +614,12 @@ function newHashes(provider: LocalKeyEvmProvider, from: number): Hex[] {
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
+  // Tombol skenario divalidasi PALING AWAL: salah ketik `STOP_AFTER`/`BUDGET_RAW` harus gagal
+  // sebelum kunci dimuat, sebelum RPC disentuh, dan jauh sebelum transaksi pertama.
+  const budgetRaw = parseBudgetRaw(process.env[BUDGET_RAW_ENV]);
+  const stopAfter = parseStopAfter(process.env[STOP_AFTER_ENV]);
+  const deliverable = parseDeliverableText(process.env[DELIVERABLE_TEXT_ENV]);
+
   const rpcUrl = configValue("RPC_URL", DEFAULT_RPC_URL);
 
   const client = await makeAgent("client-sim", loadPrivateKey("CLIENT_PRIVATE_KEY"), rpcUrl);
@@ -510,7 +634,7 @@ async function main(): Promise<void> {
     throw new Error("PROVIDER == evaluator → createJob revert EvaluatorIsProvider() 0xc7b4e9eb");
   }
 
-  const budget = AssetToken.usdcFromRaw(BUDGET_RAW, CHAIN_ID);
+  const budget = AssetToken.usdcFromRaw(budgetRaw, CHAIN_ID);
   if (budget.address.toLowerCase() !== ESCROW_TOKEN_ADDRESS.toLowerCase()) {
     throw new Error(
       `SDK memilih token ${budget.address} untuk chainId ${CHAIN_ID}, sedangkan escrow ACP menarik ` +
@@ -529,8 +653,15 @@ async function main(): Promise<void> {
     evaluatorAddress: VAULT_ADDRESS,
     escrowToken: budget.address,
     budgetRaw: budget.rawAmount,
+    stopAfter,
+    deliverableTextFrom: deliverable.source,
+    deliverableTextBytes: new TextEncoder().encode(deliverable.text).length,
     expiredAt,
   });
+
+  // 0) preflight saldo — sebelum satu wei gas pun terbakar.
+  const clientBalance = await assertClientCanFund(client.provider, budget.address, client.address, budgetRaw);
+  log("balance.ok", { token: budget.address, owner: client.address, balanceRaw: clientBalance, neededRaw: budgetRaw });
 
   // 1) createJob — ditandatangani CLIENT.
   const markCreate = client.provider.sentTxHashes.length;
@@ -554,7 +685,7 @@ async function main(): Promise<void> {
   log("setBudget.ok", { jobId, budgetRaw: budget.rawAmount, tx: budgetHash });
 
   // 3) fund — client-only; SDK mengirim approve ERC-20 lalu fund dalam satu urutan.
-  await fetchJobUntil(clientSession, "fund", (job) => job.budget.rawAmount === BUDGET_RAW);
+  await fetchJobUntil(clientSession, "fund", (job) => job.budget.rawAmount === budgetRaw);
   const markFund = client.provider.sentTxHashes.length;
   await clientSession.fund(budget);
   const fundHashes = newHashes(client.provider, markFund);
@@ -563,17 +694,29 @@ async function main(): Promise<void> {
 
   // 4) submit — provider-only. Tanpa langkah ini job tidak pernah berstatus Submitted dan
   // `complete()` dari vault pasti revert `WrongStatus()`.
-  await fetchJobUntil(providerSession, "submit", (job) => job.status === "FUNDED");
-  const markSubmit = provider.provider.sentTxHashes.length;
-  const deliverableText = process.env.DELIVERABLE_TEXT ?? DEFAULT_DELIVERABLE_TEXT;
-  // Artefak DITULIS SEBELUM submit: `agent/` menolak menilai job yang teksnya tidak ada
-  // (REFUSE, ADR-019 keputusan 2), jadi urutan ini yang membuat job bisa dievaluasi.
-  writeDeliverableArtifact(jobId, deliverableText);
-  await providerSession.submit(deliverableText);
-  const submitHash = newHashes(provider.provider, markSubmit)[0];
-  log("submit.ok", { jobId, tx: submitHash });
+  //
+  // `STOP_AFTER=fund` MELEWATI langkah ini dengan sengaja: job C harus ditemukan agen dalam
+  // status `Funded`. Artefak deliverable juga tidak ditulis — belum ada deliverable on-chain
+  // untuk dibandingkan, jadi file preimage untuk job ini akan jadi klaim tanpa lawan.
+  const fundedJob = await fetchJobUntil(providerSession, "funded", (job) => job.status === "FUNDED");
+  let submitHash: Hex | "-" = "-";
+  let deliverablePath = "-";
+  if (stopAfter === "submit") {
+    const markSubmit = provider.provider.sentTxHashes.length;
+    // Artefak DITULIS SEBELUM submit: `agent/` menolak menilai job yang teksnya tidak ada
+    // (REFUSE, ADR-019 keputusan 2), jadi urutan ini yang membuat job bisa dievaluasi.
+    deliverablePath = writeDeliverableArtifact(jobId, deliverable.text).path;
+    await providerSession.submit(deliverable.text);
+    submitHash = newHashes(provider.provider, markSubmit)[0] as Hex;
+    log("submit.ok", { jobId, tx: submitHash });
+  } else {
+    log("submit.skipped", { jobId, reason: `${STOP_AFTER_ENV}=fund`, keepsStatus: "FUNDED" });
+  }
 
-  const finalJob = await fetchJobUntil(providerSession, "verifikasi", (job) => job.status === "SUBMITTED");
+  const finalJob =
+    stopAfter === "submit"
+      ? await fetchJobUntil(providerSession, "verifikasi", (job) => job.status === "SUBMITTED")
+      : fundedJob;
   log("job.final", {
     jobId,
     status: finalJob.status,
@@ -582,8 +725,15 @@ async function main(): Promise<void> {
     evaluator: finalJob.evaluatorAddress,
   });
 
+  // Baris yang dipanen runbook 2.5: satu baris, kunci=nilai, tanpa perhitungan lanjutan.
   log("summary", {
     jobId,
+    status: finalJob.status,
+    budgetRaw: finalJob.budget.rawAmount,
+    escrowToken: finalJob.budget.address,
+    providerAddress: finalJob.providerAddress,
+    evaluatorAddress: finalJob.evaluatorAddress,
+    deliverablePath,
     txCreateJob: createHash,
     txSetBudget: budgetHash,
     txFund: fundHash,
