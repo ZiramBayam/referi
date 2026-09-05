@@ -451,3 +451,31 @@ Konsekuensi:
 (-) Median-passed kini hampir selalu tersaturasi di plafon, sehingga cap praktis berperilaku seperti
     konstanta berjenjang risiko. Itu tidak apa-apa untuk hackathon dan HARUS ditulis apa adanya —
     jangan sajikan sebagai statistik yang seolah belajar.
+
+## ADR-022 Vault v1 dibekukan sebagai kontrak submission; otonomi diturunkan jadi invokasi per-job
+Tanggal: 2026-09-05. Status: diterima. Menggantikan ADR-018 keputusan 1 dan 5 (timebox 6 Sep 18:00).
+
+Konteks: ambang keras "7 Sep 23:59 tx `JobRejected` belum ada → Fase 3 dihentikan". Rantai tersisa
+2.4a-inti → 2.3-min → 2.4-min → 2.5 memproduksi artefak yang TERIKAT ALAMAT VAULT (`JobRejected`,
+`providerCap`, `knownRoots`, `MemoryRootUpdated`). Redeploy sesudah artefak itu lahir memaksa 2.5
+diputar ulang, dan 2.5 adalah satu-satunya task yang menentukan skor. Argumen ADR-018 keputusan 1
+("biaya membatalkan artefak naik monoton terhadap waktu") karena itu MEMBALIK arahnya: produksi
+artefak dimulai hari ini, jadi titik termurah membekukan alamat adalah SEKARANG, bukan 6 Sep 18:00.
+Selain itu 1.2c-deploy BLOCKED pada satu aksi user yang tidak bisa diotomasi, dan 1.2e menyatakan
+sendiri nilainya nol setelah vault beku.
+
+Keputusan:
+1. Vault v1 `0x5c6EE4586ACABcb6326069c229E58091B21ef384` adalah kontrak submission. Redeploy
+   DIBATALKAN; `sweepToken` mendarat sebagai kode + tes saja (1.2c-kode, sudah `[x]`).
+2. 1.2e DICABUT; validasi "job ini milik kita" hanya off-chain di `vault_client` (task 2.4-min).
+3. Watcher (2.2) diturunkan dari jalur kritis; agen dipanggil per job. `client_address` dan cek
+   `getJob(jobId).evaluator == VAULT` PINDAH ke 2.4-min supaya ADR-021 keputusan 2 tidak mati diam-diam.
+4. Review wajib kembali ke CLAUDE.md apa adanya: `contracts/` + `agent/memory_policy.py`.
+
+Konsekuensi:
+(+) Nol kemungkinan 2.5 diputar ulang; alamat vault konsisten di seluruh artefak juri sejak sekarang.
+(+) Dua task blocked (1.2c-deploy, 1.2e) keluar dari jalur menuju tx; tidak ada lagi aksi user yang
+    memblokir skor.
+(-) Kontrak terdeploy TIDAK punya `sweepToken`; 0,05 USDC testnet di v1 hangus permanen (ADR-018 kep. 2).
+(-) `arbiter()` == `agent()` pada v1 apa adanya — README 4.3b/4.3c WAJIB menempel keluaran keduanya.
+(-) Klaim "agen otonom" DILARANG muncul di README/video/post; ganti "agen dipanggil per job".
