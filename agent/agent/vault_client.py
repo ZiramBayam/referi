@@ -116,8 +116,10 @@ from agent.memory_policy import (
     DecisionMemoryView,
     GateDecision,
     LocalMemoryEvidence,
+    MemoryIntegrityError,
     ModeDecision,
     canonical_json,
+    decanonical_value,
     decide_mode,
     empty_memory_root,
     gate_job,
@@ -199,7 +201,15 @@ EXIT_REFUSED_MESSAGE = "AGEN MENOLAK MELANJUTKAN"
 # NAIK ke v2 saat bundel PENOLAKAN GERBANG ditambahkan: bentuknya berubah (ada field
 # `kind`), dan label versi yang tidak ikut berubah membuat dua bentuk berbeda mengaku
 # sebagai satu skema di mata auditor.
-VERDICT_EVIDENCE_VERSION = "evaluator-verdict-evidence/v2"
+#
+# NAIK ke v3 saat field `verdict` (ARAH verdict yang BENAR-BENAR diumumkan) ditambahkan —
+# temuan RENDAH review putaran-3. Sebelumnya satu `reasonHash` cocok untuk DUA arah:
+# bundel `gate-rejection+evaluation` membawa `evaluation.verdict = 1 (complete)` karena
+# deliverablenya memang lolos cek, sementara yang diumumkan on-chain REJECT (gerbang
+# mengalahkan evaluasi). Tidak ada satu pun field yang menyatakan arah FINAL, jadi bukti
+# yang sama bisa "membenarkan" verdict complete maupun reject. Label versi ikut naik karena
+# bentuknya berubah; encoding `memory_root` TIDAK disentuh (vektor beku 2.1r).
+VERDICT_EVIDENCE_VERSION = "evaluator-verdict-evidence/v3"
 
 # DUA bentuk bukti yang sah, dan keduanya WAJIB ada. Alasannya bukan kelengkapan melainkan
 # urutan alur ACP: gating cap terjadi saat job masih `Funded` (spec §5 langkah 2), yaitu
@@ -229,6 +239,20 @@ EVIDENCE_KINDS_REQUIRING_REJECT: frozenset[str] = frozenset(
 # sudah bergerak maju (spec §5 langkah 5 menulis memori SESUDAH `postVerdict`).
 VERDICT_BUNDLE_DIRNAME = "verdicts"
 VERDICT_BUNDLE_DIR_ENV = "VERDICT_BUNDLE_DIR"
+
+# Nama file bundel BER-ALAMAT-ISI: `<jobId>-0x<reasonHash>.json` (temuan TINGGI-A7 review
+# putaran-3). Bentuk lama `<jobId>.json` punya SATU slot per job dan run berikutnya
+# MENIMPAnya, sehingga urutan berikut menghapus preimage `reasonHash` on-chain SELAMANYA:
+# run 1 menyimpan B1 → `postVerdict` mendarat → `record_outcome` memajukan memori →
+# `finalize` gagal (timeout receipt/Ctrl-C); run 2 dimulai selagi node RPC masih tertinggal
+# sehingga `verdicts(jobId)` mengembalikan 0 (lag yang memang ditangani `read_ready_at`) →
+# cabang "verdict baru" menghitung B2 dengan root yang sudah maju dan menulisnya DI ATAS B1
+# SEBELUM `postVerdict` dikirim, jadi `postVerdict` kedua yang REVERT pun tetap
+# menghancurkan B1; run 3, node menyusul, dan B1 tidak bisa dihitung ulang karena memori
+# sudah berpindah. Nama yang memuat hashnya sendiri membuat "menimpa" mustahil secara
+# konstruksi: isi yang berbeda selalu berarti nama file yang berbeda, dan pembacaan tetap
+# TEPAT (bukan menebak) karena `reasonHash` on-chain-lah yang menyusun namanya.
+VERDICT_BUNDLE_SUFFIX = ".json"
 
 # ----------------------------------------------------------------------
 # Konstanta mode aman (task 2.4a)
@@ -825,7 +849,9 @@ ONCHAIN_EVIDENCE_DRIFT_TEMPLATE = (
     "BUKTI ON-CHAIN TIDAK BISA DIREPRODUKSI: jobId={job_id} terikat reasonHash={onchain_hash} "
     "memoryRoot={onchain_root} sementara run ini menghitung reasonHash={fresh_hash} "
     "memoryRoot={fresh_root}, dan tidak ada bundel tersimpan di {store} yang keccak-nya "
-    "sama dengan reasonHash on-chain; menolak finalize bukti yang tidak bisa ditunjukkan; "
+    "sama dengan reasonHash on-chain untuk job dan arah verdict ini; menolak finalize bukti "
+    "yang tidak bisa ditunjukkan. Toko bukti itu tidak terlacak git — pulihkan berkas "
+    "{store}/{job_id}-<reasonHash>.json dari backup yang sama dengan memory.db; "
     "nol postVerdict/finalize/setProviderCap"
 )
 # Jalur SAH untuk perbedaan di atas: memori maju SESUDAH `postVerdict` (spec §5 langkah 5),
@@ -835,6 +861,15 @@ ONCHAIN_BUNDLE_REPRODUCED_TEMPLATE = (
     "bundel bukti on-chain jobId={job_id} DIREPRODUKSI dari {path}: reasonHash={hash} "
     "memoryRoot={root}. Memori sudah maju sejak verdict itu diumumkan (spec §5 langkah 5), "
     "jadi root hari ini ({fresh_root}) berbeda dan BUKAN yang mengikat verdict ini"
+)
+# Nama file bundel diturunkan dari keccak isinya, jadi "file itu sudah ada dengan isi LAIN"
+# berarti dua teks berbeda dengan keccak sama — tabrakan keccak256, atau (jauh lebih
+# mungkin) file yang diedit tangan. Keduanya membuat toko bukti tidak bisa dipercaya, dan
+# menimpanya justru menghapus preimage yang mungkin sudah terikat on-chain.
+BUNDLE_COLLISION_TEMPLATE = (
+    "TOKO BUKTI TIDAK KONSISTEN: {path} sudah ada dengan isi BERBEDA padahal namanya "
+    "diturunkan dari keccak isinya (jobId={job_id}); file itu TIDAK ditimpa. Periksa/pindahkan "
+    "berkas itu sebelum menjalankan ulang; nol postVerdict/finalize/setProviderCap"
 )
 # `setProviderCap(provider, 0)` berarti TANPA BATAS di kontrak (ADR-001), dan ia MENIMPA
 # cap yang sudah ketat tanpa syarat (`EvaluatorVault.sol:287-291`). Peracun cukup MENGHAPUS
@@ -1478,7 +1513,7 @@ def gate_rejection_body(plan: JobPlan) -> dict:
     }
 
 
-def verdict_evidence(plan: JobPlan, memory_root: bytes) -> dict:
+def verdict_evidence(plan: JobPlan, memory_root: bytes, kind: int) -> dict:
     """Bundel bukti satu verdict — bahan `reasonHash`. NOL konstanta di dalamnya.
 
     DUA bentuk, dan keduanya sah karena verdict lahir di DUA titik alur yang berbeda:
@@ -1505,11 +1540,20 @@ def verdict_evidence(plan: JobPlan, memory_root: bytes) -> dict:
 
     Yang TETAP ditolak: job tanpa `Evaluation` yang gerbangnya LOLOS. Di sana memang belum
     ada apa pun untuk dinilai, dan verdict tanpa bukti adalah persis yang dicabut 2.4b.
+
+    `kind` = ARAH verdict yang benar-benar diumumkan, dan ia ikut ter-hash (v3, temuan
+    RENDAH putaran-3). Tanpanya satu `reasonHash` cocok untuk DUA arah: bundel
+    `gate-rejection+evaluation` membawa `evaluation.verdict = complete` (deliverablenya
+    memang lolos cek) sementara yang diumumkan REJECT karena gerbang mengalahkan evaluasi.
+    Field `evaluation.verdict` TETAP berarti "arah yang disiratkan hasil cek", dan
+    `verdict` di puncak berarti "arah yang diumumkan"; keduanya sengaja boleh berbeda,
+    tetapi sekarang perbedaannya TERTULIS di bukti, bukan tersirat.
     """
     dasar = {
         "version": VERDICT_EVIDENCE_VERSION,
         "mode": plan.mode.mode,
         "memory_root": "0x" + bytes(memory_root).hex(),
+        "verdict": int(kind),
     }
     if not plan.gate.accept:
         # Penolakan gerbang mendahului bentuk `evaluation`, dan tidak pernah MENGGANTIKANnya:
@@ -1567,6 +1611,15 @@ def verdict_bundle_dir(client: VaultClient) -> Path:
     return client.db_path.parent / VERDICT_BUNDLE_DIRNAME
 
 
+def verdict_bundle_path(directory: Path, job_id: int, reason_hash: bytes) -> Path:
+    """Path BER-ALAMAT-ISI satu bundel: `<jobId>-0x<reasonHash>.json`.
+
+    `int()`/`hex()` membuat kedua bagian nama tidak bisa membawa pemisah path, jadi nilai
+    dari chain maupun dari baris perintah tidak pernah keluar dari `directory`.
+    """
+    return directory / f"{int(job_id)}-0x{bytes(reason_hash).hex()}{VERDICT_BUNDLE_SUFFIX}"
+
+
 def store_verdict_bundle(directory: Path, job_id: int, bundle: Mapping[str, object]) -> Path:
     """Menyimpan JSON KANONIK bundel — persis byte yang di-keccak jadi `reasonHash`.
 
@@ -1575,35 +1628,97 @@ def store_verdict_bundle(directory: Path, job_id: int, bundle: Mapping[str, obje
     yang membutuhkannya (spec §5 langkah 5 memajukan memori, jadi root hari ini berbeda).
     Menyimpan TEKS-nya, bukan objeknya, supaya perbandingan berikutnya adalah keccak atas
     byte yang sama — bukan hasil serialisasi ulang yang kebetulan mirip.
+
+    SEKALI-TULIS, dan itu bukan kehati-hatian melainkan syarat hidup `reasonHash` (temuan
+    TINGGI-A7): nama file diturunkan dari keccak isinya, jadi bundel yang berbeda TIDAK
+    PERNAH menempati slot yang sama, dan run berikutnya — termasuk run yang dimulai selagi
+    node RPC masih tertinggal dan mengira belum ada verdict — tidak bisa menghapus preimage
+    verdict yang sudah diumumkan. `open("x")` dipakai supaya tabrakan nama menjadi galat
+    yang terlihat, bukan penimpaan diam-diam; isi yang sama persis diperlakukan idempoten.
     """
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{int(job_id)}.json"
-    path.write_text(canonical_json(dict(bundle)), encoding="utf-8")
+    text = canonical_json(dict(bundle))
+    reason_hash = bytes(Web3.keccak(text=text))
+    path = verdict_bundle_path(directory, job_id, reason_hash)
+    try:
+        with path.open("x", encoding="utf-8") as handle:
+            handle.write(text)
+    except FileExistsError:
+        if path.read_text(encoding="utf-8") != text:
+            raise VerdictMismatch(
+                BUNDLE_COLLISION_TEMPLATE.format(path=path, job_id=int(job_id))
+            ) from None
     return path
 
 
-def stored_verdict_bundle(directory: Path, job_id: int) -> tuple[Path, str | None]:
-    """Teks bundel tersimpan untuk satu job. Tidak ada = `None`, bukan galat."""
-    path = directory / f"{int(job_id)}.json"
+def stored_verdict_bundle(directory: Path, job_id: int, reason_hash: bytes) -> tuple[Path, str | None]:
+    """Teks bundel tersimpan untuk `reasonHash` job ini. Tidak ada = `None`, bukan galat.
+
+    Pembacaan TIDAK menebak: `reasonHash` datang dari `verdicts(jobId)` on-chain dan
+    namanya menentukan satu file, jadi tidak ada pemindaian direktori yang bisa
+    "menemukan" bundel milik job atau verdict lain.
+    """
+    path = verdict_bundle_path(directory, job_id, reason_hash)
     try:
         return path, path.read_text(encoding="utf-8")
     except OSError:
         return path, None
 
 
-def bundle_reproduces_onchain(text: str, existing: VerdictState) -> bool:
-    """Bundel tersimpan itu preimage `reasonHash` on-chain DAN membawa root on-chain.
+def bundle_job_ids(body: Mapping[str, object]) -> set[int]:
+    """jobId yang DIKLAIM isi bundel — dari `gate.job` dan/atau `evaluation.job`.
 
-    Dibuktikan dengan keccak, bukan dengan kepercayaan pada file lokal: menyodorkan bundel
-    palsu untuk `reasonHash` asing menuntut preimage keccak256.
+    Kosong berarti bundel tidak menyebut job mana pun; itu ditolak, bukan dimaafkan.
+    Nilai non-integer juga membuat hasilnya kosong: bundel yang jobnya tidak terbaca sama
+    saja dengan bundel yang tidak menyebut job.
+    """
+    ids: set[int] = set()
+    for section in ("gate", "evaluation"):
+        part = body.get(section)
+        if not isinstance(part, Mapping) or "job" not in part:
+            continue
+        nomor = part["job"]
+        if not isinstance(nomor, int) or isinstance(nomor, bool):
+            return set()
+        ids.add(int(nomor))
+    return ids
+
+
+def bundle_reproduces_onchain(text: str, job_id: int, existing: VerdictState) -> bool:
+    """Bundel tersimpan itu preimage `reasonHash` on-chain untuk JOB INI, verdict INI.
+
+    EMPAT syarat, dan semuanya wajib. Tiga yang pertama dibuktikan dengan keccak dan
+    dengan isi bundel, bukan dengan kepercayaan pada file lokal:
+
+      1. keccak(teks) == `reasonHash` on-chain — menyodorkan bundel palsu untuk
+         `reasonHash` asing menuntut preimage keccak256;
+      2. `memory_root` di dalamnya == `memoryRoot` on-chain — bundel yang menjangkarkan
+         verdict pada keadaan memori LAIN bukan bukti verdict ini;
+      3. `job` DI DALAM bundel == jobId yang sedang difinalisasi (temuan SEDANG-A9).
+         Syarat 1 dan 2 saja TIDAK mengikat job: reviewer menaruh bundel SAH milik job 42
+         sebagai bukti job 43 (dengan `verdicts(43).reasonHash = keccak(bundel_42)`) dan
+         job 43 IKUT difinalisasi sambil mencetak "DIREPRODUKSI". Isinya memang sudah
+         job-bound sejak semula (`gate.job`, `evaluation.job`) — yang kurang justru
+         pembacaannya di sini;
+      4. `verdict` di dalamnya == `kind` on-chain — bukti mengikat ARAH verdict, bukan
+         hanya keadaan yang melahirkannya (v3).
     """
     if bytes(Web3.keccak(text=text)) != bytes(existing.reason_hash):
         return False
     try:
-        body = json.loads(text)
-    except ValueError:
+        # `decanonical_value` mengembalikan `{"$u": "43"}` menjadi `43` — bentuk integer
+        # kanonik encoding ini (memory_policy). Membaca `json.loads` apa adanya berarti
+        # membandingkan penanda dengan angka dan tidak pernah cocok.
+        body = decanonical_value(json.loads(text))
+    except (ValueError, MemoryIntegrityError):
         return False
-    return str(body.get("memory_root", "")) == "0x" + bytes(existing.memory_root).hex()
+    if not isinstance(body, dict):
+        return False
+    if body.get("memory_root") != "0x" + bytes(existing.memory_root).hex():
+        return False
+    if bundle_job_ids(body) != {int(job_id)}:
+        return False
+    return body.get("verdict") == int(existing.kind)
 
 
 def plan_job(
@@ -1840,10 +1955,17 @@ def require_onchain_verdict_agrees(
     `reasonHash`/`memoryRoot` punya SATU perbedaan yang sah, dan ia bukan kelonggaran
     melainkan urutan spec §5: memori ditulis SESUDAH `postVerdict` (langkah 5), jadi run
     berikutnya atas job yang sama menghitung root yang lebih baru. Perbedaan itu hanya
-    diterima bila bundel yang diumumkan MASIH BISA DITUNJUKKAN: teks kanonik tersimpan
-    yang keccak-nya PERSIS `reasonHash` on-chain dan yang memuat `memoryRoot` on-chain.
-    Menyodorkan bundel palsu untuk `reasonHash` asing menuntut preimage keccak256, jadi
-    jalur ini tidak bisa dipakai untuk memfinalisasi verdict yang bukan milik kita.
+    diterima bila bundel yang diumumkan MASIH BISA DITUNJUKKAN, dan "ditunjukkan" berarti
+    keempat syarat `bundle_reproduces_onchain`: keccak teks tersimpan == `reasonHash`
+    on-chain, `memory_root` di dalamnya == `memoryRoot` on-chain, `job` di dalamnya ==
+    jobId INI, dan `verdict` di dalamnya == `kind` on-chain.
+
+    Yang ditegakkan karena itu: bundel milik job/verdict LAIN tidak bisa menyelamatkan job
+    ini walaupun seseorang berhasil menaruhnya di toko bukti (temuan SEDANG-A9 — dulu
+    hanya dua syarat pertama yang diperiksa dan bundel SAH milik job 42 memfinalisasi job
+    43). Yang TIDAK ditegakkan, dan sengaja: bundelnya tidak wajib sama dengan hitungan
+    run hari ini — persamaan mutlak akan menggantung setiap retry `finalize` sampai
+    `expiredAt` justru karena langkah 5 memang sudah memajukan memori.
     """
     if int(existing.kind) != int(kind):
         raise VerdictMismatch(
@@ -1859,8 +1981,12 @@ def require_onchain_verdict_agrees(
         memory_root
     ):
         return
-    path, text = stored_verdict_bundle(verdict_bundle_dir(client), job_id)
-    if text is not None and bundle_reproduces_onchain(text, existing):
+    # Dicari LANGSUNG lewat `reasonHash` on-chain: nama file bundel memuat hash itu, jadi
+    # pembacaan ini tidak menebak dan tidak memindai (temuan TINGGI-A7).
+    path, text = stored_verdict_bundle(
+        verdict_bundle_dir(client), job_id, bytes(existing.reason_hash)
+    )
+    if text is not None and bundle_reproduces_onchain(text, job_id, existing):
         log.warning(
             "%s",
             ONCHAIN_BUNDLE_REPRODUCED_TEMPLATE.format(
@@ -1957,7 +2083,9 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
                 db=client.db_path,
             )
         )
-    bundle = verdict_evidence(plan, memory_root)
+    # `kind` ikut ke dalam bundel (v3): `reasonHash` mengikat ARAH verdict, bukan hanya
+    # keadaan yang melahirkannya. Penjaga di bawah tetap yang memutuskan arah mana yang sah.
+    bundle = verdict_evidence(plan, memory_root, kind)
     if evidence_kind(bundle) in EVIDENCE_KINDS_REQUIRING_REJECT and kind != KIND_REJECT:
         raise MemoryRootMismatch(
             GATE_REJECTION_KIND_TEMPLATE.format(job_id=job_id, kind=kind, kind_name=kind_name)
@@ -2028,6 +2156,9 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
         # Bundel disimpan SEBELUM transaksinya dikirim (TASKS 2.5 AC (c)): begitu
         # `postVerdict` mendarat, `reasonHash` on-chain harus selalu punya preimage yang
         # bisa ditunjukkan — termasuk kepada run berikutnya, yang memorinya sudah maju.
+        # Cabang ini juga dimasuki run yang node RPC-nya masih TERTINGGAL (`verdicts(jobId)`
+        # mengembalikan 0 walau verdict sudah ada), jadi ia MENAMBAH bundel, tidak pernah
+        # mengganti: nama file ber-alamat-isi yang membuatnya begitu (temuan TINGGI-A7).
         simpanan = store_verdict_bundle(verdict_bundle_dir(client), job_id, bundle)
         log.info("bundel bukti (preimage reasonHash) disimpan: %s", simpanan)
         post_hash = client.post_verdict(job_id, kind, reason_hash, memory_root)

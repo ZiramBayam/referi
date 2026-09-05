@@ -430,7 +430,7 @@ def build_plan(job_id: int, *, passed: bool = True) -> vc.JobPlan:
 
 def test_the_reason_hash_is_derived_and_binds_the_root(db):
     root = build_client(db).refresh_memory_gate().local.root
-    bundel = vc.verdict_evidence(build_plan(1), root)
+    bundel = vc.verdict_evidence(build_plan(1), root, vc.KIND_COMPLETE)
 
     assert bundel["memory_root"] == "0x" + root.hex()
     assert bundel["version"] == vc.VERDICT_EVIDENCE_VERSION
@@ -438,20 +438,24 @@ def test_the_reason_hash_is_derived_and_binds_the_root(db):
     assert vc.verdict_reason_hash(bundel) == vc.verdict_reason_hash(bundel)
     # …dan BUKAN nilai tetap: job lain, hasil lain, atau root lain → hash lain.
     assert vc.verdict_reason_hash(bundel) != vc.verdict_reason_hash(
-        vc.verdict_evidence(build_plan(2), root)
+        vc.verdict_evidence(build_plan(2), root, vc.KIND_COMPLETE)
     )
     assert vc.verdict_reason_hash(bundel) != vc.verdict_reason_hash(
-        vc.verdict_evidence(build_plan(1, passed=False), root)
+        vc.verdict_evidence(build_plan(1, passed=False), root, vc.KIND_COMPLETE)
     )
     assert vc.verdict_reason_hash(bundel) != vc.verdict_reason_hash(
-        vc.verdict_evidence(build_plan(1), ASING)
+        vc.verdict_evidence(build_plan(1), ASING, vc.KIND_COMPLETE)
+    )
+    # …termasuk ARAH verdict yang diumumkan (v3): satu bundel tidak boleh membenarkan dua arah.
+    assert vc.verdict_reason_hash(bundel) != vc.verdict_reason_hash(
+        vc.verdict_evidence(build_plan(1), root, vc.KIND_REJECT)
     )
 
 
 def test_the_reason_hash_is_keccak_of_the_canonical_bundle(db):
     """Bisa dihitung ulang auditor mana pun dari bundel yang sama — tanpa menebak encoding."""
     root = build_client(db).refresh_memory_gate().local.root
-    bundel = vc.verdict_evidence(build_plan(9), root)
+    bundel = vc.verdict_evidence(build_plan(9), root, vc.KIND_COMPLETE)
     assert vc.verdict_reason_hash(bundel) == bytes(
         Web3.keccak(text=mp.canonical_json(bundel))
     )
@@ -464,7 +468,7 @@ def test_a_verdict_without_evidence_is_refused(db):
         job=plan.job, mode=plan.mode, gate=plan.gate, evaluation=None, deliverable=None
     )
     with pytest.raises(vc.MemoryRootMismatch):
-        vc.verdict_evidence(kosong, mp.empty_memory_root())
+        vc.verdict_evidence(kosong, mp.empty_memory_root(), vc.KIND_REJECT)
 
 
 def test_run_live_refuses_without_a_plan(db):

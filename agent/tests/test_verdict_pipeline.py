@@ -277,7 +277,7 @@ def announced_verdict(plan: vc.JobPlan, kind: int, *, ready_at: int = 1_000) -> 
     """
     root = plan.memory_root
     assert root is not None
-    reason_hash = vc.verdict_reason_hash(vc.verdict_evidence(plan, root))
+    reason_hash = vc.verdict_reason_hash(vc.verdict_evidence(plan, root, kind))
     return (kind, reason_hash, root, ready_at, False, ZERO_ADDRESS)
 
 
@@ -336,9 +336,10 @@ def test_the_gate_rejection_bundle_names_the_cap_and_both_incident_jobs(db):
     assert plan.evaluation is None and plan.gate.accept is False
 
     root = client.refresh_memory_gate().local.root
-    bundel = vc.verdict_evidence(plan, root)
+    bundel = vc.verdict_evidence(plan, root, vc.KIND_REJECT)
 
     assert bundel["kind"] == vc.EVIDENCE_KIND_GATE_REJECTION
+    assert bundel["verdict"] == vc.KIND_REJECT
     assert bundel["gate"]["cap"]["usdc"] == 250_000
     assert bundel["gate"]["cap"]["basis"]
     assert bundel["gate"]["incident_jobs"] == [JOB_A, JOB_B]
@@ -372,7 +373,9 @@ def test_the_reason_hash_that_reaches_postverdict_is_the_hash_of_that_bundle(db,
     root = client.refresh_memory_gate().local.root
     assert terekam["kind"] == vc.KIND_REJECT
     assert terekam["root"] == root
-    assert terekam["reason_hash"] == vc.verdict_reason_hash(vc.verdict_evidence(plan, root))
+    assert terekam["reason_hash"] == vc.verdict_reason_hash(
+        vc.verdict_evidence(plan, root, vc.KIND_REJECT)
+    )
 
 
 def test_a_gate_rejection_bundle_can_never_ride_along_with_a_complete_verdict(db):
@@ -394,7 +397,7 @@ def test_a_funded_job_within_cap_still_has_no_verdict_to_announce(db):
     assert plan.evaluation is None and plan.gate.accept is True
 
     with pytest.raises(vc.MemoryRootMismatch):
-        vc.verdict_evidence(plan, mp.empty_memory_root())
+        vc.verdict_evidence(plan, mp.empty_memory_root(), vc.KIND_REJECT)
     with pytest.raises(vc.MemoryRootMismatch):
         vc.run_live(client, JOB_C, vc.KIND_REJECT, plan=plan)
     assert_nothing_was_sent(client)
@@ -406,7 +409,7 @@ def test_an_evaluation_bundle_is_still_the_evaluation_shape(db, artifacts):
     client = build_client(db=db, job_id=JOB_C, status=2, deliverable=digest)
     plan = vc.plan_job(client, client.job(JOB_C), deliverable_dir=artifacts)
 
-    bundel = vc.verdict_evidence(plan, mp.empty_memory_root())
+    bundel = vc.verdict_evidence(plan, mp.empty_memory_root(), vc.KIND_COMPLETE)
     assert bundel["kind"] == vc.EVIDENCE_KIND_EVALUATION
     assert "gate" not in bundel
     assert bundel["evaluation"]["job"] == JOB_C
@@ -677,9 +680,13 @@ def test_the_bundle_of_a_submitted_over_cap_job_carries_both_parts(db, artifacts
     seed_two_incidents(db)
     client = build_over_cap_submitted_client(db, artifacts)
     plan = vc.plan_job(client, client.job(JOB_C), deliverable_dir=artifacts)
-    bundel = vc.verdict_evidence(plan, plan.memory_root)
+    bundel = vc.verdict_evidence(plan, plan.memory_root, vc.KIND_REJECT)
 
     assert bundel["kind"] == vc.EVIDENCE_KIND_GATE_REJECTION_WITH_EVALUATION
+    # ARAH verdict yang diumumkan ada di bundel (v3), dan ia sengaja BERBEDA dari arah yang
+    # disiratkan evaluasi: deliverablenya lolos cek, tetapi gerbang cap mengalahkannya.
+    assert bundel["verdict"] == vc.KIND_REJECT
+    assert bundel["evaluation"]["verdict"] == vc.KIND_COMPLETE
     # bagian gerbang — sebab verdict ini lahir
     assert bundel["gate"]["cap"]["usdc"] == 250_000
     assert bundel["gate"]["budget"] == 2_000_000
@@ -740,7 +747,8 @@ def test_a_failed_deterministic_check_forces_reject_without_any_flag(db, artifac
     assert terekam["kind"] == vc.KIND_REJECT
     assert "CEK DETERMINISTIK GAGAL" in caplog.text
     # Verdict dan bundel yang di-hash menyatakan hal yang SAMA.
-    bundel = vc.verdict_evidence(plan, plan.memory_root)
+    bundel = vc.verdict_evidence(plan, plan.memory_root, vc.KIND_REJECT)
+    assert bundel["verdict"] == vc.KIND_REJECT
     assert bundel["evaluation"]["verdict"] == vc.KIND_REJECT
     assert terekam["reason_hash"] == vc.verdict_reason_hash(bundel)
 
@@ -899,7 +907,9 @@ def test_a_stored_bundle_that_is_not_the_preimage_rescues_nothing(db):
     plan = vc.plan_job(client, client.job(JOB_C))
     # Bundel yang SAH untuk rencana ini, tetapi bukan preimage `reasonHash` on-chain.
     vc.store_verdict_bundle(
-        vc.verdict_bundle_dir(client), JOB_C, vc.verdict_evidence(plan, plan.memory_root)
+        vc.verdict_bundle_dir(client),
+        JOB_C,
+        vc.verdict_evidence(plan, plan.memory_root, vc.KIND_REJECT),
     )
 
     with pytest.raises(vc.VerdictMismatch):
@@ -912,11 +922,12 @@ def test_a_rerun_finalizes_only_because_the_announced_bundle_can_be_shown(db, ar
     pertama = build_submitted_client(db, artifacts)
     rencana = vc.plan_job(pertama, pertama.job(JOB_B), deliverable_dir=artifacts)
     assert vc.run_live(pertama, JOB_B, vc.KIND_REJECT, plan=rencana) == 0
-    simpanan = vc.verdict_bundle_dir(pertama) / f"{JOB_B}.json"
-    assert simpanan.is_file(), "bundel WAJIB tersimpan saat verdict diumumkan (2.5 AC (c))"
-    assert bytes(Web3.keccak(text=simpanan.read_text(encoding="utf-8"))) == vc.verdict_reason_hash(
-        vc.verdict_evidence(rencana, rencana.memory_root)
+    diumumkan = vc.verdict_reason_hash(
+        vc.verdict_evidence(rencana, rencana.memory_root, vc.KIND_REJECT)
     )
+    simpanan = vc.verdict_bundle_path(vc.verdict_bundle_dir(pertama), JOB_B, diumumkan)
+    assert simpanan.is_file(), "bundel WAJIB tersimpan saat verdict diumumkan (2.5 AC (c))"
+    assert bytes(Web3.keccak(text=simpanan.read_text(encoding="utf-8"))) == diumumkan
 
     terumumkan = announced_verdict(rencana, vc.KIND_REJECT)
     ulang = build_submitted_client(db, artifacts, verdict=terumumkan)
@@ -999,3 +1010,287 @@ def test_a_real_cap_is_still_sent_untouched(db):
     client = build_client(db=db, job_id=JOB_C)
     client.set_provider_cap(PROVIDER, 250_000)
     assert client.w3.eth.built == ["setProviderCap"]
+
+
+# ======================================================================
+# PUTARAN-3 — TINGGI-A7: rerun saat RPC tertinggal TIDAK boleh menimpa preimage
+# ======================================================================
+
+
+def stored_bundles(client: vc.VaultClient) -> list[pathlib.Path]:
+    direktori = vc.verdict_bundle_dir(client)
+    return sorted(direktori.glob("*.json")) if direktori.is_dir() else []
+
+
+def fail_finalize(monkeypatch) -> None:
+    """`finalize` gagal SESUDAH `postVerdict` mendarat — timeout receipt / Ctrl-C / stop."""
+
+    def boom(self, job_id):
+        raise RuntimeError(f"timeout receipt finalize jobId={job_id}")
+
+    monkeypatch.setattr(vc.VaultClient, "finalize", boom)
+
+
+def test_a_rerun_while_the_rpc_node_lags_can_never_overwrite_the_announced_bundle(
+    db, artifacts, monkeypatch, caplog
+):
+    """TINGGI-A7: preimage `reasonHash` yang SUDAH diumumkan tidak bisa dihapus run berikutnya.
+
+    Urutan yang benar-benar terjadi, dan tidak satu langkah pun di dalamnya tidak wajar:
+      run 1  bundel B1 disimpan → `postVerdict` MENDARAT → `record_outcome` memajukan
+             memori → `finalize` gagal (timeout receipt);
+      run 2  dimulai selagi node RPC masih TERTINGGAL, jadi `verdicts(jobId)` mengembalikan
+             0 — lag yang diakui `read_ready_at` sendiri. Cabang "verdict baru" menghitung
+             B2 (root sudah maju) dan, dengan toko bukti satu-slot-per-job, menulisnya DI
+             ATAS B1 SEBELUM transaksi apa pun dikirim; `postVerdict` kedua yang REVERT pun
+             tetap menghancurkan B1;
+      run 3  node menyusul → satu-satunya preimage `reasonHash` on-chain sudah lenyap dan
+             TIDAK bisa dihitung ulang (memori sudah berpindah) → `VerdictMismatch`
+             PERMANEN: pipa buntu selamanya DAN `reasonHash` on-chain kehilangan
+             preimagenya — persis klaim inti proyek.
+    """
+    pertama = build_submitted_client(db, artifacts)
+    rencana1 = vc.plan_job(pertama, pertama.job(JOB_B), deliverable_dir=artifacts)
+    b1_hash = vc.verdict_reason_hash(
+        vc.verdict_evidence(rencana1, rencana1.memory_root, vc.KIND_REJECT)
+    )
+    fail_finalize(monkeypatch)
+    with pytest.raises(RuntimeError):
+        vc.run_live(pertama, JOB_B, vc.KIND_REJECT, plan=rencana1)
+    b1_path = vc.verdict_bundle_path(vc.verdict_bundle_dir(pertama), JOB_B, b1_hash)
+    b1_text = b1_path.read_text(encoding="utf-8")
+    assert pertama.w3.eth.built == ["postVerdict"], "postVerdict MENDARAT, finalize tidak"
+
+    # run 2 — node RPC masih tertinggal: `verdicts(jobId)` kosong walau verdict sudah ada.
+    kedua = build_submitted_client(db, artifacts)
+    assert kedua.verdict(JOB_B).kind == 0, "inilah lag yang dimaksud"
+    rencana2 = vc.plan_job(kedua, kedua.job(JOB_B), deliverable_dir=artifacts)
+    assert rencana2.memory_root != rencana1.memory_root, "memori memang sudah maju (langkah 5)"
+    with pytest.raises(RuntimeError):
+        vc.run_live(kedua, JOB_B, vc.KIND_REJECT, plan=rencana2)
+
+    # B1 masih utuh, byte demi byte, DI SAMPING B2.
+    assert b1_path.read_text(encoding="utf-8") == b1_text
+    assert bytes(Web3.keccak(text=b1_path.read_text(encoding="utf-8"))) == b1_hash
+    assert len(stored_bundles(kedua)) == 2, "dua bundel berbeda, dua file berbeda"
+
+    # run 3 — node menyusul (dan `finalize` kali ini berhasil): verdict on-chain adalah B1,
+    # dan B1 masih bisa DITUNJUKKAN meski memori sudah dua langkah di depan.
+    monkeypatch.undo()
+    ketiga = build_submitted_client(db, artifacts, verdict=announced_verdict(rencana1, vc.KIND_REJECT))
+    rencana3 = vc.plan_job(ketiga, ketiga.job(JOB_B), deliverable_dir=artifacts)
+    with caplog.at_level(logging.INFO, logger="vault_client"):
+        assert vc.run_live(ketiga, JOB_B, vc.KIND_REJECT, plan=rencana3) == 0
+    assert ketiga.w3.eth.built == ["finalize"]
+    assert "DIREPRODUKSI" in caplog.text
+
+
+def test_two_bundles_of_one_job_never_share_a_file(db, artifacts, tmp_path):
+    """Inti perbaikan A7: nama file diturunkan dari keccak isinya, jadi slotnya tidak tunggal."""
+    client = build_submitted_client(db, artifacts)
+    plan = vc.plan_job(client, client.job(JOB_B), deliverable_dir=artifacts)
+    direktori = tmp_path / "toko"
+
+    satu = vc.verdict_evidence(plan, plan.memory_root, vc.KIND_REJECT)
+    dua = vc.verdict_evidence(plan, bytes.fromhex("77" * 32), vc.KIND_REJECT)
+    p1 = vc.store_verdict_bundle(direktori, JOB_B, satu)
+    isi1 = p1.read_text(encoding="utf-8")
+    p2 = vc.store_verdict_bundle(direktori, JOB_B, dua)
+
+    assert p1 != p2
+    assert p1.is_file() and p2.is_file()
+    assert p1.read_text(encoding="utf-8") == isi1, "bundel lama TIDAK boleh berubah"
+    assert p1.name == f"{JOB_B}-0x{vc.verdict_reason_hash(satu).hex()}.json"
+    # Menyimpan bundel yang SAMA dua kali tetap boleh (rerun yang belum mengubah apa pun).
+    assert vc.store_verdict_bundle(direktori, JOB_B, satu) == p1
+
+
+def test_a_hand_edited_bundle_is_never_silently_overwritten(db, artifacts, tmp_path):
+    """Nama = keccak isi, jadi "sudah ada dengan isi lain" berarti toko bukti rusak."""
+    client = build_submitted_client(db, artifacts)
+    plan = vc.plan_job(client, client.job(JOB_B), deliverable_dir=artifacts)
+    bundel = vc.verdict_evidence(plan, plan.memory_root, vc.KIND_REJECT)
+    direktori = tmp_path / "toko"
+    direktori.mkdir()
+    path = vc.verdict_bundle_path(direktori, JOB_B, vc.verdict_reason_hash(bundel))
+    path.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(vc.VerdictMismatch) as exc:
+        vc.store_verdict_bundle(direktori, JOB_B, bundel)
+    assert "TOKO BUKTI TIDAK KONSISTEN" in str(exc.value)
+    assert path.read_text(encoding="utf-8") == "{}"
+
+
+def test_the_reader_looks_up_the_bundle_by_the_onchain_hash_only(db, artifacts):
+    """Bundel SAH yang bernama gaya lama (`<jobId>.json`) tidak "ditemukan" dengan menebak."""
+    seed_two_incidents(db)
+    client = build_client(db=db, job_id=JOB_C, status=1, budget=2_000_000)
+    plan = vc.plan_job(client, client.job(JOB_C))
+    bundel = vc.verdict_evidence(plan, plan.memory_root, vc.KIND_REJECT)
+    reason_hash = vc.verdict_reason_hash(bundel)
+    direktori = vc.verdict_bundle_dir(client)
+    direktori.mkdir(parents=True, exist_ok=True)
+    (direktori / f"{JOB_C}.json").write_text(mp.canonical_json(bundel), encoding="utf-8")
+
+    path, teks = vc.stored_verdict_bundle(direktori, JOB_C, reason_hash)
+    assert teks is None
+    assert path == vc.verdict_bundle_path(direktori, JOB_C, reason_hash)
+
+
+# ======================================================================
+# PUTARAN-3 — SEDANG-A9 + M28/M29: SATU syarat salah = SATU tes MERAH
+# ======================================================================
+
+
+def plant_bundle(client: vc.VaultClient, job_id: int, bundle: dict) -> bytes:
+    """Menaruh bundel di TEMPAT yang dibaca `require_onchain_verdict_agrees` untuk job itu.
+
+    Dikembalikan: keccak-nya, yaitu `reasonHash` yang harus dipalsukan on-chain agar
+    syarat-syarat LAIN lolos dan tes ini menguji SATU syarat saja.
+    """
+    teks = mp.canonical_json(bundle)
+    reason_hash = bytes(Web3.keccak(text=teks))
+    direktori = vc.verdict_bundle_dir(client)
+    direktori.mkdir(parents=True, exist_ok=True)
+    vc.verdict_bundle_path(direktori, job_id, reason_hash).write_text(teks, encoding="utf-8")
+    return reason_hash
+
+
+def gate_rejection_plan(db, job_id: int) -> tuple[vc.VaultClient, vc.JobPlan]:
+    client = build_client(db=db, job_id=job_id, status=1, budget=2_000_000)
+    return client, vc.plan_job(client, client.job(job_id))
+
+
+def test_only_the_keccak_condition_is_wrong_and_that_alone_stops_the_finalize(db):
+    """M28: cek keccak dicabut → tes ini HIJAU (bundel diterima). Karena itu ia harus MERAH.
+
+    Tiga syarat lain sengaja BENAR: `memory_root` di dalam bundel sama dengan yang on-chain,
+    `job` di dalamnya jobId ini, `verdict` di dalamnya arah yang on-chain. Yang salah HANYA
+    keccak-nya, jadi kegagalan tes ini tidak bisa "dipinjam" dari syarat lain.
+    """
+    seed_two_incidents(db)
+    client, plan = gate_rejection_plan(db, JOB_C)
+    bundel = vc.verdict_evidence(plan, plan.memory_root, vc.KIND_REJECT)
+    palsu = bytes.fromhex("de" * 32)
+    assert palsu != vc.verdict_reason_hash(bundel)
+    # Bundel ditaruh DI NAMA `reasonHash` on-chain, jadi pembaca menemukannya; isinya saja
+    # yang bukan preimage-nya.
+    direktori = vc.verdict_bundle_dir(client)
+    direktori.mkdir(parents=True, exist_ok=True)
+    teks = mp.canonical_json(bundel)
+    vc.verdict_bundle_path(direktori, JOB_C, palsu).write_text(teks, encoding="utf-8")
+    onchain = vc.VerdictState(vc.KIND_REJECT, palsu, plan.memory_root, 1_000, False, ZERO_ADDRESS)
+    client.w3.eth.returns["verdicts"] = (
+        vc.KIND_REJECT, palsu, plan.memory_root, 1_000, False, ZERO_ADDRESS
+    )
+
+    assert vc.bundle_reproduces_onchain(teks, JOB_C, onchain) is False
+    with pytest.raises(vc.VerdictMismatch) as exc:
+        vc.run_live(client, JOB_C, vc.KIND_REJECT, plan=plan)
+    assert "BUKTI ON-CHAIN TIDAK BISA DIREPRODUKSI" in str(exc.value)
+    assert_nothing_was_sent(client)
+
+
+def test_only_the_memory_root_condition_is_wrong_and_that_alone_stops_the_finalize(db):
+    """M29: cek `memory_root` dicabut → tes ini HIJAU. Karena itu ia harus MERAH.
+
+    Bundelnya BENAR-BENAR preimage `reasonHash` on-chain (syarat keccak lolos), jobnya
+    benar, arah verdictnya benar. Yang salah HANYA jangkar memorinya: ia menjangkarkan
+    verdict pada keadaan memori LAIN, jadi auditor yang merekonstruksi memori pada root
+    yang diumumkan mendapat cap/insiden yang berbeda dari yang tertulis di bundel.
+    """
+    seed_two_incidents(db)
+    client, plan = gate_rejection_plan(db, JOB_C)
+    root_asing = bytes.fromhex("77" * 32)
+    assert root_asing != plan.memory_root
+    bundel = vc.verdict_evidence(plan, root_asing, vc.KIND_REJECT)
+    reason_hash = plant_bundle(client, JOB_C, bundel)
+    onchain = vc.VerdictState(
+        vc.KIND_REJECT, reason_hash, plan.memory_root, 1_000, False, ZERO_ADDRESS
+    )
+    client.w3.eth.returns["verdicts"] = (
+        vc.KIND_REJECT, reason_hash, plan.memory_root, 1_000, False, ZERO_ADDRESS
+    )
+
+    assert vc.bundle_reproduces_onchain(mp.canonical_json(bundel), JOB_C, onchain) is False
+    with pytest.raises(vc.VerdictMismatch):
+        vc.run_live(client, JOB_C, vc.KIND_REJECT, plan=plan)
+    assert_nothing_was_sent(client)
+
+
+def test_only_the_job_condition_is_wrong_and_that_alone_stops_the_finalize(db):
+    """A9: bundel SAH milik job B dipakai sebagai bukti job C — dan job C IKUT difinalisasi.
+
+    Reviewer menjalankannya: `verdicts(43).reasonHash = keccak(bundel_42)` + bundel itu di
+    toko bukti → `run_live(43, REJECT)` MEMFINALISASI job 43 sambil mencetak
+    `ONCHAIN_BUNDLE_REPRODUCED`, exit 0. Ketiga syarat lain di sini BENAR (keccak cocok,
+    root cocok, arah cocok); yang salah HANYA jobId di dalam bundel.
+    """
+    seed_two_incidents(db)
+    lain, rencana_lain = gate_rejection_plan(db, JOB_B)
+    bundel_b = vc.verdict_evidence(rencana_lain, rencana_lain.memory_root, vc.KIND_REJECT)
+    assert bundel_b["gate"]["job"] == JOB_B
+
+    client, plan = gate_rejection_plan(db, JOB_C)
+    assert plan.memory_root == rencana_lain.memory_root, "memori yang sama, dua job berbeda"
+    reason_hash = plant_bundle(client, JOB_C, bundel_b)
+    onchain = vc.VerdictState(
+        vc.KIND_REJECT, reason_hash, plan.memory_root, 1_000, False, ZERO_ADDRESS
+    )
+    client.w3.eth.returns["verdicts"] = (
+        vc.KIND_REJECT, reason_hash, plan.memory_root, 1_000, False, ZERO_ADDRESS
+    )
+
+    assert vc.bundle_reproduces_onchain(mp.canonical_json(bundel_b), JOB_B, onchain) is True
+    assert vc.bundle_reproduces_onchain(mp.canonical_json(bundel_b), JOB_C, onchain) is False
+    with pytest.raises(vc.VerdictMismatch):
+        vc.run_live(client, JOB_C, vc.KIND_REJECT, plan=plan)
+    assert_nothing_was_sent(client)
+    assert lain.w3.eth.built == []
+
+
+def test_only_the_verdict_direction_is_wrong_and_that_alone_stops_the_finalize(db):
+    """v3: satu `reasonHash` tidak boleh membenarkan DUA arah verdict.
+
+    Bundelnya preimage yang sah, jobnya benar, rootnya benar — tetapi ia mengumumkan
+    `complete` sementara yang terikat on-chain REJECT.
+    """
+    seed_two_incidents(db)
+    client, plan = gate_rejection_plan(db, JOB_C)
+    bundel = vc.verdict_evidence(plan, plan.memory_root, vc.KIND_COMPLETE)
+    assert bundel["verdict"] == vc.KIND_COMPLETE
+    reason_hash = plant_bundle(client, JOB_C, bundel)
+    onchain = vc.VerdictState(
+        vc.KIND_REJECT, reason_hash, plan.memory_root, 1_000, False, ZERO_ADDRESS
+    )
+    client.w3.eth.returns["verdicts"] = (
+        vc.KIND_REJECT, reason_hash, plan.memory_root, 1_000, False, ZERO_ADDRESS
+    )
+
+    assert vc.bundle_reproduces_onchain(mp.canonical_json(bundel), JOB_C, onchain) is False
+    with pytest.raises(vc.VerdictMismatch):
+        vc.run_live(client, JOB_C, vc.KIND_REJECT, plan=plan)
+    assert_nothing_was_sent(client)
+
+
+def test_the_genuine_bundle_still_satisfies_all_four_conditions(db):
+    """Kontrol: keempat syarat BERSAMA tetap menerima bundel yang sungguhan.
+
+    Tanpa tes ini "selalu False" akan lolos sebagai perbaikan, dan setiap retry `finalize`
+    menggantung sampai `expiredAt`.
+    """
+    seed_two_incidents(db)
+    client, plan = gate_rejection_plan(db, JOB_C)
+    bundel = vc.verdict_evidence(plan, plan.memory_root, vc.KIND_REJECT)
+    teks = mp.canonical_json(bundel)
+    onchain = vc.VerdictState(
+        vc.KIND_REJECT,
+        vc.verdict_reason_hash(bundel),
+        plan.memory_root,
+        1_000,
+        False,
+        ZERO_ADDRESS,
+    )
+    assert vc.bundle_reproduces_onchain(teks, JOB_C, onchain) is True
+    # Bundel yang isinya diedit satu byte pun bukan preimage lagi.
+    assert vc.bundle_reproduces_onchain(teks + " ", JOB_C, onchain) is False
