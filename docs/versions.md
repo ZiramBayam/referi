@@ -54,7 +54,7 @@ ditemukan; hanya `uv` yang selamat (lewat `~/.profile`). Diverifikasi 2026-09-02
 | Paket | Versi | Catatan |
 |---|---|---|
 | sibyl-memory-client | **0.7.0** | python ≥3.10; verifikasi signature metode dengan `inspect.signature` sebelum dipakai |
-| web3 | 7.16.0 | python ≥3.8,<4 |
+| web3 | 7.16.0 | python ≥3.8,<4. Terpasang di `agent/.venv` dan DICOCOKKAN 2026-09-05: `agent/.venv/bin/python -c "import importlib.metadata as m; print(m.version('web3'))"` → `7.16.0` (Python 3.13.15, eth-abi 6.0.0). Signature yang boleh dipakai: `docs/api-facts.md` §F |
 | anthropic | **1.0.0** | major baru (0.x→1.x) — baca changelog sebelum pakai; model default `claude-sonnet-5` |
 | pydantic | 2.13.4 | skema kriteria/verdict |
 | httpx | 0.28.1 | ambil deliverable off-chain |
@@ -79,7 +79,7 @@ Baris alamat & token diverifikasi ULANG 2026-09-04 langsung ke chain. **`symbol(
 | ACP Base mainnet | 0x238E541BfefD82238730D00a2208E5497F1832E0 |
 | Fee ACP Base Sepolia | `platformFeeBP()` = 100 (1%), `evaluatorFeeBP()` = 500 (5%), `platformTreasury()` = 0xb3bdEdda2050a3615B73bB9a2684946eC38B5375 |
 | Tenggang evaluator ACP | `EVALUATOR_GRACE_PERIOD()` = **900** detik (15 menit) — dibaca 2026-09-03 via `cast call <ACP> "EVALUATOR_GRACE_PERIOD()(uint256)"`. Setelah `expiredAt + 900`, SIAPA PUN boleh `claimRefund` job berstatus Submitted dan membatalkan verdict evaluator. Konstanta ini membatasi anggaran waktu vault; lihat `docs/api-facts.md` §A |
-| Batas RPC publik | `eth_getLogs` maksimum rentang 10.000 blok (error `-32614`) |
+| Batas RPC publik | `eth_getLogs`: yang dibatasi adalah SELISIH `toBlock - fromBlock`. Selisih **<= 10.000 DITERIMA** (10.001 blok inklusif), selisih **>= 10.001 → HTTP 413** + body `{"code":-32614,"message":"eth_getLogs is limited to a 10,000 range"}`. Bisection 2026-09-05 (D = 9998/9999/10000 → 200; D = 10001/19999/49999/50000/99999 → 413) di `https://sepolia.base.org`. Lewat web3.py galat ini muncul sebagai `requests.exceptions.HTTPError: 413 …`, BUKAN error JSON-RPC — rincian `docs/api-facts.md` §E |
 
 ## Model Claude (API) — platform.claude.com/docs/en/about-claude/models/overview
 `claude-sonnet-5` (default rubric LLM; 1M ctx), `claude-opus-5`, `claude-fable-5`, `claude-haiku-4-5`. ID tanpa akhiran tanggal.

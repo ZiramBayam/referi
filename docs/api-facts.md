@@ -663,6 +663,18 @@ Base Sepolia chainId 84532, RPC publik `https://sepolia.base.org`. Explorer: htt
 RPC publik itu membatasi `eth_getLogs` ke rentang **10.000 blok** (`{"code":-32614,"message":"eth_getLogs is limited to a
 10,000 range"}`, diuji 2026-09-03) → watcher (2.2) dan setiap `cast logs` WAJIB memecah rentang; pemindaian 100k blok
 sekaligus akan gagal HTTP 413, bukan mengembalikan hasil kosong.
+**BATAS PERSIS — diukur ulang 2026-09-05 dengan bisection, bukan diperkirakan.** Yang dibatasi adalah SELISIH
+`toBlock - fromBlock`, bukan jumlah blok: selisih **<= 10.000 DITERIMA** (yaitu 10.001 blok inklusif), selisih
+**>= 10.001 DITOLAK**. Perintah (JSON-RPC polos, `User-Agent: curl/8.5.0` — lihat catatan 403 di §E.1):
+`POST https://sepolia.base.org` `{"method":"eth_getLogs","params":[{"address":"0x0b93…4d461e","topics":["0x80c17db7…538e"],
+"fromBlock":"<latest-D>","toBlock":"<latest>"}]}`, latest = 46426579. Hasil apa adanya:
+`D=9998/9999/10000` → HTTP 200; `D=10001/19999/49999/50000/99999` → **HTTP 413 + body `{"code":-32614,"message":"eth_getLogs
+is limited to a 10,000 range"}`**. Jadi "50.000 blok gagal" benar, tapi bukan angka batasnya; batasnya 10.000.
+**Lewat web3.py errornya BUKAN error JSON-RPC.** `HTTPProvider` memanggil `raise_for_status()` lebih dulu, jadi kode
+`-32614` tidak pernah sampai ke pemanggil; yang dilempar adalah
+`requests.exceptions.HTTPError: 413 Client Error: Payload Too Large for url: https://sepolia.base.org/`
+(diuji 2026-09-05: `contract.events.JobSubmitted().get_logs(..., from_block=hi-10000, to_block=hi)` → sukses;
+`hi-10001` → HTTPError di atas). Penanganan galat yang menunggu `ValueError`/`Web3RPCError` akan MELEWATKANNYA.
 Token: **escrow ACP Base Sepolia memakai `0xECc22a8F6fD62388498fBa19813E214605a2BDb3`, BUKAN USDC Circle
 `0x036CbD53842c5426634e7929541eC2318f3dCF7e`** (keduanya `symbol() == "USDC"`, 6 desimal — mudah tertukar). Lihat §A.
 USDC Circle tetap dicatat di `docs/versions.md` untuk rujukan, tetapi TIDAK dipakai jalur escrow kita.
@@ -701,3 +713,52 @@ Perlakukan sebagai fakta OPERASIONAL, bukan fakta protokol.
   gagal satu kali bukan alasan mengirim, dan bukan alasan menyerah.
 Catatan alat: `urllib`/`requests` polos ke endpoint ini bisa dijawab **HTTP 403** sementara `cast` di detik yang sama
 lolos (diamati 2026-09-04) → jangan menafsirkan 403 sebagai "node down" atau sebagai bukti rate limit kita sendiri.
+
+## F. web3.py 7.16.0 — HANYA yang dipakai `agent/`. Sumber: `inspect.signature` pada paket TERPASANG di
+## `agent/.venv` (BUKAN venv sekali-pakai, BUKAN ingatan) + satu panggilan NYATA ke Base Sepolia.
+## Diverifikasi 2026-09-05: `agent/.venv/bin/python -c "import web3; print(web3.__version__)"` → `7.16.0`,
+## Python 3.13.15, `eth-abi` 6.0.0. Cocok dengan pin `docs/versions.md`.
+```python
+# web3/contract/contract.py — salinan inspect.signature apa adanya (`self` dibuang, tipe diringkas):
+ContractEvent.get_logs(argument_filters: dict|None = None,
+                       from_block: BlockIdentifier|None = None,
+                       to_block: BlockIdentifier|None = None,
+                       block_hash: HexBytes|None = None) -> Iterable[web3.types.EventData]
+# semuanya POSITIONAL-OR-KEYWORD (tidak ada `*`), snake_case. Bandingkan `create_filter` yang
+# keyword-only dan berdefault `to_block='latest'` — `get_logs` TIDAK punya default itu.
+Eth.block_number   # PROPERTY, bukan method: inspect.getattr_static(Eth,"block_number") -> <class 'property'>.
+                   # `w3.eth.block_number()` = TypeError. Nilai bertipe int.
+```
+`argument_filters` atas argumen **indexed** menjadi TOPIC (bukan pemindaian sisi-klien). Dibuktikan lewat
+`web3._utils.filters.construct_event_filter_params(...)` dengan fragmen ABI `JobSubmitted` kita dan `{"jobId": 403}` →
+`topics = ['0x80c17db7…538e', '0x…0193']`, `data_filters = [[]]`. Untuk argumen **non-indexed** (`deliverable`)
+tidak ada topic yang terbentuk — filternya jatuh ke `data_filters` dan disaring di sisi klien setelah semua log ditarik.
+Jadi memfilter `deliverable` TIDAK menghemat apa pun di RPC; filter yang sah untuk mempersempit rentang hanya `jobId`
+dan `provider`.
+
+Bentuk `EventData` yang dikembalikan (kunci PERSIS, `sorted(web3.types.EventData.__annotations__)`):
+`['address','args','blockHash','blockNumber','event','logIndex','transactionHash','transactionIndex']`.
+**Tidak ada kunci `topics`** — jangan membacanya dari hasil `get_logs`. `blockNumber` bertipe `int`.
+
+Bukti END-TO-END terhadap chain (2026-09-05, `agent/.venv/bin/python`, `Web3(HTTPProvider("https://sepolia.base.org"))`,
+fragmen ABI tulisan tangan `ACP_ABI` di `agent/agent/vault_client.py` apa adanya):
+```
+c.events.JobSubmitted().get_logs(argument_filters={"jobId": 403}, from_block=46170000, to_block=46179999)
+→ 1 log, blockNumber 46173983 (int),
+  args = {'jobId': 403, 'provider': '0x40552F2daC6bE37c831536B703743a3f701Da8E5',
+          'deliverable': b'\x0ba\x1fv…\xe2\x05'}   # bytes32 → Python `bytes`, len 32, BUKAN HexBytes/str
+c.functions.jobs(403).call()
+→ 8 nilai: ['0x6F75…440e', 3, '0x4055…a8E5', 1788118042, '0x6F75…440e', '0x00…00', 0, '{"product":"TRACE",…}']
+```
+Dua konsekuensi yang MENGIKAT (menutup pertanyaan task 2.4-min):
+1. **Struct `Job` TIDAK punya field `deliverable`.** Dikonfirmasi di DUA sumber: ABI paket
+   `node_modules/.pnpm/@virtuals-protocol+acp-node-v2@0.1.12/…/dist/core/acpAbi.js` — satu-satunya entri ABI yang
+   menyebut `deliverable` adalah `event JobSubmitted` dan `function submit`, TIDAK ada di `getJob`/`jobs`; dan panggilan
+   live `jobs(403)` di atas yang mengembalikan tepat 8 nilai sesuai §A. Karena itu **log `JobSubmitted` adalah
+   SATU-SATUNYA sumber hash deliverable on-chain** — tidak ada getter yang bisa menggantikannya.
+2. Fragmen ABI `JobSubmitted` tulisan tangan di `vault_client.py` COCOK FIELD-PER-FIELD dengan ABI acp-node-v2:
+   `jobId uint256 indexed=true`, `provider address indexed=true`, `deliverable bytes32 indexed=false`, `anonymous=false`.
+   topic0 yang dihasilkannya = `Web3.keccak(text="JobSubmitted(uint256,address,bytes32)")` =
+   `0x80c17db79857f338a6a6df68a6883ecc0ce78e2202fe61ed979733573f40538e` — identik dengan nilai §A.
+   Perintah pembanding: `node -e "const {ACP_ABI}=require('<…>/dist/core/acpAbi.js'); console.log(JSON.stringify(
+   ACP_ABI.filter(x=>x.name==='JobSubmitted')))"`.

@@ -230,9 +230,12 @@ TX_RECEIPT_TIMEOUT_SECONDS = 180
 # yang bisa dinilai — bukan kegagalan, hanya belum waktunya (spec §5 langkah 2 vs 3).
 STATUS_SUBMITTED = 2
 
-# Jendela `eth_getLogs`. RPC publik Base Sepolia menolak rentang lebar dengan
-# `413 Payload Too Large` — diukur 5 Sep 2026: 9.999 blok OK, 50.000 blok GAGAL. Karena itu
-# pencarian dilakukan MUNDUR per jendela, bukan sekali jalan.
+# Jendela `eth_getLogs`. RPC publik Base Sepolia membatasi SELISIH `toBlock - fromBlock`:
+# <= 10.000 diterima, >= 10.001 ditolak `413 Payload Too Large` + `-32614` (bisection
+# 5 Sep 2026, docs/api-facts.md §E). Karena itu pencarian dilakukan MUNDUR per jendela,
+# bukan sekali jalan. 9.999 dipakai sebagai margin sengaja di bawah ambang 10.000.
+# Lewat web3.py galat itu muncul sebagai `requests.exceptions.HTTPError`, BUKAN
+# `ValueError`/`Web3RPCError`: `HTTPProvider` memanggil `raise_for_status()` lebih dulu.
 LOG_WINDOW_BLOCKS = 9_999
 # Sejauh apa mundurnya. 100.000 blok Base Sepolia (~2 detik/blok) ≈ 2,3 hari; cukup untuk
 # job demo yang di-`submit` beberapa menit sebelumnya, dan tetap terbatas supaya jalur ini
@@ -941,8 +944,9 @@ class VaultClient:
         keputusan 3 mencabut watcher dari jalur kritis): satu pencarian mundur, sekali,
         atas jobId yang SUDAH kita ketahui. Tidak ada `last_block`, tidak ada loop menunggu.
 
-        Mundur per jendela karena RPC publik menolak rentang lebar (`413 Payload Too Large`
-        pada 50.000 blok, terukur 5 Sep 2026). Log TERBARU yang menang bila provider pernah
+        Mundur per jendela karena RPC publik membatasi selisih `toBlock - fromBlock` ke
+        10.000 (>= 10.001 → `413 Payload Too Large`, docs/api-facts.md §E). Log TERBARU
+        yang menang bila provider pernah
         `submit` lebih dari sekali — pencarian memang berjalan dari blok terbaru ke belakang.
         """
         latest = int(self.w3.eth.block_number)

@@ -348,7 +348,7 @@ def test_a_missing_jobsubmitted_log_is_a_refusal_not_a_pass(db, artifacts):
 
 
 def test_deliverable_lookup_walks_backwards_in_windows_the_public_rpc_accepts(db):
-    """RPC publik menolak rentang lebar (413 pada 50.000 blok) → jendela <= 9.999 blok."""
+    """RPC publik membatasi selisih blok ke 10.000 (>= 10.001 → 413) → jendela 9.999."""
     client = build_client(db=db, status=2, deliverable=None)
     assert client.job_deliverable(JOB_ID, lookback_blocks=30_000) is None
     lebar = [int(hi) - int(lo) for _, _, lo, hi in client.w3.eth.log_queries]
