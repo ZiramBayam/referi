@@ -113,18 +113,25 @@ from agent.memory_policy import (
     MODE_NAIVE,
     MODE_SAFE,
     ZERO_ROOT,
+    CapPlan,
     DecisionMemoryView,
     GateDecision,
     LocalMemoryEvidence,
     MemoryIntegrityError,
     ModeDecision,
+    ProviderProfile,
     canonical_json,
+    cap_to_onchain,
     decanonical_value,
     decide_mode,
+    derive_cap,
     empty_memory_root,
     gate_job,
     local_memory_evidence,
+    promote_suspicions,
     record_job_outcome,
+    record_suspicion,
+    store_provider_cap,
 )
 
 log = logging.getLogger("vault_client")
@@ -399,6 +406,16 @@ VAULT_ABI = [
         "stateMutability": "view",
         "inputs": [],
         "outputs": [{"name": "", "type": "bytes32"}],
+    },
+    # docs/api-facts.md §G.4: `providerCap(address)(uint256)` (selector 0x99893d92) ADA di
+    # bytecode vault yang TERDEPLOY. Dibaca sebelum menulis supaya cap yang sudah sama tidak
+    # dikirim ulang — dan supaya log agen menyebut nilai on-chain, bukan hanya niatnya.
+    {
+        "type": "function",
+        "name": "providerCap",
+        "stateMutability": "view",
+        "inputs": [{"name": "", "type": "address"}],
+        "outputs": [{"name": "", "type": "uint256"}],
     },
     {
         "type": "function",
@@ -1301,6 +1318,14 @@ class VaultClient:
         )
         return None
 
+    def provider_cap(self, provider: str) -> int:
+        """`providerCap(provider)` di vault (read-only, api-facts §G.4).
+
+        Nilai 0 di sini berarti TANPA BATAS (ADR-001), bukan "diblokir" — jangan pernah
+        dibaca sebagai cap terkecil.
+        """
+        return int(self.vault.functions.providerCap(Web3.to_checksum_address(provider)).call())
+
     def verdict(self, job_id: int) -> VerdictState:
         kind, reason_hash, memory_root, ready_at, finalized, challenger = self.vault.functions.verdicts(
             job_id
@@ -1790,24 +1815,62 @@ def plan_job(
     )
 
 
-def record_outcome(client: VaultClient, plan: JobPlan) -> None:
+def record_outcome(client: VaultClient, plan: JobPlan) -> ProviderProfile | None:
     """Menulis hasil job ke memori (spec §5 langkah 5) — SESUDAH `postVerdict`, SEBELUM
-    `finalize`.
+    `finalize`. Mengembalikan profil provider SESUDAH tulisan itu, atau `None` bila tidak
+    ada yang bisa ditulis (job belum `Submitted`, jadi belum ada hasil cek).
+
+    TIGA tulisan, bukan satu, dan urutannya persis bunyi spec §5 langkah 5 — *"pola gagal
+    deterministik → `suspicion` (atau promosi); update `provider`"*:
+
+      1. `record_suspicion` untuk SETIAP pola gagal deterministik job ini (`Evaluation
+         .incidents()`). Karantina hanya menyimpan bukti; ia TIDAK PERNAH dibaca jalur
+         keputusan (spec §3 aturan 1, ADR-002).
+      2. `promote_suspicions`, yang mempromosikan HANYA karantina yang sudah punya bukti
+         dari >= 2 job BERBEDA dan seluruhnya dari cek deterministik (spec §3 aturan 2)
+         → `reference:pattern:{id}` + `provider.confirmed_patterns`.
+      3. `record_job_outcome`, yang memperbarui statistik + `incident_jobs` + `risk_level`.
+
+    Tanpa (1) dan (2), `reference:pattern` dan `confirmed_patterns` tidak pernah lahir dari
+    pipa: `risk` tetap naik dari `incident_jobs`, tetapi pola yang dipelajari — bagian yang
+    membuat memori ini bisa dibaca manusia dan diaudit — tidak ada di mana pun.
 
     `client_address` datang dari `getJob`, bukan dari log: `client` TIDAK indexed di
     `JobFunded` (api-facts §A). Tanpa argumen itu ADR-021 keputusan 2 mati diam-diam dan
     provider bisa mendanai jobnya sendiri untuk mengangkat capnya sendiri.
 
     Yang ditulis HANYA hasil cek deterministik agen (`failed_checks` selalu subset
-    `DETERMINISTIC_CHECK_IDS`) — tidak ada jalur dari teks pihak ke memori (spec §3 aturan 3).
+    `DETERMINISTIC_CHECK_IDS`, `Incident.evidence.check_id` divalidasi ulang di
+    `record_suspicion`) — tidak ada jalur dari teks pihak ke memori (spec §3 aturan 3).
+    Seluruhnya idempoten per `job_id`: bukti berulang dari job yang sama tidak menggerakkan
+    ambang promosi (dedup `(job_id, check_id)`), dan karantina yang sudah `promoted` tidak
+    pernah dipromosikan dua kali.
     """
     if plan.evaluation is None or client.db_path is None:
-        return
+        return None
+    provider = plan.job.provider
     memori = MemoryClient.local(str(client.db_path))
     try:
+        for incident in plan.evaluation.incidents():
+            body = record_suspicion(memori, provider, incident.pattern_id, incident.evidence)
+            log.info(
+                "karantina ditulis: provider=%s pola=%s count=%d (bukti dari cek %s)",
+                provider,
+                incident.pattern_id,
+                int(body["count"]),
+                incident.evidence.check_id,
+            )
+        promoted = promote_suspicions(memori, provider)
+        if promoted:
+            log.info(
+                "POLA DIPROMOSIKAN (>= 2 job berbeda, semua bukti deterministik): "
+                "provider=%s pola=%s → reference:pattern + confirmed_patterns",
+                provider,
+                promoted,
+            )
         profile = record_job_outcome(
             memori,
-            plan.job.provider,
+            provider,
             plan.job.job_id,
             int(plan.job.budget),
             plan.evaluation.passed,
@@ -1817,14 +1880,98 @@ def record_outcome(client: VaultClient, plan: JobPlan) -> None:
     finally:
         close_memory_client(memori)
     log.info(
-        "memori diperbarui: provider=%s jobs=%d pass=%d reject=%d risk=%d insiden=%s",
+        "memori diperbarui: provider=%s jobs=%d pass=%d reject=%d risk=%d insiden=%s pola=%s",
         profile.address,
         profile.stats_jobs,
         profile.stats_pass,
         profile.stats_reject,
         profile.risk_level,
         list(profile.incident_jobs),
+        list(profile.confirmed_patterns),
     )
+    return profile
+
+
+def sync_provider_cap(
+    client: VaultClient, mode: ModeDecision, profile: ProviderProfile | None
+) -> str | None:
+    """spec §7 langkah 2 / §3 aturan 4 — cap turunan memori DIKIRIM ke vault.
+
+    Dipanggil SESUDAH `record_outcome` supaya capnya lahir dari memori yang sudah memuat
+    job ini (promosi job B mengangkat `risk` ke 2 di tulisan yang sama), dan SEBELUM
+    `finalize` supaya urutan on-chain-nya bisa dibaca sebagai satu rangkaian.
+
+    Tiga keadaan yang TIDAK mengirim apa pun, semuanya disengaja:
+      - tidak ada profil (job belum `Submitted` → tidak ada outcome baru);
+      - `cap_usdc is None` (risk 0 = TANPA cap). `cap_to_onchain` menerjemahkannya menjadi
+        0, dan 0 di kontrak berarti TANPA BATAS (ADR-001) — mengirimnya justru akan
+        MENIMPA cap yang sudah ada. `set_provider_cap` menolaknya lagi di batas kirim;
+        di sini ia bahkan tidak dibangun;
+      - nilai on-chain sudah sama dengan cap hari ini (rerun/idempotensi) — gas dan nonce
+        tidak dibakar untuk menulis nilai yang sama.
+
+    Cap yang benar-benar mendarat DISIMPAN ke profil (`store_provider_cap`) supaya
+    `derive_cap` berikutnya punya `previous` untuk aturan monoton-tidak-naik. Penyimpanan
+    dilakukan SESUDAH receipt berstatus 1: memori tidak boleh mengklaim cap yang tidak
+    pernah ada di chain.
+    """
+    if profile is None:
+        return None
+    cap: CapPlan = derive_cap(profile, mode)
+    if cap.cap_usdc is None:
+        log.info(
+            "cap provider=%s: TANPA CAP (risk=%d, basis=%s) — nol setProviderCap, karena "
+            "nilai 0 di kontrak berarti TANPA BATAS (ADR-001)",
+            profile.address,
+            profile.risk_level,
+            cap.basis,
+        )
+        return None
+    # Nilai <= 0 ditolak SEBELUM apa pun dibandingkan. Kalau tidak, cap 0 yang lahir dari
+    # perhitungan yang rusak akan "cocok" dengan `providerCap` yang masih 0 dan dilewati
+    # DIAM-DIAM sebagai "sudah sinkron" — yaitu TANPA BATAS (ADR-001) yang tidak pernah
+    # diucapkan. `set_provider_cap` menolaknya lagi di batas kirim; ini lapis pertamanya.
+    if int(cap.cap_usdc) <= 0:
+        raise UnlimitedCapRefused(
+            UNLIMITED_CAP_TEMPLATE.format(
+                provider=profile.address, cap=int(cap.cap_usdc), db=client.db_path
+            )
+        )
+    onchain = client.provider_cap(profile.address)
+    if onchain == int(cap.cap_usdc):
+        log.info(
+            "cap provider=%s sudah %d di vault — tidak dikirim ulang",
+            profile.address,
+            onchain,
+        )
+        return None
+    log.info(
+        "cap provider=%s: %d → %d (risk=%d, basis=%s, milestone=%s, sampel=%d)",
+        profile.address,
+        onchain,
+        int(cap.cap_usdc),
+        profile.risk_level,
+        cap.basis,
+        cap.require_milestone,
+        cap.sample_size,
+    )
+    tx_hash = client.set_provider_cap(profile.address, cap_to_onchain(cap))
+    receipt = client.wait_receipt(tx_hash)
+    log.info(
+        "TX setProviderCap = 0x%s (status=%d, blok=%d)",
+        tx_hash,
+        receipt.status,
+        receipt.blockNumber,
+    )
+    if receipt.status != 1:
+        raise RuntimeError(f"setProviderCap gagal on-chain: 0x{tx_hash}")
+    if client.db_path is not None:
+        memori = MemoryClient.local(str(client.db_path))
+        try:
+            store_provider_cap(memori, profile.address, cap)
+        finally:
+            close_memory_client(memori)
+    return tx_hash
 
 
 def required_verdict_kind(plan: JobPlan) -> int | None:
@@ -2151,7 +2298,7 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
         # `cap_to_onchain` = 0 = TANPA BATAS (ADR-001): job C tidak pernah ditolak.
         # `record_job_outcome` idempoten per `job_id` (dedup di sisi memori), jadi memanggil
         # di KEDUA cabang aman dan tidak pernah menghitung satu job dua kali.
-        record_outcome(client, plan)
+        sync_provider_cap(client, plan.mode, record_outcome(client, plan))
     else:
         # Bundel disimpan SEBELUM transaksinya dikirim (TASKS 2.5 AC (c)): begitu
         # `postVerdict` mendarat, `reasonHash` on-chain harus selalu punya preimage yang
@@ -2172,7 +2319,10 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
         if post_receipt.status != 1:
             raise RuntimeError(f"postVerdict gagal on-chain: 0x{post_hash}")
         # spec §5 langkah 5: memori ditulis SESUDAH verdict diumumkan, sebelum finalize.
-        record_outcome(client, plan)
+        # `setProviderCap` menyusul di transaksi yang sama-sama berada di antara
+        # `postVerdict` dan `finalize` (spec §7 langkah 2): capnya lahir dari memori yang
+        # BARU SAJA memuat job ini, jadi ia tidak bisa dihitung lebih awal.
+        sync_provider_cap(client, plan.mode, record_outcome(client, plan))
         # readyAt dari event di receipt (RPC publik bisa tertinggal di belakang receipt).
         ready_at = read_ready_at(client, job_id, post_receipt)
 

@@ -205,8 +205,12 @@ def build_client(
     verdict: tuple | None = None,
     onchain_root: bytes = ROOT_ONCHAIN,
     ready_at: int = 3_000_000_000,
+    provider_cap_onchain: int = 0,
 ) -> vc.VaultClient:
     returns = {
+        # `providerCap(provider)` dibaca `sync_provider_cap` sebelum menulis cap
+        # (api-facts §G.4). 0 = vault belum pernah menerima cap untuk provider ini.
+        "providerCap": provider_cap_onchain,
         "lastMemoryRoot": onchain_root,
         "jobs": (CLIENT, status, PROVIDER, 0, VAULT_ADDRESS, ZERO_ADDRESS, budget, DESCRIPTION),
         "verdicts": verdict or (0, ZERO, ZERO, 0, False, ZERO_ADDRESS),
@@ -448,7 +452,11 @@ def test_a_rerun_after_postverdict_still_records_the_job_outcome(db, artifacts, 
         kode = vc.run_live(client, JOB_B, vc.KIND_REJECT, plan=plan)
 
     assert kode == 0
-    assert client.w3.eth.built == ["finalize"], "postVerdict memang dilewati (verdict sudah ada)"
+    # `setProviderCap` ikut di cabang ini: `record_outcome` menulis outcome, dan cap yang
+    # lahir darinya belum ada di vault (`providerCap` = 0 di RPC palsu).
+    assert client.w3.eth.built == ["setProviderCap", "finalize"], (
+        "postVerdict memang dilewati (verdict sudah ada)"
+    )
     sesudah = profil(db)
     assert sesudah.stats_jobs == 1
     assert sesudah.stats_reject == 1
@@ -468,7 +476,7 @@ def test_recording_in_both_branches_never_counts_a_job_twice(db, artifacts):
     pertama = build_submitted_client(db, artifacts)
     rencana_pertama = vc.plan_job(pertama, pertama.job(JOB_B), deliverable_dir=artifacts)
     assert vc.run_live(pertama, JOB_B, vc.KIND_REJECT, plan=rencana_pertama) == 0
-    assert pertama.w3.eth.built == ["postVerdict", "finalize"]
+    assert pertama.w3.eth.built == ["postVerdict", "setProviderCap", "finalize"]
     terumumkan = announced_verdict(rencana_pertama, vc.KIND_REJECT)
 
     for _ in range(2):
@@ -477,7 +485,10 @@ def test_recording_in_both_branches_never_counts_a_job_twice(db, artifacts):
         # Memori sudah maju sejak verdict itu diumumkan (spec §5 langkah 5).
         assert plan.memory_root != rencana_pertama.memory_root
         assert vc.run_live(client, JOB_B, vc.KIND_REJECT, plan=plan) == 0
-        assert client.w3.eth.built == ["finalize"]
+        # `setProviderCap` muncul lagi hanya karena vault PALSU tidak menyimpan cap
+        # (`providerCap` tetap 0). Idempotensi terhadap vault yang benar-benar
+        # menyimpannya dibuktikan di `tests/test_cap_pipeline.py`.
+        assert client.w3.eth.built == ["setProviderCap", "finalize"]
 
     sesudah = profil(db)
     assert sesudah.stats_jobs == 1
@@ -509,7 +520,8 @@ def test_the_fresh_verdict_branch_records_between_postverdict_and_finalize(db, a
         vc.VaultClient._send = asli_send
         vc.record_outcome = asli_record
 
-    assert urutan == ["postVerdict", "record_outcome", "finalize"]
+    # Cap dikirim SESUDAH memori ditulis: ia diturunkan dari profil yang baru saja maju.
+    assert urutan == ["postVerdict", "record_outcome", "setProviderCap", "finalize"]
     assert profil(db).recorded_jobs == (JOB_B,)
 
 
@@ -672,7 +684,7 @@ def test_a_submitted_job_over_cap_is_still_forced_to_reject(db, artifacts, caplo
     assert kode == 0
     assert terekam["kind"] == vc.KIND_REJECT, "flag operator tidak boleh menang atas gating cap"
     assert "GERBANG MENOLAK" in caplog.text
-    assert client.w3.eth.built == ["postVerdict", "finalize"]
+    assert client.w3.eth.built == ["postVerdict", "setProviderCap", "finalize"]
 
 
 def test_the_bundle_of_a_submitted_over_cap_job_carries_both_parts(db, artifacts):
@@ -934,7 +946,7 @@ def test_a_rerun_finalizes_only_because_the_announced_bundle_can_be_shown(db, ar
     ulang_plan = vc.plan_job(ulang, ulang.job(JOB_B), deliverable_dir=artifacts)
     assert ulang_plan.memory_root != rencana.memory_root, "memori memang sudah maju"
     assert vc.run_live(ulang, JOB_B, vc.KIND_REJECT, plan=ulang_plan) == 0
-    assert ulang.w3.eth.built == ["finalize"]
+    assert ulang.w3.eth.built == ["setProviderCap", "finalize"]
 
     # Bundelnya hilang → tidak ada lagi yang bisa ditunjukkan → berhenti, bukan finalize diam-diam.
     simpanan.unlink()
@@ -1059,7 +1071,9 @@ def test_a_rerun_while_the_rpc_node_lags_can_never_overwrite_the_announced_bundl
         vc.run_live(pertama, JOB_B, vc.KIND_REJECT, plan=rencana1)
     b1_path = vc.verdict_bundle_path(vc.verdict_bundle_dir(pertama), JOB_B, b1_hash)
     b1_text = b1_path.read_text(encoding="utf-8")
-    assert pertama.w3.eth.built == ["postVerdict"], "postVerdict MENDARAT, finalize tidak"
+    assert pertama.w3.eth.built == ["postVerdict", "setProviderCap"], (
+        "postVerdict MENDARAT, finalize tidak"
+    )
 
     # run 2 — node RPC masih tertinggal: `verdicts(jobId)` kosong walau verdict sudah ada.
     kedua = build_submitted_client(db, artifacts)
@@ -1081,7 +1095,8 @@ def test_a_rerun_while_the_rpc_node_lags_can_never_overwrite_the_announced_bundl
     rencana3 = vc.plan_job(ketiga, ketiga.job(JOB_B), deliverable_dir=artifacts)
     with caplog.at_level(logging.INFO, logger="vault_client"):
         assert vc.run_live(ketiga, JOB_B, vc.KIND_REJECT, plan=rencana3) == 0
-    assert ketiga.w3.eth.built == ["finalize"]
+    # Sama seperti di atas: vault palsu tidak menyimpan cap, jadi ia dikirim ulang.
+    assert ketiga.w3.eth.built == ["setProviderCap", "finalize"]
     assert "DIREPRODUKSI" in caplog.text
 
 
