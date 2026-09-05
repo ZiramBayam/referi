@@ -479,3 +479,45 @@ Konsekuensi:
 (-) Kontrak terdeploy TIDAK punya `sweepToken`; 0,05 USDC testnet di v1 hangus permanen (ADR-018 kep. 2).
 (-) `arbiter()` == `agent()` pada v1 apa adanya — README 4.3b/4.3c WAJIB menempel keluaran keduanya.
 (-) Klaim "agen otonom" DILARANG muncul di README/video/post; ganti "agen dipanggil per job".
+
+## ADR-023 Mode aman dipicu asal-usul memori lokal, bukan perbandingan root
+Tanggal: 2026-09-05. Status: diterima. Memperbaiki penerapan spec §3 aturan 5; TIDAK membalikkan
+ADR-011/ADR-022. Pemicu: temuan KRITIS @agent-security-reviewer atas task 2.4a-inti.
+
+Konteks: gerbang 2.4a membandingkan `memory_root` lokal dengan `lastMemoryRoot()`. Dua kegagalan.
+(1) Warisan: vault submission yang dibekukan ADR-022 menyimpan
+    `lastMemoryRoot` = `keccak("the-evaluator/live/memory-root/v1")` — konstanta pipa 1.3d job 417,
+    tidak bisa diturunkan dari `memory.db` mana pun, dan `postVerdict` adalah satu-satunya penulisnya
+    → mode aman PERMANEN. Dibuktikan live: `cast call <vault> "lastMemoryRoot()(bytes32)"` →
+    `0x1fa62c3db5c16f4c831ee1d9ee4c083745b8c8bae86bda3587b8b02ba52f7bf0`.
+(2) Desain: spec §5 langkah 5 menulis memori SESUDAH `postVerdict`, jadi root lokal selalu satu
+    langkah di depan. Bahkan pada vault BARU agen berhenti sesudah job pertama; rantai tiga job
+    §7 langkah 3 mustahil. Dibuktikan: `decide_mode(0,R1)=naive` → `record_job_outcome` →
+    `decide_mode(R1,R2)=safe`.
+Gerbang ini bertentangan dengan ADR-011 dan `EvaluatorVault.sol:300` yang menyatakan `lastMemoryRoot`
+BUKAN syarat eksekusi.
+
+Keputusan:
+1. `lastMemoryRoot` dan `knownRoots` KELUAR dari jalur keputusan tx. `lastMemoryRoot()` tetap dibaca
+   dan dicetak sebagai konteks log/UI saja.
+2. Aturan 5 dibaca: mode aman bila memori lokal tidak bisa membuktikan ASAL-USULNYA, yaitu
+   (a) `memory.db` hilang, atau `load_snapshot`/`memory_root` melempar, atau kunci single-instance
+   tidak didapat; atau (b) DB ada tetapi NOL job outcome SEMENTARA `lastMemoryRoot() != 0`.
+   Selain itu mode normal. Root onchain nol → naif (tidak berubah).
+   Usul `knownRoots(rootLokal)` DITOLAK: root lokal selalu maju satu tulisan di depan yang
+   diumumkan, jadi ia tetap self-brick sesudah job A.
+3. `decide_mode` tetap fungsi murni yang mengembalikan NILAI; penegakan tetap hanya di `_send()`.
+4. Root bukan-turunan-memori yang permanen di vault dicatat apa adanya: 1.3d
+   `keccak("the-evaluator/live/memory-root/v1")` dan `SELFTEST_MEMORY_ROOT`. Tidak ada upaya
+   membersihkannya, dan sesudah keputusan 1 keduanya tidak bisa melemahkan apa pun.
+5. Penguatan berbasis `knownRoots(root-lampau)` butuh log root lokal yang belum ada → v2, di luar
+   scope 10 Sep.
+
+Konsekuensi:
+(+) §7 langkah 2/3/5 dan task 2.5 kembali mungkin; 3.3b varian A punya kontrol "agen bekerja".
+(+) Ancaman asli (memori hilang/diganti) tetap fail-closed dan tetap bisa dipentaskan.
+(-) HILANG: deteksi "memori lokal diganti memori LAIN yang tidak kosong". Diterima sadar; tidak
+    terdeteksi on-chain tanpa log root lokal (v2). WAJIB disebut di README §Batasan.
+(-) 3.3b varian A dijalankan di Anvil lokal (vault segar, root nol → naif → degradasi terlihat);
+    varian B di vault Sepolia beku (DB dihapus, root non-nol → mode aman). Amandemen ADR-007 tetap
+    berlaku, hanya lokasinya kini ditetapkan.
