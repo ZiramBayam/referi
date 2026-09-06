@@ -813,3 +813,28 @@ Konsekuensi:
     satu pun perilaku on-chain. Butir "Batasan" di `README.md` yang menyatakan `sim/` punya NOL tes otomatis
     TETAP BERLAKU dan **DILARANG** diturunkan jadi "sudah tercakup typecheck" di README, naskah video,
     maupun `docs/posts/*` (sejalan larangan klaim ADR-010 keputusan 4 dan ADR-025 keputusan 3).
+
+## ADR-028 Ambang 85/110 gerbang 4.2 tidak boleh menunda perekaman video
+Tanggal: 2026-09-06. Status: diterima. Aditif; TIDAK mengubah ADR mana pun dan tidak mengubah scope.
+Pemicu: gerbang fase 2 (task 2.9, laporan `docs/judge-reports/fase-2.md`, 6 Sep 2026) memberi skor dasar
+**82/110** (94/137,5 setelah multiplier ×1.15) — di bawah ambang `TASKS.md` 4.2 "skor >= 85/110 sebelum
+rekam video". Dibaca HARFIAH, aturan itu bisa menahan perekaman sampai skor naik.
+
+Konteks: PRD §5 "Submission lengkap" = repo MIT + **video 2-5 mnt** + README + 2 post. Submission tanpa
+video bernilai **NOL**, bukan 82. Jadi membaca 4.2 sebagai penahan video menukar kehilangan 3 poin dengan
+kehilangan seluruh nilai.
+
+Keputusan:
+1. Ambang **85/110 TETAP** syarat untuk menyatakan "siap rekam", dan skornya tetap dilaporkan APA ADANYA
+   di `docs/judge-reports/fase-4.md`. Ambang tidak diturunkan dan tidak "dipoles" agar hijau.
+2. Bila **9 Sep 2026 18:00** tiba dengan skor < 85, video **TETAP direkam hari itu** memakai state terbaik
+   yang ada, dan laporan 4.2 mencatat skor apa adanya — bukan skor yang dipoles.
+3. **Tidak ada task lain yang boleh menunda 4.3** (video + 2 post build-in-public) dengan alasan skor.
+
+Konsekuensi:
+(+) Kita bisa mengirim submission yang skornya jujur di bawah target; skor rendah tetap terlihat di laporan.
+(-) Sebaliknya, mustahil kehilangan SELURUH nilai karena mengejar tiga poin.
+(=) Nol scope bertambah maupun berkurang — ini aturan proses, bukan fitur. Rekomendasi 1-3 juri
+    (`docs/judge-reports/fase-2.md`, proyeksi ~91/110) tetap dikejar sampai tenggat, tapi tidak menyandera 4.3.
+(!) Checklist submission di hack.sibyllabs.org TIDAK diverifikasi di sesi ini; klaim "video 2-5 mnt"
+    bersumber pada `PRD.md:30` yang terverifikasi, bukan pada situs itu.
