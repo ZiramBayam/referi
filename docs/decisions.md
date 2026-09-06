@@ -774,3 +774,42 @@ Konsekuensi:
     pipa nyata — hanya oleh tesnya.
 Tidak ada baris `docs/spec.md` yang dicabut ADR ini, jadi tabel divergensi ADR-025 tidak bertambah:
 mode aman/naif sudah diwakili baris (ii) apa adanya.
+
+## ADR-027 `@types/node` 26.4.1 dipasang tipe-saja di `sim/`; typecheck BUKAN pengganti tes
+Tanggal: 2026-09-06. Status: diterima. Aditif; TIDAK membuka ulang ADR-010 dan tidak mengubah ADR mana pun.
+Pemicu: task 0.9d — `sim/` adalah SATU-SATUNYA kode yang menyentuh jalur uang nyata (mint/approve/fund,
+`docs/spec.md` §7 langkah 1-2) dan punya NOL tes otomatis, sehingga kesalahan tipe di sana muncul pertama kali
+sebagai transaksi gagal di testnet, bukan sebagai tes merah.
+
+Konteks — yang benar-benar diukur (2026-09-06, bukan ingatan):
+(a) `sim/src/{client_min,mint_min}.ts` mengimpor `node:fs`, `node:path`, `node:url` dan memakai `process.env`.
+    Dengan `--typeRoots <dir kosong>` (simulasi tanpa paket ini) `tsc --strict` berhenti pada **6× TS2591**
+    "Cannot find name 'node:fs'" — enam error itu SEMUANYA modul node, nol error logika. Jadi satu paket tipe
+    adalah selisih antara "typecheck tidak bisa jalan" dan "typecheck hijau".
+(b) `cd sim && pnpm exec tsc --noEmit` → exit 0, 0 error.
+(c) Paketnya tipe-saja: isinya hanya `.d.ts` (+ LICENSE/README/package.json), `sim/` tetap dijalankan `tsx`,
+    dan `sim/tsconfig.json` `noEmit: true` — tidak ada satu byte pun yang masuk bundel atau proses berjalan.
+(d) Lockfile tidak menggerakkan versi apa pun: 26.4.1 SUDAH resolved transitif sebelumnya; diff `679724a`
+    hanya menambah entri importer `sim` dan melepas `optional: true` dari `@types/node@26.4.1` serta
+    `undici-types@8.3.0`. Itu konsekuensi mekanis promosi ke devDependency keras, BUKAN paket lain berpindah.
+
+Keputusan:
+1. `@types/node` dipin **EXACT 26.4.1** (bukan `^`), sebagai **devDependency `sim/` saja**, **tipe-saja**.
+   Ia dicatat di `docs/versions.md` tabel TypeScript lengkap dengan perintah + tanggal verifikasi.
+2. `types: ["node"]` di `sim/tsconfig.json` dipertahankan sebagai penjaga preventif: lockfile MASIH memuat
+   `@types/node@12.20.55` transitif (via `@types/connect`, `@types/uuid`, `@types/ws`) dan salinan basi itu
+   duduk di `node_modules/.pnpm/node_modules/@types/node`. Setelan itu mengunci himpunan tipe ambient jadi
+   TEPAT satu paket, sehingga layout hoisted/flat tidak bisa menyeretnya masuk. Kejujuran ukurannya:
+   pada layout pnpm hari ini menghapus setelan itu TETAP menghasilkan 0 error — ia belum menahan apa pun
+   hari ini, dan klaim "39 error" tidak tereproduksi. Tetap dipertahankan karena murah dan preventif.
+3. **Ini TIDAK membuka ulang ADR-010.** Batas ADR-010 adalah nol dependensi **RUNTIME** baru (di sana:
+   x402 + satu framework web yang ikut jalan di proses). `@types/node` tidak pernah dieksekusi, jadi ia
+   ada di luar batas itu. ADR-010 tetap berlaku utuh.
+
+Konsekuensi:
+(+) Ada satu jaring statis untuk jalur mint/approve/fund — satu-satunya jaring yang dimiliki `sim/`.
+(-) Satu entri baru di `docs/versions.md` pada H-4 submission; permukaan versi yang harus dijaga bertambah.
+(-) **Typecheck BUKAN tes.** Ia tidak pernah mengirim transaksi, tidak menyentuh RPC, dan tidak membuktikan
+    satu pun perilaku on-chain. Butir "Batasan" di `README.md` yang menyatakan `sim/` punya NOL tes otomatis
+    TETAP BERLAKU dan **DILARANG** diturunkan jadi "sudah tercakup typecheck" di README, naskah video,
+    maupun `docs/posts/*` (sejalan larangan klaim ADR-010 keputusan 4 dan ADR-025 keputusan 3).
