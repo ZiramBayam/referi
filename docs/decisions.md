@@ -814,6 +814,29 @@ Konsekuensi:
     TETAP BERLAKU dan **DILARANG** diturunkan jadi "sudah tercakup typecheck" di README, naskah video,
     maupun `docs/posts/*` (sejalan larangan klaim ADR-010 keputusan 4 dan ADR-025 keputusan 3).
 
+## Catatan lintas-ADR: `lastMemoryRoot()` adalah nilai BERGERAK, jangan pernah di-hardcode
+Ditambahkan 2026-09-06 (task 0.8g, temuan samping @agent-api-verifier saat 0.8b-note).
+
+ADR-023 (`:572`) dan ADR-024 (`:611`) merekam `lastMemoryRoot()` vault sebagai
+`0x1fa62c3db5c16f4c831ee1d9ee4c083745b8c8bae86bda3587b8b02ba52f7bf0`. Nilai itu BENAR pada
+tanggal ADR-nya, dan **ADR-nya TIDAK diubah** — penalaran keduanya bergantung pada "root
+non-nol", bukan pada nilai spesifik, jadi tidak ada yang perlu dikoreksi di sana.
+
+Yang perlu diketahui pembaca berikutnya: **setiap `postVerdict` yang berhasil menulis ulang
+`lastMemoryRoot`**. Rantai A/B/C (task 2.5) sudah menggesernya sekali, dan setiap job baru
+akan menggesernya lagi. Karena itu:
+
+- **JANGAN pernah menulis nilai `lastMemoryRoot` sebagai literal di AC, skrip verifikasi,
+  README, atau naskah demo.** AC yang melakukannya akan GAGAL tanpa sebab yang jelas
+  beberapa job kemudian — kelas cacat yang sama dengan AC 0.2(a) yang sudah ditulis ulang
+  oleh task 0.9b karena lulus karena alasan yang salah.
+- Bacalah nilainya saat itu juga:
+  `cast call 0x5c6EE4586ACABcb6326069c229E58091B21ef384 "lastMemoryRoot()(bytes32)" --rpc-url https://sepolia.base.org`
+- Klaim yang BOLEH dipegang adalah klaim RELASIONAL, bukan nilai: *root yang diumumkan
+  on-chain sama dengan keluaran `agent/memory_export.py` atas DB yang menjangkarnya pada
+  saat itu*. Itulah bentuk yang dipakai AC (d) task 2.4b, dan ia tetap benar berapa kali pun
+  rootnya bergeser.
+
 ## ADR-028 Ambang 85/110 gerbang 4.2 tidak boleh menunda perekaman video
 Tanggal: 2026-09-06. Status: diterima. Aditif; TIDAK mengubah ADR mana pun dan tidak mengubah scope.
 Pemicu: gerbang fase 2 (task 2.9, laporan `docs/judge-reports/fase-2.md`, 6 Sep 2026) memberi skor dasar
