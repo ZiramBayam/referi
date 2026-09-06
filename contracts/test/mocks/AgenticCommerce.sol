@@ -90,7 +90,14 @@ contract AgenticCommerce {
 
     uint256 internal constant BP_DENOMINATOR = 10_000;
     /// @dev api-facts §A: `expiredAt` harus **>** now + 300 detik. `now+300` revert, `now+301` sukses.
-    uint256 public constant MIN_EXPIRY_DELAY = 5 minutes;
+    ///      BERPREFIKS `mock` DENGAN SENGAJA: kontrak asli TIDAK mengekspos konstanta ini — ambang 300
+    ///      detik hanya terbaca dari PERILAKU di fork, bukan dari sebuah view publik. Kalau mock
+    ///      menamainya `MIN_EXPIRY_DELAY`, kode yang membacanya hijau di lokal lalu REVERT di Sepolia —
+    ///      cacat yang sama dengan `treasury` vs `platformTreasury`, cuma terbalik arahnya. Ketiadaan
+    ///      `MIN_EXPIRY_DELAY()` (0xa2fe1c9a) di runtime code dikunci
+    ///      `test_mockOnlyGetters_useMockPrefix_notAcpNames`.
+    // forge-lint: disable-next-line(screaming-snake-case-const)
+    uint256 public constant mockMinExpiryDelay = 5 minutes;
     /// @dev Konstanta PUBLIK kontrak asli, nama persis (`cast call <ACP> "EVALUATOR_GRACE_PERIOD()(uint256)"`
     ///      → 900). Tenggang `claimRefund` dari status Submitted, dihitung dari `expiredAt` — BUKAN dari waktu
     ///      submit. Bisection di fork: `expiredAt+899` revert `WrongStatus()`, `expiredAt+900` SUKSES.
@@ -99,8 +106,16 @@ contract AgenticCommerce {
     uint256 public constant EVALUATOR_GRACE_PERIOD = 15 minutes;
 
     IERC20Minimal public immutable paymentToken;
-    address public immutable admin;
-    address public treasury;
+    /// @dev BERPREFIKS `mock`: kontrak asli memakai AccessControl (`hasRole`/`grantRole`, api-facts §A.1)
+    ///      dan TIDAK punya `admin()`. Hanya dipakai setter `mockSet*` di bawah.
+    address public immutable mockAdmin;
+    /// @dev NAMA ACP NYATA. View publik kontrak asli bernama `platformTreasury()` (api-facts §A;
+    ///      Base Sepolia → 0xb3bdEdda2050a3615B73bB9a2684946eC38B5375), BUKAN `treasury()`. Mock yang
+    ///      menyimpang di nama ini membuat pemanggil `platformTreasury()` hijau melawan chain nyata dan
+    ///      REVERT melawan mock (atau sebaliknya) — mekanisme kegagalan yang identik dengan `jobs` yang
+    ///      pernah `internal`. Dikunci `test_selectors_matchAcpAbi` atas RUNTIME CODE (selector
+    ///      0xe138818c ADA, nama lama 0x61d027b3 TIDAK ADA).
+    address public platformTreasury;
 
     /// @dev `cast call <ACP> "evaluatorFeeBP()(uint256)"` Base Sepolia 2026-09-03 = 500 (5%).
     uint256 public evaluatorFeeBP = 500;
@@ -186,8 +201,8 @@ contract AgenticCommerce {
     constructor(address paymentToken_, address treasury_) {
         if (paymentToken_ == address(0) || treasury_ == address(0)) revert ZeroAddress();
         paymentToken = IERC20Minimal(paymentToken_);
-        treasury = treasury_;
-        admin = msg.sender;
+        platformTreasury = treasury_;
+        mockAdmin = msg.sender;
     }
 
     // --------------------------------------------------------------------
@@ -211,7 +226,7 @@ contract AgenticCommerce {
         string calldata description,
         address hook
     ) external nonReentrant returns (uint256 jobId) {
-        if (expiredAt <= block.timestamp + MIN_EXPIRY_DELAY || expiredAt > type(uint48).max) {
+        if (expiredAt <= block.timestamp + mockMinExpiryDelay || expiredAt > type(uint48).max) {
             revert ExpiryTooShort();
         }
         if (msg.sender == provider) revert ClientIsProvider();
@@ -339,7 +354,7 @@ contract AgenticCommerce {
             // Urutan log MENTAH source `:469-483`: JobSubmitted, Transfer→treasury, Transfer→provider,
             // JobCompleted, PaymentReleased. KEDUA transfer mendahului `JobCompleted`.
             emit JobSubmitted(jobId, job.provider, deliverable);
-            _push(treasury, platformFee);
+            _push(platformTreasury, platformFee);
             _push(job.provider, providerAmount);
             emit JobCompleted(jobId, address(0), deliverable);
             emit PaymentReleased(jobId, job.provider, providerAmount);
@@ -402,7 +417,7 @@ contract AgenticCommerce {
         // Hanya cabang evaluator yang butuh `if` EKSPLISIT, karena yang dijaga bukan cuma transfernya
         // melainkan juga `emit EvaluatorFeePaid` (source `:533-536`, satu guard yang sama).
         // Dikunci `test_zeroAmountPaths_emitNoErc20Transfer` + `FundConservation.t.sol` (budget nol).
-        _push(treasury, platformFee);
+        _push(platformTreasury, platformFee);
         // TERVERIFIKASI (source `:533-536`): transfer fee evaluator DAN `EvaluatorFeePaid` berada di
         // dalam guard `evalFee > 0` yang SAMA — pada budget nol keduanya dilewati, jadi tidak ada
         // event fee beramount nol. Jalur berbudget nol NYATA (Open+budget 0+evaluator != 0 boleh
@@ -529,25 +544,25 @@ contract AgenticCommerce {
     }
 
     // --------------------------------------------------------------------
-    // Setter khusus MOCK. Sengaja TIDAK memakai nama admin ACP asli
+    // Setter khusus MOCK. Sengaja TIDAK memakai nama fungsi admin ACP asli
     // (`setEvaluatorFee`/`setPlatformFee`/`setHookWhitelist`) karena parameternya
     // belum tercatat di api-facts §A dan kode kita tidak pernah memanggilnya.
     // --------------------------------------------------------------------
 
     function mockSetEvaluatorFeeBP(uint256 bp) external {
-        if (msg.sender != admin) revert MockNotAdmin();
+        if (msg.sender != mockAdmin) revert MockNotAdmin();
         if (bp + platformFeeBP > BP_DENOMINATOR) revert FeesTooHigh();
         evaluatorFeeBP = bp;
     }
 
     function mockSetPlatformFeeBP(uint256 bp) external {
-        if (msg.sender != admin) revert MockNotAdmin();
+        if (msg.sender != mockAdmin) revert MockNotAdmin();
         if (bp + evaluatorFeeBP > BP_DENOMINATOR) revert FeesTooHigh();
         platformFeeBP = bp;
     }
 
     function mockSetHookWhitelist(address hook, bool allowed) external {
-        if (msg.sender != admin) revert MockNotAdmin();
+        if (msg.sender != mockAdmin) revert MockNotAdmin();
         whitelistedHooks[hook] = allowed;
     }
 

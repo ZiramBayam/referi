@@ -14,8 +14,8 @@ import {AgenticCommerce} from "./AgenticCommerce.sol";
 /// @dev Kontrak ini SENGAJA tidak menyalin satu baris pun logika ACP: ia hanya `AgenticCommerce`
 ///      (salinan setia kontrak terverifikasi) ditambah satu inisialisator. Alasannya: konstruktor
 ///      TIDAK pernah dieksekusi di storage proxy, jadi field yang di mock diisi konstruktor /
-///      inisialisator inline (`treasury`, `evaluatorFeeBP`, `platformFeeBP`, `nextJobId`) akan
-///      bernilai nol di belakang proxy. `paymentToken` dan `admin` `immutable` TIDAK bermasalah:
+///      inisialisator inline (`platformTreasury`, `evaluatorFeeBP`, `platformFeeBP`, `nextJobId`) akan
+///      bernilai nol di belakang proxy. `paymentToken` dan `mockAdmin` `immutable` TIDAK bermasalah:
 ///      keduanya tertanam di KODE implementasi dan terbaca benar saat `delegatecall`.
 ///      Nilai yang dipakai untuk inisialisasi WAJIB dibaca dari instance implementasi itu sendiri
 ///      (lihat `EvaluatorVaultTest._deployProxiedAcp`), bukan ditulis ulang di sini — supaya mock dan
@@ -31,7 +31,7 @@ contract ProxiableAgenticCommerce is AgenticCommerce {
         external
     {
         if (nextJobId != 0) revert AlreadyInitialized();
-        treasury = treasury_;
+        platformTreasury = treasury_;
         evaluatorFeeBP = evaluatorFeeBP_;
         platformFeeBP = platformFeeBP_;
         nextJobId = nextJobId_;

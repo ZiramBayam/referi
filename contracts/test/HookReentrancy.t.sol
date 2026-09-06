@@ -237,7 +237,7 @@ contract HookReentrancyTest is Test {
 
         vault = new EvaluatorVault(IACP(address(acp)), AGENT, ARBITER, MIN_BOND);
         hook = new ReenteringHook(vault);
-        // `admin` mock = deployer implementasi = kontrak tes ini (immutable, terbaca lewat delegatecall).
+        // `mockAdmin` = deployer implementasi = kontrak tes ini (immutable, terbaca lewat delegatecall).
         acp.mockSetHookWhitelist(address(hook), true);
 
         usdc.mint(CLIENT, 1_000_000_000);

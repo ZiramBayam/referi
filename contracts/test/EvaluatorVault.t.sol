@@ -210,7 +210,7 @@ contract EvaluatorVaultTest is Test {
         assertEq(proxied.evaluatorFeeBP(), impl.evaluatorFeeBP(), "evaluatorFeeBP proxy != impl");
         assertEq(proxied.platformFeeBP(), impl.platformFeeBP(), "platformFeeBP proxy != impl");
         assertEq(proxied.nextJobId(), impl.nextJobId(), "nextJobId proxy != impl");
-        assertEq(proxied.treasury(), impl.treasury(), "treasury proxy != impl");
+        assertEq(proxied.platformTreasury(), impl.platformTreasury(), "platformTreasury proxy != impl");
         assertEq(address(proxied.paymentToken()), address(impl.paymentToken()), "paymentToken proxy != impl");
         assertEq(proxied.EVALUATOR_GRACE_PERIOD(), impl.EVALUATOR_GRACE_PERIOD());
     }

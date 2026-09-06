@@ -340,7 +340,7 @@ contract AgenticCommerceTest is Test {
 
     /// AC (c): `expiredAt` STRICT — `now + 300` revert, `now + 301` sukses (api-facts §A).
     function test_createJob_expiryBoundary_isStrict() public {
-        assertEq(acp.MIN_EXPIRY_DELAY(), 300, "MIN_EXPIRY_DELAY 5 menit");
+        assertEq(acp.mockMinExpiryDelay(), 300, "ambang expiry mock = 5 menit");
 
         vm.prank(client);
         vm.expectRevert(AgenticCommerce.ExpiryTooShort.selector);
@@ -755,19 +755,21 @@ contract AgenticCommerceTest is Test {
         assertEq(abi.decode(rlogs[1].data, (bytes32)), REASON, "JobRejected.reason di data");
     }
 
-    /// Mengunci KESEPULUH selector yang dipanggil kode kita terhadap konstanta literal dari ABI
+    /// Mengunci KESEBELAS selector ACP yang dipakai kode kita terhadap konstanta literal dari ABI
     /// acp-node-v2 (api-facts §A). Konstanta sengaja ditulis sebagai literal, bukan diturunkan ulang
     /// dari string di file ini: mock yang salah dan tes yang salah dengan cara yang sama akan hijau
     /// sempurna di lokal lalu ditolak ACP asli di Sepolia — persis kegagalan yang dijaga tes ini.
-    /// Sumber angka: `cast sig "<signature>"`, 2026-09-03 (`jobs(uint256)`: `cast sig`, 2026-09-06).
+    /// Sumber angka: `cast sig "<signature>"`, 2026-09-03 (`jobs(uint256)` dan `platformTreasury()`:
+    /// `cast sig`, 2026-09-06).
     ///
-    /// Yang KESEPULUH, `jobs(uint256)`, tidak diperiksa lewat `AgenticCommerce.jobs.selector`: ia
-    /// getter mapping PUBLIK, jadi menurunkan visibilitasnya akan membuat ekspresi itu gagal KOMPILASI
-    /// (seluruh suite mati) alih-alih memberi satu tes merah yang menyebut penyebabnya. Karena itu
-    /// keberadaannya dibuktikan atas RUNTIME CODE mock: staticcall dengan selector literal. Mock tanpa
-    /// getter itu tidak punya fallback → panggilan revert → tes ini merah. Getter ini bukan hiasan:
-    /// agen memanggilnya persis begitu (`agent/agent/vault_client.py`, fragmen `ACP_ABI`), dan mock
-    /// yang tidak punya membuat agen revert di Anvil.
+    /// Dua yang terakhir, `jobs(uint256)` dan `platformTreasury()`, tidak diperiksa lewat
+    /// `AgenticCommerce.<nama>.selector`: keduanya getter variabel/mapping PUBLIK, jadi menurunkan
+    /// visibilitasnya ATAU mengganti namanya akan membuat ekspresi itu gagal KOMPILASI (seluruh suite
+    /// mati) alih-alih memberi satu tes merah yang menyebut penyebabnya. Karena itu keberadaannya
+    /// dibuktikan atas RUNTIME CODE mock: staticcall dengan selector literal. Mock tanpa getter itu
+    /// tidak punya fallback → panggilan revert → tes ini merah. `jobs` bukan hiasan: agen memanggilnya
+    /// persis begitu (`agent/agent/vault_client.py`, fragmen `ACP_ABI`), dan mock yang tidak punya
+    /// membuat agen revert di Anvil.
     function test_selectors_matchAcpAbi() public view {
         // `fund` punya parameter kedua `expectedBudget` (api-facts §A), BUKAN `fund(uint256)`
         // seperti teks EIP-8183 — ini penyimpangan yang paling sering dihalusinasikan.
@@ -789,6 +791,52 @@ contract AgenticCommerceTest is Test {
         // 8 field, satu di antaranya dinamis: 8 word head + panjang + isi string. Untuk job nol,
         // `description` kosong → 9 word (head + panjang, tanpa word isi).
         assertEq(ret.length, 9 * 32, "returndata jobs(uint256) untuk job tak dikenal");
+
+        // KESEBELAS: `platformTreasury()`, view PUBLIK ACP nyata (api-facts §A; Base Sepolia
+        // mengembalikan 0xb3bdEdda2050a3615B73bB9a2684946eC38B5375). Mekanisme kegagalannya IDENTIK
+        // dengan cacat `jobs` di atas: mock yang menamai variabelnya `treasury` memberi getter
+        // `treasury()`, sehingga kode yang memanggil `platformTreasury()` hijau melawan chain nyata dan
+        // REVERT melawan mock — atau sebaliknya hijau di lokal lalu salah nama di Sepolia. Diperiksa
+        // atas RUNTIME CODE dengan selector literal, BUKAN lewat `AgenticCommerce.platformTreasury.selector`:
+        // getter variabel publik yang diganti nama membuat ekspresi itu gagal KOMPILASI (seluruh suite
+        // mati) alih-alih memberi satu tes merah yang menyebut penyebabnya.
+        // `cast sig "platformTreasury()"` = 0xe138818c (2026-09-06).
+        (bool okTreasury, bytes memory treasuryRet) =
+            address(acp).staticcall(abi.encodeWithSelector(bytes4(0xe138818c)));
+        assertTrue(okTreasury, "platformTreasury() 0xe138818c HARUS ada di ABI mock (nama ACP nyata)");
+        assertEq(treasuryRet.length, 32, "platformTreasury() mengembalikan SATU address");
+        assertEq(abi.decode(treasuryRet, (address)), treasury, "platformTreasury() = argumen konstruktor");
+
+        // Sisi NEGATIF dari selector yang sama: nama lama `treasury()` (`cast sig` = 0x61d027b3) TIDAK
+        // BOLEH ada. ACP nyata tidak punya fungsi itu dan mock tidak punya fallback, jadi staticcall ke
+        // selector asing HARUS revert. Tanpa assert ini, mock boleh punya KEDUA nama sekaligus dan
+        // divergensinya kembali tak terlihat.
+        (bool okOldTreasury,) = address(acp).staticcall(abi.encodeWithSelector(bytes4(0x61d027b3)));
+        assertFalse(okOldTreasury, "treasury() 0x61d027b3 TIDAK ADA di ACP nyata - mock tidak boleh punya");
+    }
+
+    /// Arah SEBALIKNYA dari `platformTreasury`: dua getter yang ADA di mock tetapi TIDAK ADA di ACP
+    /// nyata. Kontrak asli memakai AccessControl (`hasRole`/`grantRole`, api-facts §A.1) — tidak ada
+    /// `admin()` — dan tidak mengekspos konstanta `MIN_EXPIRY_DELAY()`; ambang 300 detik hanya terbaca
+    /// dari perilaku (`now+300` revert `ExpiryTooShort()`, `now+301` sukses). Kode yang membaca nama-nama
+    /// itu HIJAU di lokal lalu REVERT di Sepolia — kegagalan yang sama, cuma terbalik arahnya. Karena
+    /// mock tetap butuh keduanya secara internal, namanya diberi awalan `mock` seperti `mockSet*`.
+    /// `cast sig` (2026-09-06): mockMinExpiryDelay() 0xcffef556, mockAdmin() 0x536307eb,
+    /// MIN_EXPIRY_DELAY() 0xa2fe1c9a, admin() 0xf851a440.
+    function test_mockOnlyGetters_useMockPrefix_notAcpNames() public view {
+        (bool okDelay, bytes memory delayRet) = address(acp).staticcall(abi.encodeWithSelector(bytes4(0xcffef556)));
+        assertTrue(okDelay, "mockMinExpiryDelay() 0xcffef556 harus ada (dipakai tes ambang expiry)");
+        assertEq(abi.decode(delayRet, (uint256)), 300, "ambang 300 detik (api-facts A)");
+
+        (bool okAdmin, bytes memory adminRet) = address(acp).staticcall(abi.encodeWithSelector(bytes4(0x536307eb)));
+        assertTrue(okAdmin, "mockAdmin() 0x536307eb harus ada (dipakai setter mockSet*)");
+        assertEq(abi.decode(adminRet, (address)), address(this), "admin mock = deployer");
+
+        (bool okAcpDelay,) = address(acp).staticcall(abi.encodeWithSelector(bytes4(0xa2fe1c9a)));
+        assertFalse(okAcpDelay, "MIN_EXPIRY_DELAY() 0xa2fe1c9a TIDAK ADA di ACP nyata");
+
+        (bool okAcpAdmin,) = address(acp).staticcall(abi.encodeWithSelector(bytes4(0xf851a440)));
+        assertFalse(okAcpAdmin, "admin() 0xf851a440 TIDAK ADA di ACP nyata (AccessControl, bukan admin())");
     }
 
     /// KESEBELAS custom error PROYEK milik kontrak asli, dikunci ke selector literal (api-facts §A,
