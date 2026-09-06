@@ -814,6 +814,21 @@ Konsekuensi:
     TETAP BERLAKU dan **DILARANG** diturunkan jadi "sudah tercakup typecheck" di README, naskah video,
     maupun `docs/posts/*` (sejalan larangan klaim ADR-010 keputusan 4 dan ADR-025 keputusan 3).
 
+## Addendum ADR-025, 2026-09-06 (sesudah task 0.8b mendarat)
+Task 0.8b menyelaraskan `docs/spec.md` ke ADR. Status tiap butir tabel divergensi ADR-025:
+
+- **(i) §0 baris 7-8** — LUNAS SEBAGIAN. Frasa "dibayar sama besar entah meluluskan atau menolak"
+  TIDAK dihapus; ia kini berdiri di spec sebagai RANCANGAN (ADR-004) lengkap dengan bantahan
+  chain-nya. **Keputusan 3 ADR-025 TETAP BERLAKU**: mengutipnya sebagai FAKTA di README,
+  `demo/video-script.md`, atau `docs/posts/*` tetap DILARANG.
+- **(ii) §3:116** — LUNAS. Presedensi ADR-024 keputusan 2 termuat harfiah; frasa "tidak cocok" mati.
+- **(iii) §4:138** — LUNAS. `knownRoots` + larangan varian `lastMemoryRoot`-sebagai-syarat termuat.
+- **(iv) §1:46 & :50** — LUNAS. Contoh kode diganti penunjuk ke `docs/api-facts.md` §C.
+- **MASIH BERDIRI:** keputusan 1 (spec berstatus historis; ADR menang bila berbeda) dan keputusan 2
+  (ADR baru wajib menambah barisnya). Keduanya TIDAK dicabut oleh 0.8b.
+- **Nomor baris di tabel ADR-025 menunjuk spec PRA-0.8b** dan kini bergeser. Jangan dipakai sebagai
+  alamat; pakai judul bagiannya.
+
 ## Catatan: izin user atas `docs/spec.md` (task 0.8f), 2026-09-06
 User ditanya satu baris: *"boleh aku edit `docs/spec.md`?"* — jawabannya **"iya"**.
 

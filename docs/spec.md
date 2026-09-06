@@ -4,8 +4,16 @@ Disusun 24 Agu 2026 dari sumber primer: eips.ethereum.org/EIPS/eip-8183, repo Vi
 repo Sibyl-Labs/Sibyl-Memory, docs.sibyllabs.org/memory.
 
 ## 0. Pitch satu kalimat
-Wasit escrow ERC-8183 yang ingatannya tentang tiap provider bisa diaudit siapa pun — dan yang dibayar sama
-besar entah ia meluluskan atau menolak.
+Wasit escrow ERC-8183 yang ingatannya tentang tiap provider bisa diaudit siapa pun.
+
+Versi 24 Agu menyambung kalimat itu dengan "— dan yang dibayar sama besar entah ia meluluskan atau menolak".
+Frasa itu SALAH sebagai fakta dan sengaja TIDAK dihapus diam-diam, supaya ia tidak lahir kembali: ia adalah
+RANCANGAN (ADR-004 — fee evaluasi dibayar di muka lewat x402), bukan perilaku sistem yang berjalan. Chain
+membantahnya: `evaluatorFeeBP()` = 500 dan fee itu cair HANYA di jalur `complete`; saldo evaluator 50000
+seluruhnya berasal dari job 417 yang DILULUSKAN, sementara rantai REJECT 418/419/420 membayar evaluator 0.
+Baris di §1 pada file yang SAMA ("`evaluatorFeeBP` hanya dibayar saat Completed → insentif cacat") sudah
+membantahnya sejak hari pertama. Frasa itu DILARANG dikutip sebagai fakta di `README.md`, `demo/`, dan
+`docs/posts/*` (ADR-025 keputusan 3, yang TETAP berlaku).
 
 ## 1. Fakta terverifikasi yang mengikat desain
 
@@ -38,18 +46,15 @@ besar entah ia meluluskan atau menolak.
 ### Sibyl Memory
 - `pip install sibyl-memory-client` (repo: Sibyl-Labs/Sibyl-Memory, MIT). Python ≥3.10. SQLite + FTS5, local-first,
   "free, unactivated use makes no network calls" → berjalan headless tanpa `sibyl init`.
-- API:
-  ```python
-  from sibyl_memory_client import MemoryClient
-  m = MemoryClient.local("~/.sibyl-memory/memory.db")   # path bisa diganti → satu file = seluruh memori
-  m.set_state(key, body) / m.get_state(key)                      # HOT
-  m.set_entity(kind, name, body) / m.get_entity(kind, name) / m.list_entities(kind)   # WARM
-  m.write_event(acted=[...]) / m.read_events(...)                # COLD (journal, append-only)
-  m.set_reference(key, body) / m.get_reference(key)              # REFERENCE
-  m.archive_entity(kind, name) / m.delete_entity(kind, name)     # ARCHIVE / hapus permanen
-  m.search_entities(query)                                       # FTS5 lintas tier
-  ```
-- Tier resmi: HOT / WARM / COLD / REFERENCE / ARCHIVE. TIDAK ADA tier FLAGGED → karantina dibangun sebagai konvensi.
+- API: **jangan menyalin signature dari file ini.** Sumber tunggal = `docs/api-facts.md` §C (ditambah §C.1 untuk
+  enumerasi REFERENCE lewat `search`, §C.2 untuk `Storage.transaction`, §C.3 untuk tier & cap), yang disalin dari
+  `inspect.signature` pada paket TERPASANG, bukan dari README. Dua kesalahan versi 24 Agu yang pernah berdiri di
+  sini, dicabut: parameter pertama entity bernama **`category`**, BUKAN `kind` (`kind=…` → `TypeError`); dan
+  `search_entities` HANYA menjangkau tier WARM — pencarian yang mencakup keempat tier adalah
+  `search(query, *, limit=20, prefix=False, tiers=None)` dengan tier sah `("entity","state","reference","journal")`.
+- Tier resmi: HOT / WARM / COLD / REFERENCE / ARCHIVE. Tidak ada tier FLAGGED yang bisa dipakai: `schema.sql` 0.7.0
+  MEMANG memuat tabel `flagged_actors`, tetapi `client.py`/`storage.py` nol kemunculan → tidak diekspos SDK
+  (`docs/api-facts.md` §C). Karantina karena itu tetap konvensi: entity `category="suspicion"` (ADR-002).
 - Rubric: memori load-bearing 40 | inovasi 25 | teknis 20 | pitch 15 | PMF +10. Multiplier ×1.15 (1 stack) / ×1.25 (Base+Virtuals),
   hanya jika juri konfirmasi integrasi "doing real work". Submission: repo publik MIT/Apache, video 2–5 mnt fresh-session recall,
   README, 2 post build-in-public.
@@ -110,18 +115,44 @@ Aturan yang membuat memori tidak bisa diracuni lewat input:
 2. `suspicion` → promosi ke `provider.confirmed_patterns` + `reference:pattern` hanya jika `count ≥ 2` dari **job berbeda**
    dan setiap evidence berasal dari cek deterministik (bukan klaim pihak).
 3. Semua tulisan memori berasal dari hasil cek agen sendiri; teks deliverable/pesan pihak = data, tidak pernah instruksi.
-4. Fungsi `derive_cap(provider)`: risk 0 → tanpa cap; risk 1 → cap = median budget lolos; risk ≥2 → cap = 25% median, wajib milestone.
-5. **Fail-closed.** Saat start, agen membandingkan `memory_root` lokal dengan `MemoryRootUpdated` terakhir di vault:
-   - root onchain kosong (hari pertama) → mode naif (stateless), wajar;
-   - root onchain ada tapi memori lokal hilang/tidak cocok → **mode aman**: semua provider diperlakukan risk maksimum
-     (cek penuh + cap milestone) dan agen TIDAK memanggil `finalize` sampai memori dipulihkan dari backup yang root-nya cocok.
+4. Fungsi `derive_cap(provider)`. Rumus 24 Agu ("risk 1 → median budget lolos; risk ≥2 → 25% median") DICABUT oleh
+   **ADR-020** dan diperketat **ADR-021**: median-atas-budget menyerahkan cap ke tangan provider, yang mendanai job
+   raksasa sendiri agar ditolak lalu melihat capnya naik. Yang BERLAKU sekarang — budget yang dikendalikan provider
+   DILARANG masuk rumus dalam bentuk apa pun; hanya job `Completed` masuk `passed_budgets` dan kontribusinya
+   diplafon `min(budget, BASELINE_CAP_USDC)` (ADR-021 kep. 1); `record_job_outcome` membuang budget bila
+   `client == provider` (ADR-021 kep. 2) dan wajib idempoten per `job_id`; himpunan budget lolos kosong → cap dari
+   KONSTANTA, bukan statistik: `BASELINE_CAP_USDC = 1_000_000` untuk risk 1 dan `BASELINE_CAP_USDC // 4` = 250.000
+   untuk risk ≥2; cap monoton TIDAK-NAIK per provider; lantai `MIN_CAP_USDC = 250_000`; dan "blokir total" BUKAN
+   keluaran sah `derive_cap` (penghentian hanya lewat mode aman, aturan 5). Sifatnya satu arah: memori hanya bisa
+   MENGECILKAN cap, tidak pernah membesarkannya — jadi "provider membangun kepercayaan lewat riwayat baik"
+   DILARANG diklaim. Cap juga bukan deteksi; ia hanya membatasi UKURAN kerugian per job (ADR-021 kep. 4).
+5. **Fail-closed.** Perbandingan `memory_root` lokal dengan root di vault MATI sebagai pemicu: **ADR-023** keputusan 1
+   mengeluarkan `lastMemoryRoot`/`knownRoots` dari jalur keputusan tx (root lokal selalu maju satu tulisan di depan
+   root yang diumumkan, jadi perbandingan itu mem-brick agen sesudah job pertama). Pemicu mode aman adalah
+   **memori lokal hilang atau tidak bisa dibaca**. Presedensi PERSIS-nya adalah **ADR-024 keputusan 2**, dievaluasi
+   berurutan:
+   1. kunci single-instance gagal, ATAU `load_snapshot`/`memory_root` melempar → **AMAN**;
+   2. `memory.db` (atau `-wal`/`-shm`) hilang: `lastMemoryRoot() == 0` → **NAIF**, selain itu → **AMAN**;
+   3. selebihnya → **NORMAL**, termasuk memori kosong dengan nol job outcome.
+   `lastMemoryRoot()` dibaca HANYA di cabang 2, dan hanya untuk membedakan "hari pertama" dari "vault yang sudah
+   hidup"; di cabang lain ia log/UI saja. Dalam mode aman agen menahan `postVerdict`, `finalize`, DAN
+   `setProviderCap` (ADR-020 kep. 8): agen berhenti total, job menggantung sampai `expiredAt`, lalu siapa pun boleh
+   `claimRefund` dan client menerima refund penuh — jalur pemulihannya adalah memulihkan `memory.db` dari backup.
+   Yang HILANG dan wajib diucapkan apa adanya: deteksi "memori diganti DB LAIN" (ADR-023/ADR-024) tidak ada di v1.
    Mode aman tetap "tidak melakukan yang diklaim" (kalibrasi hilang) → tetap lolos gate destruktif juri.
 6. Tanpa memori, lapis 1 (kriteria) dan lapis 2 (cek deterministik + rubric) tetap berjalan. Yang hilang hanya kalibrasi
    kedalaman cek, pola curang yang dipelajari, dan gating milestone. Kalimat pitch: *"hapus memori kami, dan kamu dapat
    evaluator stateless biasa — persis pesaing kami."*
 
-Jangkar memori: `memory_root = keccak(sorted(provider entities) || sorted(reference patterns))`, dikirim ke vault tiap
-`postVerdict`. Siapa pun bisa merekonstruksi root dari file memori yang dipublikasikan/diaudit.
+Jangkar memori (**ADR-020** keputusan 6-7, menggantikan rumus 24 Agu `keccak(sorted(provider entities) ||
+sorted(reference patterns))`): `memory_root` menjangkar PERSIS himpunan yang boleh dibaca pengambil keputusan,
+yaitu ketiga prefiks — semua entity `provider`, semua `reference:pattern:*`, dan semua `reference:rubric:*` —
+**termasuk pattern yatim** yang tidak dirujuk provider mana pun, BUKAN irisan yang dirujuk. Aturan itu otomatis
+mengecualikan `suspicion` (ADR-002) dan membuat keadaan "saya membacanya tapi tidak menjangkarnya" mustahil.
+Encoding preimage WAJIB kanonik sebelum root boleh diumumkan on-chain: dihitung dari body MENTAH yang tersimpan
+(bukan proyeksi lossy), tiap int di-encode sebagai string desimal, dan kunci entity dengan pemisah yang tidak bisa
+ditabrak — sehingga siapa pun bisa merekonstruksi root, di TypeScript maupun Python, dari file memori yang
+dipublikasikan/diaudit. Dikirim ke vault tiap `postVerdict`.
 
 ## 4. EvaluatorVault.sol (ekstensi di luar spek — kontribusi orisinal)
 
@@ -132,10 +163,14 @@ function deposit() external payable;                                   // bond e
 function setProviderCap(address provider, uint256 capUsdc) external onlyAgent;
 function postVerdict(uint256 jobId, uint8 kind, bytes32 reasonHash, bytes32 memoryRoot) external onlyAgent;
         // readyAt = now + CHALLENGE_WINDOW; emit VerdictPosted; emit MemoryRootUpdated(memoryRoot)
+        // ADR-011: TAMBAH knownRoots[memoryRoot] = true; revert bila memoryRoot == 0
 function challenge(uint256 jobId, bytes32 counterEvidenceHash) external payable;   // bond penantang; hanya sebelum readyAt
 function resolve(uint256 jobId, bool evaluatorWasRight) external onlyArbiter;      // MVP: arbiter = multisig/juri; v2: ERC-8004 validation
 function finalize(uint256 jobId) external;   // siapa pun, setelah readyAt & tanpa challenge terbuka;
-        // revert jika verdict.memoryRoot != lastMemoryRoot (agen dalam mode aman tidak pernah post verdict dengan root tak cocok)
+        // ADR-011 MENGGANTI syarat "verdict.memoryRoot != lastMemoryRoot" (yang mengunci verdict tumpang tindih
+        // SELAMANYA): syaratnya knownRoots[v.memoryRoot] == true — root yang PERNAH diumumkan, bukan yang TERAKHIR.
+        // Varian lastMemoryRoot-sebagai-syarat DILARANG. lastMemoryRoot tetap disimpan & di-emit untuk auditor/UI saja;
+        // fail-closed dijaga di sisi agen (§3 aturan 5): dalam mode aman tidak ada verdict yang di-post sama sekali.
         // kind==1 → acp.complete(jobId, reasonHash, "") ; kind==2 → acp.reject(jobId, reasonHash, "")
 function providerCap(address) external view returns (uint256);
 ```
@@ -182,8 +217,6 @@ evaluator/
 5. Panel juri: unggah deliverable sendiri (cacat halus) → verdict + bukti per-kriteria + hash di explorer.
 
 ## 8. Yang masih harus diverifikasi saat build (tidak memblokir desain)
-- Bagaimana SDK ACP mengubah `reason`/`deliverable` string → bytes32 (hash lokal vs simpan di API dulu). Jalur kita
-  memanggil kontrak langsung via viem, jadi hanya perlu konsisten dengan indexer ACP bila ingin tampil di UI Virtuals.
 - Apakah API ACP mensyaratkan evaluator terdaftar di Service Registry untuk menerima event via SDK
   (fallback: baca event langsung dari chain — sudah jadi default desain).
 - Faucet USDC Base Sepolia + apakah kontrak Sepolia ACP mengizinkan evaluator berupa kontrak (spek: ya).

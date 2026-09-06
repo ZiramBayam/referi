@@ -515,9 +515,9 @@ Konsekuensi untuk `agent/vault_client.py` + `EvaluatorVault.sol` (mengoreksi cat
 ## `kind=` → `TypeError`, `write_event` posisional → `TypeError`, `tiers=("bogus",)` → `ValueError`, `search("")` → 0 baris,
 ## kebocoran prefiks-token + body (`rubric:defi` ikut terbawa), urutan `search` = urutan INSERT bukan urut-kunci,
 ## potong senyap 100/20, kunci `..` → `ValidationError`, `delete_entity` True→False, `requires_python >=3.10`, tier `free`)
-## — semua COCOK dengan yang tertulis. DIPERCAYA-TAPI-TIDAK-DIUJI-ULANG hari ini: cap 5 MB free tier (konstanta
-## `FREE_TIER_CAP_BYTES = 5 * 1024 * 1024` DIBACA di `_capcheck.py:67`, tapi `CapExceededError` tidak dipicu) dan klaim
-## offline/netns di bawah (terakhir dijalankan 2026-09-02). **BARU: §C.2 membatalkan klaim "0.7.0 tanpa transaksi".**
+## — semua COCOK dengan yang tertulis. DIPERCAYA-TAPI-TIDAK-DIUJI-ULANG hari ini: klaim offline/netns di bawah
+## (terakhir dijalankan 2026-09-02). Cap 5 MB free tier BUKAN LAGI "dipercaya": `CapExceededError` DIPICU sungguhan
+## 2026-09-06, lihat §C.3. **§C.2 membatalkan klaim "0.7.0 tanpa transaksi".**
 Signature NYATA (salinan `inspect.signature`, `self` dibuang; `*` = keyword-only). Bukan tulisan tangan dari README:
 ```python
 from sibyl_memory_client import MemoryClient, NotFoundError
@@ -566,16 +566,19 @@ Tier FLAGGED: `schema.sql` 0.7.0 memang memuat tabel `flagged_actors` (komentar 
 → tidak bisa dipakai dari SDK. Karantina TETAP entity `category="suspicion"`.
 Perintah: `grep -rn "flagged_actors" <site-packages>/sibyl_memory_client/client.py <…>/storage.py` → kosong.
 Metode publik lain yang ADA di 0.7.0 tapi di luar cakupan verifikasi ini (jangan dipanggil sebelum diverifikasi):
-`learn, learner, lint, free_tier_status, get/set_tenant, get/set_tier, schema_version,
+`learn, learner, lint, get/set_tenant, get/set_tier, schema_version,
 accept_skill_proposal, reject_skill_proposal, list_skill_proposals`. (`search` DIKELUARKAN dari daftar ini
-2026-09-05: sudah terverifikasi di §C.1. `storage` DIKELUARKAN 2026-09-06: sudah terverifikasi di §C.2.) Daftar LENGKAP metode publik `MemoryClient` 0.7.0
+2026-09-05: sudah terverifikasi di §C.1. `storage` DIKELUARKAN 2026-09-06: sudah terverifikasi di §C.2.
+`free_tier_status` DIKELUARKAN 2026-09-06: terverifikasi di §C.3 untuk pemakaian read-only — ingat `tier` yang
+dilaporkannya = argumen `local(tier=…)` sisi kita, BUKAN jawaban server.) Daftar LENGKAP metode publik `MemoryClient` 0.7.0
 (`sorted(a for a in dir(MemoryClient) if not a.startswith("_"))`, dijalankan 2026-09-05) — apa pun di luar daftar ini
 TIDAK ADA: `accept_skill_proposal, archive_entity, delete_entity, free_tier_status, get_entity, get_reference,
 get_state, get_tenant, get_tier, learn, learner, lint, list_entities, list_skill_proposals, local, read_events,
 reject_skill_proposal, schema_version, search, search_entities, set_entity, set_reference, set_state, set_tenant,
 set_tier, storage, write_event`.
 Python ≥ 3.10 (`requires_python` di https://pypi.org/pypi/sibyl-memory-client/json). Tier plugin default `local()` = `free`
-→ cap lokal 5 MB, `set_entity`/`archive_entity` bisa melempar `CapExceededError`.
+→ cap lokal 5 MB, `set_entity`/`archive_entity` bisa melempar `CapExceededError`. Cap itu DIBUKTIKAN dipicu, dan
+klaim panitia "Pro tier active for the hackathon" TIDAK menjangkau jalur kita: §C.3.
 
 ### C.1 Enumerasi REFERENCE lewat `search` — TERVERIFIKASI 2026-09-05 (menutup blocker 2.1r / ADR-020 kep. 7)
 Sumber: paket TERPASANG di `agent/.venv` (`importlib.metadata.version("sibyl_memory_client")` → `0.7.0`),
@@ -680,6 +683,98 @@ BERBEDA (lebih luas) dari yang ditutup `Storage.transaction()`:
    menjatuhkan instans kedua DI TENGAH JALAN dengan `StorageError` sesudah ia mungkin sudah bekerja di luar DB.
 Yang harus berhenti ditulis: "SDK tidak punya transaksi". Yang benar: **transaksi ADA dan atomik, tetapi tidak bisa
 membungkus panggilan TULIS SDK, dan tidak bisa membentang di luar SQLite** — itulah celah yang ditutup kunci.
+
+### C.3 TIER & CAP — dicatat 2026-09-06, memisahkan yang TERVERIFIKASI dari yang KLAIM PANITIA
+Pemicu: user mengirim tangkapan layar halaman panitia `https://hack.sibyllabs.org/team/referi-bd41` ("Set up Sibyl
+Memory") yang berbunyi *"Pro tier active for the hackathon — Every plugin account is on the Pro tier through the end
+of the event. Storage cap lifted, nothing to pay, nothing to claim."* Baris di bawah dipisah TEGAS: apa yang bisa
+kita eksekusi sendiri, versus apa yang hanya klaim pihak lain.
+
+**A. TERVERIFIKASI — cap 5 MB NYATA dan MENGIKAT jalur kita** (menutup butir "DIPERCAYA, bukan dibuktikan" di
+kepala §C). Probe dijalankan pada DB temp sekali-pakai DI LUAR repo, `HOME` kosong baru, interpreter
+`agent/.venv/bin/python` (paket TERPASANG, versi `0.7.0`): tulis entity 64 KB berulang lewat `set_entity`.
+```
+version: 0.7.0
+CapExceededError RAISED at n = 24
+  msg: You're at the 5 MB free-tier cap and your account isn't activated. Run `sibyl init` to activate,
+       or stay under the cap.
+  current_size: 5316608  cap: 5242880  proposed_delta: 64218
+  upgrade_url: https://docs.sibyllabs.org/memory/tiers
+```
+Jadi cap itu ditegakkan SECARA LOKAL, tanpa jaringan, pada akun yang TIDAK diaktivasi — persis konfigurasi kita.
+Jalur kodenya dibaca di `_capcheck.py`: `_refresh_and_check` cabang pertama, `if not self.account_id or not
+self.session_token:` → bandingkan ke `self._cap` → `raise CapExceededError`. Tidak ada panggilan keluar.
+
+**B. TERVERIFIKASI — pembacaan tier dari sisi kita: `free_tier_status()`** (metode ini sebelumnya ada di daftar
+"jangan dipanggil sebelum diverifikasi"; sekarang terverifikasi untuk pemakaian read-only ini). Keluaran apa adanya:
+```
+{'tier': 'free', 'db_size_bytes': 266240, 'soft_cap_bytes': 5242880, 'pct_used': 0.0508,
+ 'uncapped': False, 'at_or_above_warning': False, 'at_or_above_cap': False,
+ 'upgrade_url': 'https://sibyllabs.org/plugin#tier'}          # sesudah lewat cap: pct_used 1.014, at_or_above_cap True
+```
+`tier` yang dilaporkannya adalah `self._tier` — argumen `MemoryClient.local(tier=…)`, default `'free'` — BUKAN
+jawaban server. Ia tidak bisa dipakai untuk membuktikan grant Pro.
+
+**C. TERVERIFIKASI — cap dihitung PER AKUN dan AGREGAT lintas store, bukan per file.** `_capcheck.aggregate_db_size`
+menjumlahkan (docstring + kode): `primary_db`, `~/.sibyl-memory/memory.db`, `$HERMES_HOME/sibyl/memory.db` +
+tiap `profiles/<p>/memory.db`, dan `$SIBYL_MEMORY_DB`. Konsekuensi operasional: kalau seseorang menjalankan
+`sibyl setup` sehingga Claude Code/Codex menulis ke `~/.sibyl-memory/memory.db`, byte itu IKUT dihitung terhadap
+cap `agent/data/memory.db` kita. Ukuran kita hari ini: `agent/data/memory.db` 286.720 B + `agent/data/chain-abc`
+331.671 B ≈ 12% dari 5.242.880 B → cap bukan risiko nyata bagi submission.
+
+**D. TERVERIFIKASI dari docs resmi — tidak ada tier bernama "Pro".** `curl -sL https://docs.sibyllabs.org/memory/tiers`
+(diambil 2026-09-06, halaman bertanda "Last updated 2026-06-29") menyebut TIGA tier: **Free** (default sesudah
+`sibyl init`), **Staker** (tahan ambang $SIBYL di Base), **Subscription** (bayar USDC di Base). Sejalan dengan kode
+0.7.0: `PAID_TIERS = frozenset({"sync","team","lifetime","stake","enterprise"})` (`_capcheck.py:69`) — **"pro" TIDAK
+ada di himpunan itu**. TAPI jangan disimpulkan berlebihan: pada `_refresh_and_check` server boleh mengirim
+`cap_bytes` EKSPLISIT, dan hanya bila field itu absen kode jatuh ke `None if tier in PAID_TIERS else self._cap`.
+Artinya grant sisi-server tetap bisa melepas cap tanpa nama tier dikenal klien — untuk akun yang DIAKTIVASI.
+Catatan ketidakcocokan dokumen: tabel di halaman yang sama menulis "2 MB local cap", sedangkan bagian "The 5 MB cap,
+precisely" di halaman itu juga menulis 5.242.880 byte. Kode yang kita jalankan yang menang: `FREE_TIER_CAP_BYTES =
+5 * 1024 * 1024`, dengan komentar "Raised 2026-08-06 … from 2 MiB → 5 MiB". Docs 2 MB itu BASI.
+
+**E. KLAIM PANITIA — TIDAK bisa kita verifikasi, dan tidak perlu.** Halaman `hack.sibyllabs.org/team/referi-bd41`
+membalas **HTTP 404 tanpa autentikasi** (`curl -sL -o /dev/null -w "%{http_code}" …` → `404`, 2026-09-06), jadi
+satu-satunya bukti klaim "Pro tier active" adalah tangkapan layar user. Memverifikasinya menuntut `sibyl init`
+(sign-in browser milik user) + `sibyl status` — dua hal yang tidak boleh dijalankan di sini. **Yang lebih penting:
+klaim itu TIDAK MENYENTUH jalur kita.** Agen memanggil `MemoryClient.local(str(db))` (`vault_client.py:1098` dkk.)
+tanpa `account_id`/`session_token`/`credentials_*`, sehingga default `tier='free'`, `account_id=None`. Grant tier
+apa pun pada "plugin account" hanya berlaku untuk akun yang teraktivasi lewat `~/.sibyl-memory/credentials.json`;
+tanpa itu satu-satunya cabang yang bisa dijangkau adalah cap free lokal (bukti A). Jadi: **jangan tulis di
+README/video/post bahwa cap kita terangkat.** Yang benar dan bisa dipertahankan: kita berjalan di bawah cap free
+5 MB, tidak teraktivasi, tanpa panggilan jaringan, dan pemakaian ~12% dari cap.
+
+**F. `sibyl-memory-cli[mcp]` — VONIS: perkakas BUILDER, BUKAN jalur submission. JANGAN dipasang.**
+Bukti, semuanya primer:
+- Registry PyPI (`https://pypi.org/pypi/<pkg>/json`, dibaca 2026-09-06): `sibyl-memory-cli` **0.4.0**,
+  `sibyl-memory-mcp` **0.2.0**, `sibyl-memory-langgraph` **0.2.0**, `sibyl-memory-client` **0.8.0** (semua MIT,
+  `requires_python >=3.10`, diunggah 2026-08-31).
+- **BLOKIR VERSI:** `sibyl-memory-cli` 0.4.0 `requires_dist` = `['sibyl-memory-client>=0.8.0',
+  'sibyl-memory-hermes>=0.4.0', 'pyyaml>=6.0,<7', "sibyl-memory-mcp>=0.2.0; extra == 'mcp'", …]`. Memasangnya
+  MEMAKSA `sibyl-memory-client` naik dari pin **0.7.0** ke ≥ **0.8.0** — ganti minor line pada satu-satunya paket
+  yang menopang SELURUH §C/§C.1/§C.2 → wajib ADR + verifikasi ulang semua signature. `sibyl-memory-mcp` 0.2.0 dan
+  `sibyl-memory-langgraph` 0.2.0 menuntut hal yang sama.
+- Docs resmi memisahkan jalurnya secara eksplisit. `https://docs.sibyllabs.org/memory/integrations`, tabel
+  "Which package do I install?": *"Claude Code / Codex / Cursor / Continue → `sibyl-memory-cli` → `sibyl setup`"*;
+  *"**Your own Python → `sibyl-memory-client` → `import MemoryClient`**"*. `sibyl setup` "auto-detects Hermes,
+  Claude Code, and Codex and wires Sibyl as the memory provider" — ia mengubah lingkungan CODING kita, bukan
+  runtime agen yang disubmit.
+- Syarat submission TIDAK menyebut akun plugin. `https://hack.sibyllabs.org/rules` §08 "What to submit": repo
+  publik MIT/Apache-2.0 + video 2–5 mnt dengan momen fresh-session recall + README + 2 post build-in-public;
+  §03 gerbangnya adalah "delete the Sibyl Memory layer… does the project still do what it claims?". Tidak ada
+  kata "plugin account", "`sibyl init`", "activated", atau "CLI" di gerbang maupun daftar submission
+  (`https://hack.sibyllabs.org/submissions` juga hanya menyebut 4 item yang sama).
+Kesimpulan: memasang `sibyl-memory-cli[mcp]` empat hari sebelum submit membeli NOL poin rubric dan menaruh pin
+0.7.0 dalam risiko. Bila suatu saat ia dipakai, ia dipasang di lingkungan builder (venv terpisah), BUKAN di
+`agent/pyproject.toml`. Catatan silang: task 0.2 dulu menghapus penyebutan paket-paket ini dengan alasan "tidak
+dipakai di kode mana pun" — itu tetap BENAR untuk kode, dan blok F ini tidak membalikkannya; ia mencatat kenapa
+paket itu SENGAJA tidak dipakai, sehingga pertanyaan yang sama tidak perlu diriset ulang. AC 0.2 butir (b)
+(`grep -nE "sibyl-memory-(cli|mcp|langgraph)([^a-z]|$)" docs/api-facts.md` → kosong) karena itu TIDAK LAGI
+terpenuhi apa adanya, dan alat ukurnya perlu diganti seperti AC 0.2 (a) dulu diganti 0.9b: bentuk yang tetap
+bermakna adalah "tidak ada baris yang menyatakan paket itu DIPAKAI/DIPASANG", mis.
+`grep -nE "sibyl-memory-(cli|mcp|langgraph)([^a-z]|$)" agent/pyproject.toml agent/uv.lock` → kosong (dijalankan
+2026-09-06: nol baris). Akhiran `([^a-z]|$)` WAJIB dipertahankan — tanpa itu `cli` ikut mencocokkan `client`,
+jebakan yang sama yang sudah tercatat di AC 0.2 (b).
 
 ### Klaim "offline, tanpa `sibyl init`" — diverifikasi offline 2026-09-02
 Yang diuji: `MemoryClient.local(<path baru>)` membuat DB dari nol tanpa `sibyl init` dan tanpa jaringan, lalu

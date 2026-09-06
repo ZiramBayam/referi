@@ -15,7 +15,8 @@ Kolom **Dipin** = versi yang disepakati (pin; hanya berubah lewat ADR). Kolom **
 
 ### Ambang ADR untuk perubahan versi
 - **Drift patch/minor di dalam major line yang sudah dipin** (mis. Node tetap di major line 24, uv tetap di 0.12.x): TIDAK butuh ADR. Cukup `@agent-api-verifier` memperbarui kolom "Aktual" di tabel ini + tanggal + perintah verifikasi.
-- **Ganti major line: WAJIB ADR di `docs/decisions.md` SEBELUM instalasi.** Termasuk: Node 26, Python 3.14, TypeScript 5.x (turun dari 7.x), Foundry 1.8+, solc ≠ 0.8.36, viem 3.x.
+- **Ganti major line: WAJIB ADR di `docs/decisions.md` SEBELUM instalasi.** Termasuk: Node 26, Python 3.14, TypeScript 5.x (turun dari 7.x), Foundry di atas major line 1.7, solc ≠ 0.8.36, viem 3.x.
+- **Foundry dipin PERSIS 1.7.1; drift patch sekalipun (1.7.2) wajib ADR karena mengubah bytecode.** Ini pengecualian eksplisit terhadap aturan drift patch/minor di butir pertama: kompilator/toolchain masuk preimage artefak yang sudah dideploy dan dibekukan (ADR-022), jadi "patch aman" tidak berlaku di sini.
 - Kolom "Dipin" hanya boleh diubah oleh ADR. Kolom "Aktual" boleh diperbarui api-verifier kapan saja, asalkan disertai perintah + tanggal.
 
 ### Perintah verifikasi kolom "Aktual" (dijalankan 2026-09-02, shell INTERAKTIF `bash -ic`)
@@ -54,7 +55,8 @@ ditemukan; hanya `uv` yang selamat (lewat `~/.profile`). Diverifikasi 2026-09-02
 ## Python (agent/)
 | Paket | Versi | Catatan |
 |---|---|---|
-| sibyl-memory-client | **0.7.0** | python ≥3.10; verifikasi signature metode dengan `inspect.signature` sebelum dipakai |
+| sibyl-memory-client | **0.7.0** | python ≥3.10; verifikasi signature metode dengan `inspect.signature` sebelum dipakai. Registry dibaca 2026-09-06 (`curl -s https://pypi.org/pypi/sibyl-memory-client/json`): versi TERBARU kini **0.8.0** (unggah 2026-08-31) — pin TETAP 0.7.0, naik ke 0.8.0 = ganti minor line pada paket yang menopang seluruh `docs/api-facts.md` §C/§C.1/§C.2 → **wajib ADR + verifikasi ulang signature**. Cap free tier **5.242.880 B ditegakkan lokal dan TERBUKTI dipicu** (`CapExceededError`, api-facts §C.3); pemakaian kita ~12% dari cap. Klaim panitia "Pro tier active for the hackathon" (halaman tim, hanya tangkapan layar — URL-nya HTTP 404 tanpa login) TIDAK menjangkau jalur kita: `MemoryClient.local()` berjalan TIDAK teraktivasi (`account_id=None`), jadi cap free adalah satu-satunya cabang yang terjangkau. Jangan tulis "cap kita terangkat" di README/video/post |
+| sibyl-memory-cli / -mcp / -langgraph / -hermes | **TIDAK DIPASANG** | PyPI 2026-09-06: cli **0.4.0**, mcp **0.2.0**, langgraph **0.2.0** (MIT, ≥3.10). Perkakas BUILDER (`sibyl setup` menyambungkan Claude Code/Codex/Hermes ke memori), BUKAN jalur submission — docs resmi `docs.sibyllabs.org/memory/integrations` memetakan "Your own Python → `sibyl-memory-client` → `import MemoryClient`", dan `hack.sibyllabs.org/rules` §08 tidak menuntut akun plugin. **Blokir keras:** `sibyl-memory-cli` 0.4.0 `requires_dist` memuat `sibyl-memory-client>=0.8.0` → memasangnya MEMAKSA pin 0.7.0 naik. Memasang salah satunya = keputusan PM + ADR. Rincian: api-facts §C.3 blok F |
 | web3 | 7.16.0 | python ≥3.8,<4. Terpasang di `agent/.venv` dan DICOCOKKAN 2026-09-05: `agent/.venv/bin/python -c "import importlib.metadata as m; print(m.version('web3'))"` → `7.16.0` (Python 3.13.15, eth-abi 6.0.0). Signature yang boleh dipakai: `docs/api-facts.md` §F |
 | anthropic | **1.0.0** | major baru (0.x→1.x) — baca changelog sebelum pakai; model default `claude-sonnet-5` |
 | pydantic | 2.13.4 | skema kriteria/verdict |
