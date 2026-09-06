@@ -2019,8 +2019,9 @@ def test_root_gate_scanner_catches_the_two_bypasses_the_reviewer_found():
 
 # Satu-satunya modul yang boleh memanggil `load_snapshot` langsung: alat ekspor (task 2.1b).
 # Ia WAJIB memegang objek `MemorySnapshot` yang sama untuk file DAN untuk root — membaca DB
-# dua kali berarti root mengikat state yang tidak pernah ada (Sibyl 0.7.0 tanpa transaksi,
-# api-facts §C). Gerbang ROOT tetap berlaku penuh untuknya; lihat tes tepat di bawah.
+# dua kali berarti root mengikat state yang tidak pernah ada (pembacaan terpisah tidak
+# berbagi satu transaksi — api-facts §C.2). Gerbang ROOT tetap berlaku penuh untuknya;
+# lihat tes tepat di bawah.
 SNAPSHOT_ALLOWED = {"memory_export.py"}
 
 

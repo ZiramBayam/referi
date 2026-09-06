@@ -2,9 +2,10 @@
 
 Yang dijaga di sini, dan kenapa masing-masing ada:
   (1) SATU pembacaan DB. File ekspor dan root berasal dari objek `MemorySnapshot` yang SAMA.
-      Sibyl 0.7.0 tidak punya transaksi (api-facts §C), jadi membaca DB dua kali bisa
-      menghasilkan root yang mengikat state yang TIDAK PERNAH ADA. Diuji dua arah: penghitung
-      panggilan, DAN penulisan yang menyusup TEPAT sesudah snapshot diambil.
+      Eksportir tidak membungkus pembacaannya dalam satu transaksi (api-facts §C.2), jadi
+      membaca DB dua kali bisa menghasilkan root yang mengikat state yang TIDAK PERNAH ADA.
+      Diuji dua arah: penghitung panggilan, DAN penulisan yang menyusup TEPAT sesudah
+      snapshot diambil.
   (2) Alat audit tidak boleh menerima ekspor yang agen sendiri TOLAK — paritas
       `from_export_obj` vs `from_mapping` diuji dengan payload reviewer apa adanya.
   (3) Kunci objek ber-escape ditolak DI SUMBER (bukan hanya dekode ilegal), di Python DAN di
@@ -174,7 +175,7 @@ class CountingClient:
 
 
 def test_export_reads_the_database_exactly_once(client, tmp_path, monkeypatch, capsys):
-    """Membaca DB dua kali = root bisa mengikat state yang tidak pernah ada (tanpa transaksi)."""
+    """Membaca DB dua kali = root bisa mengikat state yang tidak pernah ada (api-facts §C.2)."""
     _seed(client)
     spy = CountingClient(client)
     monkeypatch.setattr(me, "open_memory", lambda db: spy)

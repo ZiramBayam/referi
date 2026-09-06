@@ -13,10 +13,13 @@ Empat batas yang menentukan bentuk modul ini (semuanya dari review 2.1r, bukan p
    diserialkan/dihash dari objek `MemorySnapshot` yang SAMA, jadi tidak ada pembacaan DB kedua
    yang bisa menyelipkan keadaan lain di antara keduanya.
    Balapan DI DALAM `load_snapshot` sendiri (1x `list_entities` + 2x `search` +
-   N x `get_reference` di atas Sibyl 0.7.0 yang TIDAK punya transaksi, api-facts §C) kini
-   ditutup dari luar: `load_snapshot` berjalan di bawah KUNCI SINGLE-INSTANCE
+   N x `get_reference`) ditutup dari luar: `load_snapshot` berjalan di bawah KUNCI SINGLE-INSTANCE
    (`agent/memory_lock.py`, task 2.4a), jadi tidak ada instans agen lain yang bisa menulis
-   di tengah rangkaian itu. Tanpa kunci itu, tulisan yang mendarat di tengah menghasilkan
+   di tengah rangkaian itu. (Sibyl 0.7.0 PUNYA `Storage.transaction()` yang atomik dan
+   pembacaan SDK boleh bersarang di dalamnya — api-facts §C.2 — jadi kelas balapan INI
+   sebenarnya bisa ditutup transaksi juga; kunci dipilih karena ia sekaligus menutup jendela
+   cek-lalu-tulis dan rentang di luar SQLite yang tidak bisa ditutup transaksi.)
+   Tanpa penutup itu, tulisan yang mendarat di tengah menghasilkan
    snapshot bagi keadaan yang TIDAK PERNAH ADA — dan file ekspornya cocok dengan root itu,
    sehingga cacatnya tidak terlihat dari file. Yang TETAP di luar jangkauan: penulis yang
    tidak memakai modul kami (mis. `sqlite3` mentah) — kunci ini kooperatif.

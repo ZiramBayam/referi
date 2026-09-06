@@ -1262,7 +1262,7 @@ class VaultClient:
         → `memory_root`, yaitu fungsi yang SAMA yang dipakai `agent/memory_export.py`
         (task 2.1b) — satu implementasi, bukan salinan. Diambil dari snapshot gerbang, bukan
         dari pembacaan DB tersendiri: root dan keputusan mode WAJIB menggambarkan satu
-        keadaan DB yang sama (Sibyl 0.7.0 tanpa transaksi, api-facts §C).
+        keadaan DB yang sama (pembacaan terpisah tidak berbagi satu transaksi — §C.2).
 
         Pemanggil WAJIB memastikan gerbangnya baru (`refresh_memory_gate()`); di jalur tx
         hal itu dilakukan `_require_memory_gate()` satu baris sebelum penjaga ini.

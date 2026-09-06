@@ -78,8 +78,10 @@ UTANG YANG DIAKUI (jangan dibaca seolah sudah selesai):
     berarti satu entity bernama aneh MEMATIKAN perhitungan root sampai ia dibetulkan dari
     luar — konsekuensi ketersediaan yang sama dengan butir 1 di atas, dipilih sadar karena
     alternatifnya (menjangkar sesuatu yang tidak pernah dibaca) adalah kebohongan senyap.
-  - Idempotensi tulisan provider dijaga CAS versi, tetapi store-nya TIDAK transaksional
-    (api-facts §C tidak punya transaksi). Sejak task 2.4a jendela itu ditutup dari luar oleh
+  - Idempotensi tulisan provider dijaga CAS versi, dan jendela cek-lalu-tulisnya TIDAK BISA
+    diatomkan lewat API publik: `Storage.transaction()` ADA dan atomik, tetapi metode TULIS
+    SDK membuka transaksinya sendiri sehingga tidak boleh bersarang di dalamnya
+    (api-facts §C.2). Sejak task 2.4a jendela itu ditutup dari luar oleh
     KUNCI SINGLE-INSTANCE (`agent/memory_lock.py`): setiap baca-hitung dan setiap tulis
     memegang `flock` eksklusif atas `<memory.db>.lock`, dan instans kedua BERHENTI
     (fail-closed) alih-alih menimpa. Yang TIDAK ditutup: kunci itu KOOPERATIF — proses yang
@@ -954,13 +956,16 @@ def under_memory_lock[F: Callable[..., Any]](fn: F) -> F:
     Dipakai pada DUA jenis operasi, dan keduanya perlu alasan terpisah:
 
       - BACA-HITUNG (`load_snapshot`, dan lewat itu seluruh `memory_root*`). Rangkaiannya
-        1x `list_entities` + 2x `search` + N x `get_reference` pada store TANPA transaksi
-        (api-facts §C). Tanpa kunci, tulisan yang mendarat di tengah menghasilkan root untuk
+        1x `list_entities` + 2x `search` + N x `get_reference`, dan rangkaian itu TIDAK
+        dibungkus `Storage.transaction()` (yang ada dan atomik — api-facts §C.2). Tanpa
+        penutup, tulisan yang mendarat di tengah menghasilkan root untuk
         keadaan yang TIDAK PERNAH ADA — dan file ekspor pun cocok dengan root itu, jadi
         cacatnya tidak terlihat dari file.
       - TULIS (`record_job_outcome`, `promote_suspicions`, `store_provider_cap`, dan seluruh
         setter mentah). `_save_provider_cas` hanya CAS versi cek-lalu-tulis; jendela antara
-        keduanya tidak atomik, jadi kunci inilah yang menutupnya.
+        keduanya tidak atomik dan TIDAK BISA diatomkan lewat API publik (metode tulis SDK
+        tidak boleh bersarang dalam transaksi — api-facts §C.2), jadi kunci inilah satu-satunya
+        yang menutupnya.
 
     Fungsi yang dibungkus WAJIB menerima klien memori sebagai argumen PERTAMA. Kunci ini
     REENTRAN, jadi fungsi tingkat atas dan helper yang dipanggilnya boleh sama-sama memakai
@@ -1888,9 +1893,9 @@ def local_memory_evidence(
     """Keadaan memori lokal dari SATU pembacaan DB (ADR-023 keputusan 2, ADR-024).
 
     Root dan jumlah job outcome lahir dari `MemorySnapshot` yang SAMA. Membaca DB dua kali
-    berarti keduanya bisa menggambarkan dua keadaan yang berbeda (Sibyl 0.7.0 tanpa
-    transaksi, api-facts §C), dan gerbang mode akan memutuskan atas keadaan yang tidak
-    pernah ada.
+    berarti keduanya bisa menggambarkan dua keadaan yang berbeda (dua pembacaan terpisah
+    tidak berbagi satu transaksi — api-facts §C.2), dan gerbang mode akan memutuskan atas
+    keadaan yang tidak pernah ada.
 
     `lock_timeout_seconds` default `GATE_LOCK_TIMEOUT_SECONDS` (BUKAN 10 detik milik jalur
     TULIS): gerbang dibaca berkali-kali per transaksi, dan menunggu penuh di setiap
@@ -2122,9 +2127,12 @@ def _save_provider_cas(
 ) -> ProviderProfile:
     """Tulis provider hanya bila versinya masih seperti saat dibaca.
 
-    JUJUR TENTANG BATASNYA: ini compare-and-swap di atas store yang TIDAK transaksional —
-    `sibyl-memory-client` 0.7.0 tidak mengekspos transaksi (api-facts §C), jadi jendela
-    antara baca-versi dan tulis tidak atomik. Yang dijamin: tulisan yang dibangun dari
+    JUJUR TENTANG BATASNYA: ini compare-and-swap yang jendelanya TIDAK BISA diatomkan lewat
+    API publik. `sibyl-memory-client` 0.7.0 MEMANG mengekspos `Storage.transaction()` yang
+    atomik, tetapi `set_entity` membuka transaksinya sendiri di sambungan yang sama, jadi
+    membungkus baca-versi + tulis di dalam satu transaksi melempar `cannot start a
+    transaction within a transaction` dan tulisannya HILANG (api-facts §C.2). Jendela antara
+    baca-versi dan tulis karena itu tetap tidak atomik. Yang dijamin: tulisan yang dibangun dari
     snapshot USANG ditolak, sehingga satu tulisan basi tidak bisa mengembalikan provider
     ber-insiden ke risk 0 tanpa cap (dan tidak bisa membuka kembali replay). Yang TIDAK
     dijamin oleh CAS itu sendiri: dua proses agen yang menulis DB yang sama. Itu ditutup
@@ -2201,7 +2209,8 @@ def record_job_outcome(
     lewat sini.
 
     BATAS YANG DIAKUI (jangan dibaca lebih jauh dari ini): idempotensi itu cek-lalu-tulis
-    di atas store yang TIDAK transaksional. Tulisan dari snapshot USANG ditolak CAS versi
+    yang tidak bisa dibungkus satu transaksi SDK (api-facts §C.2). Tulisan dari snapshot
+    USANG ditolak CAS versi
     (`_save_provider_cas`, `StaleWriteError`), dan jendela antara baca dan tulis ditutup
     `@under_memory_lock` — bukan oleh atomisitas SDK, melainkan oleh larangan instans kedua
     (`flock` atas `<memory.db>.lock`, task 2.4a). Sifatnya kooperatif: penulis DB yang tidak

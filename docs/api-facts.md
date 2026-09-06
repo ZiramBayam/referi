@@ -509,6 +509,15 @@ Konsekuensi untuk `agent/vault_client.py` + `EvaluatorVault.sol` (mengoreksi cat
 ## category=None)`, `search(self, query, *, limit=20, prefix=False, tiers=None)` — identik dengan yang tercatat di bawah.
 ## `flagged_actors` masih 0 kemunculan di `client.py` DAN `storage.py` (hanya `schema.sql` + `lint.py`) → FLAGGED tetap
 ## tidak bisa dipakai dari SDK. Dirujuk oleh ADR-025 butir (iv).
+## SAPU BERSIH 2026-09-06: SELURUH signature + bentuk baris + jebakan §C/§C.1 di bawah DIJALANKAN ULANG pada paket
+## terpasang (daftar 27 metode publik, `hasattr(MemoryClient,"list_references")` → False, `get_state` → pembungkus
+## `{'body','updated_at'}`, `get_entity` → `NotFoundError` vs `get_reference` → `None`, `get_reference()["body"]` → `str`,
+## `kind=` → `TypeError`, `write_event` posisional → `TypeError`, `tiers=("bogus",)` → `ValueError`, `search("")` → 0 baris,
+## kebocoran prefiks-token + body (`rubric:defi` ikut terbawa), urutan `search` = urutan INSERT bukan urut-kunci,
+## potong senyap 100/20, kunci `..` → `ValidationError`, `delete_entity` True→False, `requires_python >=3.10`, tier `free`)
+## — semua COCOK dengan yang tertulis. DIPERCAYA-TAPI-TIDAK-DIUJI-ULANG hari ini: cap 5 MB free tier (konstanta
+## `FREE_TIER_CAP_BYTES = 5 * 1024 * 1024` DIBACA di `_capcheck.py:67`, tapi `CapExceededError` tidak dipicu) dan klaim
+## offline/netns di bawah (terakhir dijalankan 2026-09-02). **BARU: §C.2 membatalkan klaim "0.7.0 tanpa transaksi".**
 Signature NYATA (salinan `inspect.signature`, `self` dibuang; `*` = keyword-only). Bukan tulisan tangan dari README:
 ```python
 from sibyl_memory_client import MemoryClient, NotFoundError
@@ -557,9 +566,9 @@ Tier FLAGGED: `schema.sql` 0.7.0 memang memuat tabel `flagged_actors` (komentar 
 → tidak bisa dipakai dari SDK. Karantina TETAP entity `category="suspicion"`.
 Perintah: `grep -rn "flagged_actors" <site-packages>/sibyl_memory_client/client.py <…>/storage.py` → kosong.
 Metode publik lain yang ADA di 0.7.0 tapi di luar cakupan verifikasi ini (jangan dipanggil sebelum diverifikasi):
-`learn, learner, lint, free_tier_status, get/set_tenant, get/set_tier, schema_version, storage,
+`learn, learner, lint, free_tier_status, get/set_tenant, get/set_tier, schema_version,
 accept_skill_proposal, reject_skill_proposal, list_skill_proposals`. (`search` DIKELUARKAN dari daftar ini
-2026-09-05: sudah terverifikasi di §C.1.) Daftar LENGKAP metode publik `MemoryClient` 0.7.0
+2026-09-05: sudah terverifikasi di §C.1. `storage` DIKELUARKAN 2026-09-06: sudah terverifikasi di §C.2.) Daftar LENGKAP metode publik `MemoryClient` 0.7.0
 (`sorted(a for a in dir(MemoryClient) if not a.startswith("_"))`, dijalankan 2026-09-05) — apa pun di luar daftar ini
 TIDAK ADA: `accept_skill_proposal, archive_entity, delete_entity, free_tier_status, get_entity, get_reference,
 get_state, get_tenant, get_tier, learn, learner, lint, list_entities, list_skill_proposals, local, read_events,
@@ -617,6 +626,60 @@ BAHAYA — TIGA jebakan; pemanggil WAJIB menangani ketiganya, kalau tidak `memor
 
 Catatan samping (kunci reference divalidasi saat tulis): `set_reference` MELEMPAR `ValidationError` untuk kunci berisi
 `..` (`"key contains a forbidden path sequence"`), `"`, atau karakter kontrol — 3 dari 17 kunci uji ditolak di probe ini.
+
+### C.2 TRANSAKSI — KOREKSI 2026-09-06: klaim "0.7.0 TANPA transaksi" SALAH, DAN ia sitasi hantu
+Klaim "`sibyl-memory-client` 0.7.0 tidak punya transaksi (api-facts §C)" dikutip di `agent/agent/memory_lock.py`,
+`memory_export.py`, `memory_policy.py`, `vault_client.py`. **§C TIDAK PERNAH menulis itu** (`sed -n '501,662p'
+docs/api-facts.md | grep -niE "transak|atomi"` 2026-09-06 → nol baris): fakta yang dikutip tidak ada di sumber
+yang dikutip, dan isinya keliru. Yang NYATA ada, dari paket TERPASANG `agent/.venv` (versi `0.7.0`):
+
+```
+agent/.venv/bin/python -c "import inspect; from sibyl_memory_client import storage as st;
+  print(inspect.signature(st.Storage.transaction)); print(inspect.getsource(st.Storage.transaction))"
+→ transaction(self) -> 'Iterator[sqlite3.Connection]'      # @contextmanager
+→ badan: with self.connection() as conn: BEGIN IMMEDIATE / yield / except → ROLLBACK+re-raise / else → COMMIT
+  (docstring paket: "Atomic transaction. Rolls back on exception, commits on clean exit.")
+```
+`MemoryClient.storage` adalah **`property` → `Storage`** (`isinstance(inspect.getattr_static(MemoryClient,"storage"),
+property)` → True), jadi `client.storage.transaction()` TERJANGKAU pemakai SDK — tidak terkubur.
+PRAGMA sambungan (storage.py `_connect`): `journal_mode=WAL`, `busy_timeout=5000`, `foreign_keys=ON`.
+
+PERILAKU — semua baris di bawah = hasil probe yang DIJALANKAN 2026-09-06 pada DB temp sekali-pakai di luar repo,
+bukan bacaan kode:
+- **Atomik: YA.** `UPDATE` di dalam blok yang melempar → nilai kembali ke semula (`{'n':0}` → tampak `{"n":999}`
+  di dalam txn → `{'n':0}` sesudahnya); blok yang selesai bersih → COMMIT (`{'n':7}`).
+- **Sambungan per-thread yang SAMA dipakai ulang** (`with connection() as a` / `as b` → `a is b` → True,
+  `isolation_level` = `None`/autocommit di luar txn).
+- **Metode BACA klien BOLEH bersarang di dalam `storage.transaction()`** — `list_entities`, `get_entity`, `search`
+  semuanya pakai `storage.connection()`, jadi ikut sambungan yang sama dan ikut snapshot txn. Dibuktikan lintas
+  PROSES: penulis di proses lain menembak `set_entity` di tengah blok, dua pembacaan di dalam blok tetap
+  `{'n':0}`/`{'n':0}` (`TORN: False`); penulis itu TERTAHAN 1,03 s lalu sukses sesudah COMMIT (`{'n':5}`).
+  Baseline tanpa txn pada urutan yang sama: `{'n':0}` → `{'n':1}` (`TORN: True`) — balapannya nyata.
+- **Metode TULIS klien TIDAK BOLEH bersarang.** `set_entity/set_reference/set_state/write_event/delete_entity/
+  archive_entity` membuka `storage.transaction()`-nya SENDIRI di sambungan yang sama →
+  `StorageError: SQLite error: OperationalError`, `__cause__ = OperationalError('cannot start a transaction within
+  a transaction')`, dan **tulisannya HILANG** (probe: entity `p1` `NotFoundError` sesudahnya).
+  Akibatnya read-modify-write lewat API publik (baca versi lalu `set_entity`) TIDAK BISA dijadikan satu transaksi.
+- **Menahan txn lebih lama dari `busy_timeout` MEMBUNUH penulis lain**, bukan mengantrekannya: txn ditahan 7 s →
+  proses penulis lain gagal pada 5,01 s dengan `StorageError` / `OperationalError('database is locked')` dan
+  tulisannya hilang. Thread lain di proses yang sama: gagal serupa. `MemoryClient.local()` pada DB yang sedang
+  terkunci bahkan gagal lebih awal di `_ensure_schema` (`SchemaError: Failed to apply schema: database is locked`).
+
+KONSEKUENSI untuk kunci kooperatif kita (`agent/agent/memory_lock.py`) — **TETAP PERLU**, dan yang ditutupnya
+BERBEDA (lebih luas) dari yang ditutup `Storage.transaction()`:
+1. Kelas BACA-KONSISTEN (`load_snapshot`: `list_entities` + 2x `search` + N x `get_reference`) — `transaction()`
+   MEMANG bisa menutupnya (bukti `TORN: False` di atas). Di kelas ini kunci bukan satu-satunya penutup.
+2. Kelas BACA-UBAH-TULIS (`_save_provider_cas`: baca versi → `set_entity`; dedup `recorded_jobs`) —
+   `transaction()` TIDAK bisa menutupnya sama sekali lewat API publik (galat "transaction within a transaction").
+   Menutupnya dengan transaksi berarti turun ke SQL mentah, melewati validasi/pemicu FTS+shadow/akuntansi cap SDK.
+   Kunci adalah satu-satunya penutup yang tersedia.
+3. Kelas RENTANG-DI-LUAR-DB — kunci membentang melewati kerja yang bukan SQLite: hitung `memory_root`, tulis file
+   ekspor, banding ke `lastMemoryRoot()` on-chain, kirim tx. `BEGIN IMMEDIATE` tidak bisa membentang RPC; dan bila
+   dipaksa, ia justru MERUSAK proses agen kedua (gagal pada 5 s, tulisan hilang) alih-alih menolaknya bersih.
+4. MODE GAGAL — kunci menolak instans kedua SEBELUM ia bekerja (`MemoryLockError`, fail-closed). `transaction()`
+   menjatuhkan instans kedua DI TENGAH JALAN dengan `StorageError` sesudah ia mungkin sudah bekerja di luar DB.
+Yang harus berhenti ditulis: "SDK tidak punya transaksi". Yang benar: **transaksi ADA dan atomik, tetapi tidak bisa
+membungkus panggilan TULIS SDK, dan tidak bisa membentang di luar SQLite** — itulah celah yang ditutup kunci.
 
 ### Klaim "offline, tanpa `sibyl init`" — diverifikasi offline 2026-09-02
 Yang diuji: `MemoryClient.local(<path baru>)` membuat DB dari nol tanpa `sibyl init` dan tanpa jaringan, lalu

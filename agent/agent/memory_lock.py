@@ -1,18 +1,38 @@
 """Kunci single-instance atas `memory.db` — task 2.4a butir (1).
 
 MENGAPA MODUL INI ADA, dengan kalimat yang tidak diperhalus:
-`sibyl-memory-client` 0.7.0 TIDAK punya transaksi (docs/api-facts.md §C). Akibatnya
-`memory_policy.load_snapshot()` — 1x `list_entities` + 2x `search` + N x `get_reference` —
-adalah rangkaian pembacaan yang BUKAN satu titik waktu. Tulisan yang mendarat di tengah
-rangkaian itu menghasilkan snapshot yang memuat provider versi lama, kehilangan provider
-yang ditulis belakangan, tetapi ikut menjangkar reference barunya: root untuk keadaan yang
-TIDAK PERNAH ADA. Dan itu TIDAK terlihat dari file ekspor, karena file dan root lahir dari
-snapshot yang sama — keduanya cocok, keduanya salah. Hal yang sama berlaku untuk
-`_save_provider_cas`: CAS versi menolak tulisan dari snapshot USANG, tetapi jendela antara
-baca-versi dan tulis tetap terbuka, sehingga dua proses bisa saling menimpa.
+KOREKSI 2026-09-06 (docs/api-facts.md §C.2): alasan yang tertulis di sini sebelumnya —
+"`sibyl-memory-client` 0.7.0 TIDAK punya transaksi (§C)" — SALAH DUA KALI. §C tidak pernah
+menulis itu, dan `Storage.transaction()` MEMANG ADA, atomik (`BEGIN IMMEDIATE` / ROLLBACK
+saat melempar / COMMIT saat bersih), dan terjangkau lewat properti `MemoryClient.storage`.
+Modul ini tetap berdiri, tetapi karena TIGA celah yang transaksi itu TIDAK bisa tutup:
 
-Satu-satunya penutup nyata untuk keduanya adalah SATU INSTANS pada satu `memory.db`, dan
-itulah yang ditegakkan di sini — bukan diimbau di docstring.
+  1. BACA-UBAH-TULIS lewat API publik tidak bisa dijadikan satu transaksi. Setiap metode
+     TULIS SDK (`set_entity`, `set_reference`, `delete_entity`, ...) membuka transaksinya
+     SENDIRI di sambungan per-thread yang sama, jadi bersarang di dalam
+     `storage.transaction()` melempar `cannot start a transaction within a transaction` DAN
+     tulisannya hilang. `_save_provider_cas` — baca versi lalu tulis — karena itu tetap
+     punya jendela cek-lalu-tulis yang hanya bisa ditutup DARI LUAR.
+  2. RANGKAIANNYA MELEWATI BATAS SQLite. Kunci ini membentang dari `load_snapshot` sampai
+     perhitungan `memory_root`, penulisan file ekspor, dan pengiriman tx. Transaksi SQLite
+     tidak bisa membentang panggilan RPC; ditahan selama itu ia justru MEMBUNUH proses agen
+     lain (`busy_timeout` 5 detik lalu `database is locked`, tulisan proses itu hilang).
+  3. MODE GAGALNYA BEDA. Kunci menolak instans kedua SEBELUM ia bekerja (`MemoryLockError`,
+     fail-closed). Transaksi menjatuhkannya DI TENGAH JALAN, sesudah ia mungkin sudah
+     melakukan kerja di luar DB.
+
+Untuk rangkaian BACA MURNI — `load_snapshot()` = 1x `list_entities` + 2x `search` +
+N x `get_reference` — transaksi sebenarnya SUDAH cukup: pembacaan SDK boleh bersarang di
+dalamnya dan menghasilkan satu titik waktu, dibuktikan lintas proses di §C.2. Kunci ini
+menutup kelas itu JUGA, dengan mekanisme yang sama yang menutup dua kelas di atas. Yang
+tetap benar tanpa penutup apa pun: tulisan yang mendarat di tengah rangkaian menghasilkan
+snapshot yang memuat provider versi lama, kehilangan provider yang ditulis belakangan,
+tetapi ikut menjangkar reference barunya — root untuk keadaan yang TIDAK PERNAH ADA. Dan itu
+TIDAK terlihat dari file ekspor, karena file dan root lahir dari snapshot yang sama:
+keduanya cocok, keduanya salah.
+
+Penutup yang dipilih adalah SATU INSTANS pada satu `memory.db`, dan itulah yang ditegakkan
+di sini — bukan diimbau di docstring.
 
 BENTUKNYA (dan alasan tiap pilihan):
   - `flock(LOCK_EX|LOCK_NB)` atas lockfile `<db>.lock` di samping DB. `fcntl` ada di
@@ -172,7 +192,8 @@ def memory_lock(
                                 f"{lock_file} tidak didapat dalam {timeout_seconds:g} detik"
                                 f"{_describe_other_holder(lock_file)} — BERHENTI (fail-closed). "
                                 "Hanya SATU instans agen yang boleh memegang satu memory.db "
-                                "(Sibyl 0.7.0 tanpa transaksi, api-facts §C)"
+                                "(alasan mekanisnya di api-facts §C.2 — BUKAN ketiadaan "
+                                "transaksi di SDK)"
                             ) from None
                         time.sleep(POLL_INTERVAL_SECONDS)
                 os.ftruncate(fd, 0)
