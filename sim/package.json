@@ -4,14 +4,16 @@
   "type": "module",
   "scripts": {
     "job:min": "tsx src/client_min.ts",
-    "mint:client": "tsx src/mint_min.ts"
+    "mint:client": "tsx src/mint_min.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@account-kit/infra": "4.88.5",
     "@virtuals-protocol/acp-node-v2": "0.1.12",
-    "viem": "2.55.19",
-    "@account-kit/infra": "4.88.5"
+    "viem": "2.55.19"
   },
   "devDependencies": {
+    "@types/node": "26.4.1",
     "tsx": "^4.20.6",
     "typescript": "7.0.2"
   }

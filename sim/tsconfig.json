@@ -1,0 +1,21 @@
+{
+  // Hanya untuk `tsc --noEmit` (typecheck task 0.9d). Runtime TIDAK memakai file ini:
+  // `sim/` dijalankan `tsx`, yang hanya MENGUPAS tipe (esbuild transform) dan mengambil
+  // resolusi modul + target dari Node itu sendiri. Karena itu `noEmit: true` dan tidak ada
+  // satu pun opsi yang mengubah JS yang dihasilkan.
+  "compilerOptions": {
+    // Node 24 ESM (`"type": "module"` di package.json) — samakan dengan cara tsx/Node
+    // memuat `import ... from "node:fs"` dan export map paket SDK.
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "es2023",
+    "types": ["node"],
+    "strict": true,
+    // WAJIB: store pnpm masih memuat `@types/node@12.20.55` transitif (lihat docs/versions.md).
+    // Tanpa ini, .d.ts pihak ketiga itu memuntahkan TS2430/TS2416 yang tidak ada
+    // hubungannya dengan kode kita.
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["src"]
+}
