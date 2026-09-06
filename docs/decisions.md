@@ -814,6 +814,20 @@ Konsekuensi:
     TETAP BERLAKU dan **DILARANG** diturunkan jadi "sudah tercakup typecheck" di README, naskah video,
     maupun `docs/posts/*` (sejalan larangan klaim ADR-010 keputusan 4 dan ADR-025 keputusan 3).
 
+## Catatan: izin user atas `docs/spec.md` (task 0.8f), 2026-09-06
+User ditanya satu baris: *"boleh aku edit `docs/spec.md`?"* — jawabannya **"iya"**.
+
+Larangan `loop.md` poin 5 karena itu DICABUT untuk `docs/spec.md` saja. **`PRD.md` TETAP
+TERLARANG** — user tidak menyebutnya, dan izin yang tidak diminta tidak boleh diperluas
+sendiri. Task 0.8b yang sebelumnya `[!]` BLOCKED PADA USER dibuka kembali; ADR-025 (spec
+berstatus historis, ADR menang bila berbeda) TETAP BERLAKU sebagai aturan resolusi, dan
+0.8b menyelaraskan spec supaya divergensinya berkurang, bukan menggantikan ADR-025.
+
+Jawaban user atas pertanyaan kedua (task 0.8e) pada tanggal yang sama: pemeriksaan
+`ALLOW_ARBITER_EQ_AGENT=true` pada berkas environment lokal mengembalikan **0**, jadi
+escape hatch itu memang KOSONG di mesin build. Temuan RENDAH @agent-security-reviewer soal
+itu ditutup tanpa perubahan kode.
+
 ## Catatan lintas-ADR: `lastMemoryRoot()` adalah nilai BERGERAK, jangan pernah di-hardcode
 Ditambahkan 2026-09-06 (task 0.8g, temuan samping @agent-api-verifier saat 0.8b-note).
 
