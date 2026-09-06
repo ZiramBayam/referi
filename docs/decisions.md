@@ -37,6 +37,86 @@ Lihat `docs/spec.md` §3 aturan 5. Demo memakai skenario database bersih (root d
 Konteks: ERC-8183 all-or-nothing. Keputusan: `derive_cap` memaksa job besar dipecah. Konsekuensi: UI harus punya
 tombol "pecah jadi N job" di simulator client.
 
+## ADR-010 Middleware 402 buatan sendiri; paket x402 resmi ADA tetapi sengaja TIDAK dipakai
+Tanggal: 2026-09-06. Status: diterima. Mengunci lingkup task 2.6 dan mempersempit ADR-004 (tidak membalikkannya).
+Pemicu: task 0.8 (timebox 60 menit) — "identifikasi paket x402 resmi ATAU tulis ADR-010".
+
+Konteks — apa yang benar-benar dilihat hari ini (bukan ingatan):
+(a) Paket resminya **ADA**, jadi ADR ini TIDAK boleh dibaca sebagai "tidak ada paket x402".
+    - PyPI `x402` **2.22.0** (`curl -s https://pypi.org/pypi/x402/json`): author "x402 Foundation",
+      Homepage `https://github.com/x402-foundation/x402`, lisensi MIT, `requires_python >=3.10`
+      (classifier Python 3.13 ADA), rilis wheel 2026-09-04 — dua hari sebelum ADR ini.
+      Classifier kematangannya: **"Development Status :: 3 - Alpha"**.
+    - npm `x402` **1.2.0** dan npm `@coinbase/x402` **2.1.0** (`registry.npmjs.org/<pkg>/latest`).
+(b) Middleware-nya HANYA untuk FastAPI dan Flask. Isi wheel `x402-2.22.0-py3-none-any.whl`
+    (`x402/http/middleware/`) memuat TEPAT dua adapter framework — `fastapi.py` dan `flask.py`:
+    - `x402.http.middleware.fastapi.payment_middleware(routes: RoutesConfig, server: x402ResourceServer,
+      paywall_config: PaywallConfig | None = None, paywall_provider: PaywallProvider | None = None,
+      sync_facilitator_on_start: bool = True)`
+    - `x402.http.middleware.flask.payment_middleware(app: Flask, routes: RoutesConfig,
+      server: x402ResourceServerSync, paywall_config=None, paywall_provider=None,
+      sync_facilitator_on_start=True)`
+    Extra-nya: `x402[fastapi]` → `fastapi[standard]>=0.115.0` + `starlette>=0.27.0`; `x402[flask]` → `flask>=3.0.0`.
+    `grep -niE "fastapi|flask|starlette|uvicorn" docs/versions.md` → **NOL baris**. Jadi jalur resmi menuntut
+    minimal DUA dependensi baru (x402 + satu framework web) di H-4 submission.
+(c) Fasilitator default `https://x402.org/facilitator` (`x402/http/constants.py:16`) memang mendukung jaringan kita:
+    `GET https://x402.org/facilitator/supported` → memuat `{"x402Version":2,"scheme":"exact","network":"eip155:84532"}`.
+(d) **Tetapi skema `exact` EVM-nya berjalan di atas EIP-3009 `transferWithAuthorization`, dan token escrow kita
+    tidak punya fungsi itu.** Aset default x402 untuk `eip155:84532` adalah USDC Circle
+    `0x036CbD53842c5426634e7929541eC2318f3dCF7e` (`x402/mechanisms/evm/default_assets.py:39`), sedangkan
+    token yang benar-benar dipakai ACP adalah `0xECc22a8F6fD62388498fBa19813E214605a2BDb3`
+    (`paymentToken()`, `docs/versions.md`). Dibuktikan atas bytecode terdeploy token itu
+    (`cast code 0xECc22a8F6fD62388498fBa19813E214605a2BDb3 --rpc-url https://sepolia.base.org`):
+    selector `0xe3ee160e` (`transferWithAuthorization(...)`) → **0 kemunculan**; `0x3644e515` (`DOMAIN_SEPARATOR()`)
+    → **0**; kontrol positif `0xa9059cbb` (`transfer(address,uint256)`) → **1**.
+(e) Konsekuensi (d) yang menentukan jadwal: memakai x402 resmi berarti fee evaluasi dibayar dalam token yang
+    BERBEDA dari token escrow, yaitu USDC Circle — persis token yang task **0.4b** buktikan terkunci di
+    faucet ber-captcha dan sejak 4 Sep sengaja dikeluarkan dari jalur kritis. Jalur resmi menarik kembali satu
+    blocker manusia yang sudah kita hindari.
+(f) PRD §5 nomor 5 berbunyi "Endpoint x402 (fee evaluasi di muka) — **minimal: middleware 402 di endpoint
+    `POST /jobs/register`**", dan TASKS.md baris 23 sudah menempatkan 2.6 sebagai kandidat potong nomor 2.
+
+Keputusan:
+1. Paket x402 resmi (PyPI `x402` 2.22.0, npm `x402`/`@coinbase/x402`) **TIDAK dipasang** dan **TIDAK ditambahkan**
+   sebagai dependensi. `docs/versions.md` mencatatnya sebagai fakta terverifikasi + status TIDAK DIPAKAI, bukan
+   sebagai pin. Memasangnya butuh ADR baru yang membalikkan ADR ini.
+2. Task 2.6 dikerjakan sebagai **middleware 402 buatan sendiri** memakai pustaka standar Python + dependensi yang
+   SUDAH dipin (`docs/versions.md`): `http.server` untuk servernya, `web3` 7.16.0 untuk verifikasi on-chain.
+   Nol dependensi baru → tidak butuh ADR tambahan.
+3. Bentuk kabelnya, dan ia mengikat 2.6:
+   (i)  Tanpa pembayaran sah → **HTTP 402** + header `WWW-Authenticate` berisi skema dan parameternya
+        (`realm`, `network=eip155:84532`, `asset=<alamat token escrow>`, `payTo`, `amount` dalam unit terkecil,
+        `nonce`), plus badan JSON yang mengulang parameter yang sama agar terbaca manusia di demo.
+   (ii) Klien membayar on-chain lalu mengulang permintaan dengan header `Authorization` yang membawa hash tx.
+   (iii) Verifikasi = **membaca chain**, bukan mempercayai header: receipt `status == 1`, ada log `Transfer` pada
+        alamat token escrow, `to == payTo`, `value >= amount`, dan hash tx BELUM pernah dipakai (penjaga replay
+        milik kita sendiri — di jalur resmi ini tugas fasilitator).
+   (iv) Nama skema di `WWW-Authenticate` **DILARANG** berupa `x402` atau turunannya, supaya klien x402 sungguhan
+        tidak pernah menyangka endpoint ini bicara protokol x402.
+   (v)  `DEMO_MODE` boleh menerima header dummy, tetapi respons 200-nya WAJIB menandai dirinya sebagai mode demo.
+4. **Larangan klaim** (sejalan ADR-025 keputusan 3): `README.md`, naskah video, dan `docs/posts/*` DILARANG menulis
+   bahwa proyek ini "mengimplementasikan x402" atau "kompatibel x402". Yang boleh: "middleware 402 buatan sendiri
+   (ADR-010) — bukan protokol x402; paket resminya ada dan sengaja tidak dipakai, alasannya di ADR-010".
+5. ADR ini dibuka ulang hanya bila: token escrow ACP berganti ke aset yang didukung fasilitator x402, ATAU
+   ada waktu di luar jendela submission untuk memikul framework web + fasilitator.
+
+Konsekuensi:
+(+) 2.6 bisa selesai dengan nol dependensi baru, nol faucet manusia, dan nol layanan pihak ketiga di jalur demo.
+(+) PRD §5 nomor 5 terpenuhi apa adanya: ia meminta "middleware 402", dan itulah yang mendarat.
+(+) Verifikasinya justru lebih dekat ke tema proyek: bukti pembayaran dibaca dari chain oleh `web3.py`, sama
+    seperti seluruh jalur verdict kita — bukan dari respons layanan yang harus dipercaya.
+(-) **Interoperabilitas HILANG, dan ini kerugian yang sesungguhnya.** Klien x402 nyata mengirim otorisasi EIP-3009
+    yang ditandatangani di header `X-PAYMENT`/`payment-signature` (`x402/http/constants.py:8`,
+    `x402/http/middleware/fastapi.py:249`). Endpoint kita tidak akan memahaminya, dan tantangan 402 kita bukan
+    tantangan berformat x402. Nol klien x402 di dunia bisa membayar endpoint ini tanpa kode khusus.
+(-) Dompet, faucet, paywall UI, dan penemuan (bazaar) milik ekosistem x402 tidak berlaku untuk kita.
+(-) Pembayaran kita TIDAK gasless: klien membayar gasnya sendiri, sedangkan fasilitator x402 menyelesaikan
+    transfer atas nama klien. Untuk demo satu klien simulator, ini tidak terasa; untuk klien sungguhan, terasa.
+(-) Penjaga replay, kedaluwarsa nonce, dan pembukuan pembayaran jadi kode kita sendiri — permukaan bug baru yang
+    di jalur resmi sudah matang. Karena itu 2.6 wajib punya tes untuk tx yang dipakai dua kali.
+(-) Kita kehilangan hak mengucapkan "x402 beneran" di materi juri. Keputusan 4 membuat kehilangan itu eksplisit
+    alih-alih membiarkannya menjadi klaim yang nanti dicabut — pola yang sudah terjadi sekali (ADR-025).
+
 ## ADR-011 Cek root di `finalize` memakai himpunan root yang pernah diumumkan, bukan `lastMemoryRoot`
 Konteks: `docs/spec.md` §4 baris 134 membuat `postVerdict` meng-update root GLOBAL, dan baris 138 membuat
 `finalize(jobId)` revert bila `verdict.memoryRoot != lastMemoryRoot`. Memori berubah tiap job (statistik provider,
