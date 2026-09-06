@@ -228,7 +228,13 @@ EXIT_REFUSED_MESSAGE = "AGEN MENOLAK MELANJUTKAN"
 # mengalahkan evaluasi). Tidak ada satu pun field yang menyatakan arah FINAL, jadi bukti
 # yang sama bisa "membenarkan" verdict complete maupun reject. Label versi ikut naik karena
 # bentuknya berubah; encoding `memory_root` TIDAK disentuh (vektor beku 2.1r).
-VERDICT_EVIDENCE_VERSION = "evaluator-verdict-evidence/v3"
+# v4 (task 3.0b): bundel penolakan gerbang kini ikut membawa lantai on-chain dan batas
+# efektif. Sebelumnya bundel bisa berbunyi `accept: false` sementara `cap.usdc: null`,
+# sehingga auditor yang merekonstruksi memori pada `memory_root` bundel itu justru
+# menghitung `accept: true` — nilai yang MEMUTUSKAN hanya hidup sebagai teks bebas di
+# `reason`. Bundel v3 yang sudah mendarat (job 418/419/420) TIDAK terpengaruh: verifikasi
+# membaca teks yang tersimpan, bukan menghitung ulang bentuknya.
+VERDICT_EVIDENCE_VERSION = "evaluator-verdict-evidence/v4"
 
 # DUA bentuk bukti yang sah, dan keduanya WAJIB ada. Alasannya bukan kelengkapan melainkan
 # urutan alur ACP: gating cap terjadi saat job masih `Funded` (spec §5 langkah 2), yaitu
@@ -1663,6 +1669,12 @@ def gate_rejection_body(plan: JobPlan) -> dict:
         "depth": plan.gate.depth,
         "risk_level": int(plan.gate.risk_level),
         "incident_jobs": [int(j) for j in plan.gate.incident_jobs],
+        # Lantai yang DIUMUMKAN vault, dan batas yang benar-benar berlaku. Tanpa keduanya
+        # penolakan yang lahir dari lantai tidak bisa dihitung ulang dari memori saja.
+        "onchain_cap": None if plan.gate.onchain_cap is None else int(plan.gate.onchain_cap),
+        "effective_cap": (
+            None if plan.gate.effective_cap is None else int(plan.gate.effective_cap)
+        ),
         "cap": {
             "usdc": None if cap.cap_usdc is None else int(cap.cap_usdc),
             "basis": cap.basis,
