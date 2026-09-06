@@ -117,6 +117,7 @@ def build_client(db: pathlib.Path | None, *, onchain_root: bytes = ROOT_ONCHAIN)
         "lastMemoryRoot": onchain_root,
         "jobs": (CLIENT, 1, PROVIDER, 0, VAULT_ADDRESS, "0x" + "00" * 20, 1, ""),
         "verdicts": (0, ZERO, ZERO, 0, False, "0x" + "00" * 20),
+        "providerCap": 0,
     }
     client = vc.VaultClient(
         FakeWeb3(returns), VAULT_ADDRESS, ACP_ADDRESS, SigningAccount(), 84532, db_path=db

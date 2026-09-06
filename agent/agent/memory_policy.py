@@ -774,6 +774,8 @@ class GateDecision:
     depth: str
     risk_level: int = 0
     incident_jobs: tuple[int, ...] = ()
+    onchain_cap: int | None = None
+    effective_cap: int | None = None
 
 
 def _checked_reference_keys(
@@ -1707,8 +1709,24 @@ def gate_job(
     provider_address: str,
     budget: int,
     mode: ModeDecision,
+    onchain_cap: int | None = None,
 ) -> GateDecision:
-    """spec §5 langkah 2 — gating saat `JobFunded`, murni dari `provider` + mode."""
+    """spec §5 langkah 2 — gating saat `JobFunded`, dari `provider` + mode + lantai on-chain.
+
+    `onchain_cap` adalah nilai `providerCap(provider)` yang DIUMUMKAN vault, dibaca oleh
+    pemanggil (`vault_client.plan_job`) dan diserahkan sebagai ARGUMEN — modul ini tetap
+    bebas RPC/web3 (spec §3 aturan 1; batas folder CLAUDE.md).
+
+    Batas efektif = yang paling KETAT di antara cap memori dan cap on-chain. Sebabnya
+    diukur di gerbang fase 2 (task 3.0b): tanpa ini, memori yang dikosongkan/dimundurkan
+    membuat `derive_cap` mengembalikan `None` dan gerbang MENERIMA budget yang cap terbitan
+    vault sendiri tolak — lantai yang dipasang 2.4b hanya menahan `setProviderCap` dari
+    NAIK, bukan menahan gerbang dari MENERIMA.
+
+    `onchain_cap == 0` berarti **TIDAK DIPASANG**, bukan "cap nol" (ADR-001), jadi ia
+    diabaikan. Itulah yang menjaga AC (e) task 2.5 tetap berlaku: pada vault SEGAR capnya
+    memang 0, sehingga job yang sama memang TIDAK ditolak tanpa memori.
+    """
     if type(view) is not DecisionMemoryView:
         raise TypeError(
             "gate_job hanya menerima DecisionMemoryView PERSIS (subclass pun ditolak, "
@@ -1723,18 +1741,43 @@ def gate_job(
     risk = effective_risk(profile, mode)
     incidents = tuple(int(j) for j in profile.incident_jobs)
 
-    if cap.cap_usdc is not None and int(budget) > cap.cap_usdc:
-        return GateDecision(
-            accept=False,
-            reason=(
+    floor = None
+    if onchain_cap is not None:
+        if isinstance(onchain_cap, bool) or not isinstance(onchain_cap, int):
+            raise TypeError(f"onchain_cap harus int, dapat {type(onchain_cap).__name__}")
+        if onchain_cap < 0:
+            raise ValueError(f"onchain_cap tidak boleh negatif: {onchain_cap}")
+        if onchain_cap > 0:
+            floor = onchain_cap
+
+    limits = [c for c in (cap.cap_usdc, floor) if c is not None]
+    effective = min(limits) if limits else None
+
+    if effective is not None and int(budget) > effective:
+        if floor is not None and effective == floor and (
+            cap.cap_usdc is None or floor < cap.cap_usdc
+        ):
+            reason = (
+                f"budget {budget} melebihi cap yang DIUMUMKAN vault untuk provider ini "
+                f"({floor}); memori lokal menghitung "
+                f"{'TANPA CAP' if cap.cap_usdc is None else cap.cap_usdc}, dan yang lebih "
+                f"ketat yang berlaku"
+            )
+        else:
+            reason = (
                 f"budget {budget} melebihi cap milestone provider ini "
                 f"({cap.cap_usdc}; riwayat: {len(incidents)} insiden terkonfirmasi)"
-            ),
+            )
+        return GateDecision(
+            accept=False,
+            reason=reason,
             cap=cap,
             mode=mode,
             depth=depth,
             risk_level=risk,
             incident_jobs=incidents,
+            onchain_cap=floor,
+            effective_cap=effective,
         )
     return GateDecision(
         accept=True,
@@ -1744,6 +1787,8 @@ def gate_job(
         depth=depth,
         risk_level=risk,
         incident_jobs=incidents,
+        onchain_cap=floor,
+        effective_cap=effective,
     )
 
 

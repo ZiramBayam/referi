@@ -615,3 +615,110 @@ def test_the_conscious_escape_hatches_have_zero_production_callers():
                 elif kata.arg is None and nama_fungsi(simpul) in ("set_provider_cap", "_send"):
                     pelanggar.append(f"{berkas.relative_to(paket)}:{simpul.lineno} (**kwargs)")
     assert pelanggar == [], f"escape hatch cap dipakai di jalur produksi: {pelanggar}"
+
+
+# ----------------------------------------------------------------------
+# Task 3.0b — lantai on-chain di jalur KEPUTUSAN, bukan hanya jalur kirim
+#
+# Temuan 4 gerbang fase 2: `provider_cap()` hanya dibaca `_require_onchain_cap_floor`
+# (batas KIRIM) dan `sync_provider_cap`. `gate_job` tidak pernah membacanya, sehingga
+# memori yang dikosongkan membuat `derive_cap` mengembalikan None dan gerbang MENERIMA
+# budget yang cap terbitan vault sendiri tolak. Lantai 2.4b menahan `setProviderCap` dari
+# NAIK; ia tidak pernah menahan gerbang dari MENERIMA.
+# ----------------------------------------------------------------------
+
+
+def _mode_normal() -> mp.ModeDecision:
+    return mp.ModeDecision(
+        mode=mp.MODE_NORMAL,
+        reason="uji 3.0b",
+        depth=mp.DEPTH_SAMPLING,
+        forced_risk=None,
+        allow_finalize=True,
+        allow_post_verdict=True,
+        allow_set_provider_cap=True,
+    )
+
+
+def _gate(db: pathlib.Path, budget: int, onchain_cap: int | None) -> mp.GateDecision:
+    memori = MemoryClient.local(str(db))
+    try:
+        mode = _mode_normal()
+        return mp.gate_job(
+            mp.DecisionMemoryView(memori), PROVIDER, budget, mode, onchain_cap=onchain_cap
+        )
+    finally:
+        vc.close_memory_client(memori)
+
+
+def test_an_emptied_memory_cannot_accept_what_the_vault_already_caps(db):
+    """AC (a) — persis skenario juri: memori kosong + vault mengumumkan 250000."""
+    tanpa_lantai = _gate(db, 2_000_000, None)
+    assert tanpa_lantai.accept is True, "prasyarat: tanpa lantai, memori kosong memang menerima"
+    assert tanpa_lantai.cap.cap_usdc is None
+
+    dengan_lantai = _gate(db, 2_000_000, 250_000)
+    assert dengan_lantai.accept is False
+    assert dengan_lantai.onchain_cap == 250_000
+    assert dengan_lantai.effective_cap == 250_000
+    assert "DIUMUMKAN vault" in dengan_lantai.reason
+
+
+def test_a_fresh_vault_publishes_zero_and_that_is_not_a_cap(db):
+    """AC (b) — 0 = TIDAK DIPASANG (ADR-001), jadi AC (e) task 2.5 tidak berubah.
+
+    Pada vault SEGAR capnya memang 0, dan job yang sama memang TIDAK ditolak tanpa memori:
+    itulah jawaban demo untuk "hapus memori kalian", bukan bug.
+    """
+    assert _gate(db, 2_000_000, 0).accept is True
+    assert _gate(db, 2_000_000, 0).onchain_cap is None
+    assert _gate(db, 2_000_000, None).accept is True
+
+
+def test_the_tighter_of_the_two_bounds_wins(db, artifacts, bundles):
+    """AC (c) — cap memori 100000 lebih ketat dari on-chain 250000, dan itu yang berlaku."""
+    run_submitted_job(db, artifacts, JOB_A, DELIVERABLE_A)
+    run_submitted_job(db, artifacts, JOB_B, DELIVERABLE_B)
+    profil = view(db).provider(PROVIDER)
+    assert profil.risk_level == 2, "prasyarat: dua insiden terkonfirmasi"
+    cap_memori = mp.derive_cap(profil, _mode_normal()).cap_usdc
+    assert cap_memori is not None and cap_memori < 500_000, cap_memori
+
+    # cap memori (250000) LEBIH KETAT dari lantai on-chain (500000) -> yang memori menang
+    ketat = _gate(db, 400_000, 500_000)
+    assert ketat.accept is False
+    assert ketat.effective_cap == cap_memori, "yang lebih KETAT yang berlaku, bukan yang on-chain"
+    assert "melebihi cap milestone" in ketat.reason
+
+
+def test_a_negative_or_non_integer_floor_is_refused_not_ignored(db):
+    with pytest.raises(TypeError):
+        _gate(db, 1, "250000")  # type: ignore[arg-type]
+    with pytest.raises(TypeError):
+        _gate(db, 1, True)  # type: ignore[arg-type]
+    with pytest.raises(ValueError):
+        _gate(db, 1, -1)
+
+
+def test_an_unreadable_onchain_cap_stops_the_run_instead_of_accepting(db, artifacts, bundles):
+    """AC (d) — kerusakan lingkungan BUKAN izin (pelajaran task 2.4a).
+
+    Kalau `providerCap()` tidak bisa dibaca, lantai on-chain tidak diketahui. Menerima
+    dalam keadaan itu berarti memakai ketidaktahuan sebagai izin; jadi run berhenti dengan
+    NOL transaksi, bukan lolos ke `postVerdict`.
+    """
+    digest = write_artifact(artifacts, JOB_A, DELIVERABLE_A)
+    client = build_client(db=db, job_id=JOB_A, status=2, budget=1_000_000, deliverable=digest)
+
+    def meledak(_provider: str) -> int:
+        raise RuntimeError("RPC mati saat membaca providerCap")
+
+    client.provider_cap = meledak  # type: ignore[method-assign]
+
+    job = client.job(JOB_A)
+    with pytest.raises(vc.SafeModeStop) as galat:
+        vc.plan_job(client, job, deliverable_dir=artifacts)
+
+    assert "providerCap" in str(galat.value)
+    assert sent_names(client) == [], "nol transaksi saat lantai tidak bisa dibaca"
+    assert client.w3.eth.nonce_reads == 0, "nonce tidak boleh dibaca sama sekali"

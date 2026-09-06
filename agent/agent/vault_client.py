@@ -1912,10 +1912,28 @@ def plan_job(
     except MemoryRootMismatch as exc:
         log.warning("root memori tidak bisa diturunkan saat menyusun rencana: %s", exc)
         root_rencana = None
+    # Lantai on-chain untuk jalur KEPUTUSAN (task 3.0b). Lantai yang dipasang 2.4b hidup di
+    # batas KIRIM dan hanya menahan `setProviderCap` dari NAIK; ia tidak pernah menahan
+    # gerbang dari MENERIMA. Tanpa baris ini, memori yang dikosongkan membuat `derive_cap`
+    # mengembalikan `None` dan job yang cap terbitan vault sendiri tolak justru diterima.
+    # Kegagalan membaca BUKAN izin: ia mode aman, sejalan task 2.4a.
+    try:
+        onchain_cap = client.provider_cap(job.provider)
+    except Exception as exc:  # noqa: BLE001 — RPC apa pun; fail-closed, bukan fail-open
+        raise SafeModeStop(
+            f"providerCap({job.provider}) tidak bisa dibaca dari vault: {exc}; "
+            "lantai on-chain tidak diketahui, jadi gerbang TIDAK boleh menerima apa pun; "
+            "nol postVerdict/finalize/setProviderCap"
+        ) from exc
+
     memori = MemoryClient.local(str(client.db_path))
     try:
         decision = gate_job(
-            DecisionMemoryView(memori), job.provider, int(job.budget), gate.decision
+            DecisionMemoryView(memori),
+            job.provider,
+            int(job.budget),
+            gate.decision,
+            onchain_cap=onchain_cap,
         )
     finally:
         close_memory_client(memori)

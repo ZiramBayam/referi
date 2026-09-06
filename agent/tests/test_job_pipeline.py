@@ -176,6 +176,7 @@ def build_client(
         "lastMemoryRoot": bytes.fromhex("11" * 32),
         "jobs": (client_address, status, provider, 0, evaluator, ZERO_ADDRESS, budget, DESCRIPTION),
         "verdicts": (0, bytes(32), bytes(32), 0, False, ZERO_ADDRESS),
+        "providerCap": 0,
     }
     logs: dict[str, list] = {"JobSubmitted": []}
     if deliverable is not None:
