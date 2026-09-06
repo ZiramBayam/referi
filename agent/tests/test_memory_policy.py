@@ -150,7 +150,7 @@ def _all_decisions(client, address: str, budget: int, mode: mp.ModeDecision):
         mp.effective_risk(profile, mode),
         mp.check_depth(profile, mode),
         mp.derive_cap(profile, mode),
-        mp.gate_job(view, address, budget, mode),
+        mp.gate_job(view, address, budget, mode, onchain_cap=None),
         mp.memory_root(client),
     )
 
@@ -246,7 +246,7 @@ def test_decision_path_never_touches_quarantine_at_runtime(client):
 
     spy = SpyClient(client)
     view = mp.DecisionMemoryView(spy)
-    gate = mp.gate_job(view, address, budget=9_000_001, mode=NAIVE)
+    gate = mp.gate_job(view, address, budget=9_000_001, mode=NAIVE, onchain_cap=None)
     mp.memory_root(spy)
 
     assert gate.accept is False
@@ -332,7 +332,7 @@ def test_gate_job_refuses_subclass_that_widens_the_guard(client):
             return category
 
     with pytest.raises(TypeError):
-        mp.gate_job(ViewLonggar(client), addr(1), 1, NAIVE)
+        mp.gate_job(ViewLonggar(client), addr(1), 1, NAIVE, onchain_cap=None)
 
 
 def test_extreme_quarantine_does_not_change_any_decision(client):
@@ -1091,7 +1091,7 @@ def test_derive_cap_rejectedJobsNeverRaiseCap(client, capsys):
     assert cap_akhir <= cap_awal
     assert max(caps) == cap_awal
     # Job 20 juta tetap ditolak sesudah sepuluh ronde.
-    assert mp.gate_job(view, address, 20_000_000, NAIVE).accept is False
+    assert mp.gate_job(view, address, 20_000_000, NAIVE, onchain_cap=None).accept is False
 
 
 def test_derive_cap_monotone_nonIncreasing():
@@ -1140,18 +1140,18 @@ def test_gate_job_rejects_budget_above_cap_and_names_incidents(client):
     address = addr(0xC0C0)
     _seed_provider(client, address, risk_level=2, incident_jobs=(1, 2), passed_budgets=(4_000_000,))
     view = mp.DecisionMemoryView(client)
-    gate = mp.gate_job(view, address, budget=4_000_000, mode=NAIVE)
+    gate = mp.gate_job(view, address, budget=4_000_000, mode=NAIVE, onchain_cap=None)
     assert gate.accept is False
     assert "cap" in gate.reason and "2 insiden" in gate.reason
     assert gate.depth == mp.DEPTH_FULL
-    assert mp.gate_job(view, address, budget=250_000, mode=NAIVE).accept is True
+    assert mp.gate_job(view, address, budget=250_000, mode=NAIVE, onchain_cap=None).accept is True
 
 
 def test_gate_job_refuses_raw_client(client):
     with pytest.raises(TypeError):
-        mp.gate_job(client, addr(1), 1, NAIVE)  # type: ignore[arg-type]
+        mp.gate_job(client, addr(1), 1, NAIVE, onchain_cap=None)  # type: ignore[arg-type]
     with pytest.raises(TypeError):
-        mp.gate_job(mp.DecisionMemoryView(client), addr(1), "1", NAIVE)  # type: ignore[arg-type]
+        mp.gate_job(mp.DecisionMemoryView(client), addr(1), "1", NAIVE, onchain_cap=None)  # type: ignore[arg-type]
 
 
 def test_unknown_provider_is_risk_zero_and_uncapped(client):
@@ -1341,7 +1341,10 @@ def test_quarantine_isolation_survives_a_high_reject_count_provider(client):
     assert profile.risk_level == mp.MAX_RISK_LEVEL
     cap = mp.derive_cap(profile)
     assert cap.cap_usdc == 250_000
-    assert mp.gate_job(mp.DecisionMemoryView(client), address, 20_000_000, NAIVE).accept is False
+    gate = mp.gate_job(
+        mp.DecisionMemoryView(client), address, 20_000_000, NAIVE, onchain_cap=None
+    )
+    assert gate.accept is False
 
 
 # ----------------------------------------------------------------------
@@ -1427,7 +1430,7 @@ def test_derive_cap_selfFundedPassedJob_doesNotRaiseCap(client, capsys):
     print(f"cap SEBELUM insiden={cap_sebelum.cap_usdc} cap SESUDAH insiden={cap_sesudah.cap_usdc}")
     assert cap_sebelum.cap_usdc is mp.NO_CAP  # risk 0
     assert cap_sesudah.cap_usdc <= mp.BASELINE_CAP_USDC == 1_000_000
-    assert mp.gate_job(view, provider, 20_000_000, NAIVE).accept is False
+    assert mp.gate_job(view, provider, 20_000_000, NAIVE, onchain_cap=None).accept is False
 
 
 def test_record_job_outcome_ignoresBudget_whenClientEqualsProvider(client):

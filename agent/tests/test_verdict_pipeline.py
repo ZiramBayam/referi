@@ -310,7 +310,13 @@ def test_the_seeded_chain_really_produces_a_cap_that_rejects_job_c(db):
     assert profil.incident_jobs == (JOB_A, JOB_B)
 
     mode = mp.decide_mode(ROOT_ONCHAIN, mp.LocalMemoryEvidence.ok(job_outcomes=2, root=ZERO, detail="tes"))
-    gate = mp.gate_job(mp.DecisionMemoryView(MemoryClient.local(str(db))), PROVIDER, 2_000_000, mode)
+    gate = mp.gate_job(
+        mp.DecisionMemoryView(MemoryClient.local(str(db))),
+        PROVIDER,
+        2_000_000,
+        mode,
+        onchain_cap=None,
+    )
     assert gate.accept is False
     assert gate.cap.cap_usdc == 250_000
     assert gate.incident_jobs == (JOB_A, JOB_B)

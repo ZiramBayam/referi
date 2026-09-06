@@ -1920,6 +1920,11 @@ def plan_job(
     try:
         onchain_cap = client.provider_cap(job.provider)
     except Exception as exc:  # noqa: BLE001 — RPC apa pun; fail-closed, bukan fail-open
+        # Latch seperti TIGA jalur berhenti-nol-tx lainnya: tanpa ini `finalize()` pada klien
+        # yang sama masih terkirim (dibuktikan reviewer 3.0b).
+        client.refuse(
+            f"providerCap({job.provider}) tidak bisa dibaca — lantai on-chain tidak diketahui"
+        )
         raise SafeModeStop(
             f"providerCap({job.provider}) tidak bisa dibaca dari vault: {exc}; "
             "lantai on-chain tidak diketahui, jadi gerbang TIDAK boleh menerima apa pun; "

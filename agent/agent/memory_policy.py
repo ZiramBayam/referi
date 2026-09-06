@@ -1709,7 +1709,8 @@ def gate_job(
     provider_address: str,
     budget: int,
     mode: ModeDecision,
-    onchain_cap: int | None = None,
+    *,
+    onchain_cap: int | None,
 ) -> GateDecision:
     """spec §5 langkah 2 — gating saat `JobFunded`, dari `provider` + mode + lantai on-chain.
 
@@ -1722,6 +1723,12 @@ def gate_job(
     membuat `derive_cap` mengembalikan `None` dan gerbang MENERIMA budget yang cap terbitan
     vault sendiri tolak — lantai yang dipasang 2.4b hanya menahan `setProviderCap` dari
     NAIK, bukan menahan gerbang dari MENERIMA.
+
+    `onchain_cap` WAJIB dan TANPA DEFAULT (keyword-only). Itu disengaja: reviewer 3.0b
+    membuktikan bahwa dengan default permisif, menghapus satu kata kunci di titik panggil
+    mengembalikan temuan 4 juri sementara SELURUH 594 tes tetap hijau — penjaga ada,
+    tidak ada yang memanggilnya, persis cacat yang task ini perbaiki. Pemanggil yang
+    memang tidak punya nilainya WAJIB mengetik `onchain_cap=None` secara sadar.
 
     `onchain_cap == 0` berarti **TIDAK DIPASANG**, bukan "cap nol" (ADR-001), jadi ia
     diabaikan. Itulah yang menjaga AC (e) task 2.5 tetap berlaku: pada vault SEGAR capnya

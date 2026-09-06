@@ -722,3 +722,38 @@ def test_an_unreadable_onchain_cap_stops_the_run_instead_of_accepting(db, artifa
     assert "providerCap" in str(galat.value)
     assert sent_names(client) == [], "nol transaksi saat lantai tidak bisa dibaca"
     assert client.w3.eth.nonce_reads == 0, "nonce tidak boleh dibaca sama sekali"
+
+
+def test_plan_job_actually_hands_the_published_cap_to_the_gate(db, artifacts, bundles):
+    """Kabelnya, bukan daunnya.
+
+    Reviewer 3.0b membuktikan mutan AC (e) saya menguji bagian yang SALAH: mencabut lantai
+    di DALAM `gate_job` memang merah, tetapi menghapus `onchain_cap=` di titik panggil
+    `plan_job` membuat SELURUH suite tetap hijau sementara temuan 4 juri hidup lagi.
+    Tes ini menutup kabel itu lewat pipa sungguhan.
+    """
+    digest = write_artifact(artifacts, JOB_A, DELIVERABLE_A)
+    client = build_client(db=db, job_id=JOB_A, status=1, budget=2_000_000, deliverable=digest)
+    client.w3.eth.provider_caps[PROVIDER.lower()] = 250_000  # vault mengumumkan cap
+
+    plan = vc.plan_job(client, client.job(JOB_A), deliverable_dir=artifacts)
+
+    assert plan.gate.accept is False, "cap terbitan vault harus mengikat gerbang lewat plan_job"
+    assert plan.gate.onchain_cap == 250_000
+    assert plan.gate.effective_cap == 250_000
+    assert plan.gate.cap.cap_usdc is None, "memori memang kosong; yang menolak adalah lantai"
+
+
+def test_an_unreadable_cap_also_locks_every_later_transaction(db, artifacts, bundles):
+    """SEDANG-2 reviewer: jalur berhenti ini WAJIB memasang latch seperti tiga saudaranya."""
+    digest = write_artifact(artifacts, JOB_A, DELIVERABLE_A)
+    client = build_client(db=db, job_id=JOB_A, status=2, budget=1_000_000, deliverable=digest)
+    client.provider_cap = lambda _p: (_ for _ in ()).throw(RuntimeError("RPC mati"))  # type: ignore[method-assign]
+
+    with pytest.raises(vc.SafeModeStop):
+        vc.plan_job(client, client.job(JOB_A), deliverable_dir=artifacts)
+
+    assert client.refusal is not None, "latch harus terpasang"
+    with pytest.raises(vc.SafeModeStop):
+        client.finalize(JOB_A)
+    assert sent_names(client) == [], "nol tx sesudah latch"
