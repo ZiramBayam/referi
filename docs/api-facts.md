@@ -503,6 +503,12 @@ Konsekuensi untuk `agent/vault_client.py` + `EvaluatorVault.sol` (mengoreksi cat
 ## `uv run --no-project --with 'sibyl-memory-client==0.7.0' python probe.py` → Python 3.13.15,
 ## `importlib.metadata.version("sibyl_memory_client")` → `0.7.0`. Repo sekunder: https://github.com/Sibyl-Labs/Sibyl-Memory ;
 ## https://docs.sibyllabs.org/memory/concepts
+## DIVERIFIKASI ULANG 2026-09-06 pada paket TERPASANG di `agent/.venv` (bukan venv sekali-pakai):
+## `agent/.venv/bin/python -c "import inspect, importlib.metadata as m, sibyl_memory_client as s; ..."` → versi `0.7.0`;
+## `set_entity(self, category, name, body, *, status=None)`, `search_entities(self, query, *, limit=20, prefix=False,
+## category=None)`, `search(self, query, *, limit=20, prefix=False, tiers=None)` — identik dengan yang tercatat di bawah.
+## `flagged_actors` masih 0 kemunculan di `client.py` DAN `storage.py` (hanya `schema.sql` + `lint.py`) → FLAGGED tetap
+## tidak bisa dipakai dari SDK. Dirujuk oleh ADR-025 butir (iv).
 Signature NYATA (salinan `inspect.signature`, `self` dibuang; `*` = keyword-only). Bukan tulisan tangan dari README:
 ```python
 from sibyl_memory_client import MemoryClient, NotFoundError

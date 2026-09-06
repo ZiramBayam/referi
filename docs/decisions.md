@@ -566,3 +566,66 @@ Konsekuensi:
 (-) `rm -rf agent/data` pada vault beku tetap = mode aman permanen sampai memori dipulihkan dari
     backup. Itu perilaku yang DIINGINKAN (3.3b varian B), jadi baris keluarannya WAJIB menyebut jalur
     pemulihan, bukan hanya akibatnya.
+
+## ADR-025 `docs/spec.md` v3 berstatus historis; ADR menang atas spec
+Tanggal: 2026-09-06. Status: diterima. Pengganti task 0.8b selama larangan `loop.md` poin 5 berlaku.
+TIDAK membalikkan ADR mana pun; ia hanya menyatakan presedensi dan mendaftar divergensi yang sudah terbukti.
+
+Konteks: task 0.8b memerintahkan menyunting `docs/spec.md` agar cocok dengan ADR + `docs/api-facts.md`.
+`loop.md` poin 5 — aturan yang ditulis USER — melarangnya apa adanya ("Jangan ubah docs/spec.md atau
+PRD.md"). @agent-product-manager (6 Sep) memutuskan larangan MENANG: `TASKS.md` dan `CLAUDE.md`
+sama-sama ditulis loop, jadi keduanya tidak bisa memberi izin yang sudah dicabut user. 0.8b karena itu
+`[!]` BLOCKED PADA USER. Akibatnya `docs/spec.md` v3 (24 Agu) kini memuat kalimat yang sudah DIBANTAH
+oleh chain dan DICABUT oleh ADR, tetapi tetap dibaca sebagai dokumen desain — dan sekali sudah terbukti
+kalimat itu menular ke artefak juri (lihat butir (i)). ADR ini menutup lubang itu di file yang TIDAK
+dilarang, tanpa menyentuh spec.
+
+Keputusan:
+1. `docs/spec.md` DIBEKUKAN sebagai **dokumen historis**: catatan niat desain 24 Agu, BUKAN sumber
+   kebenaran. Bila spec dan ADR berbeda, **ADR yang berlaku**. Untuk API eksternal, `docs/api-facts.md`
+   tetap satu-satunya sumber (CLAUDE.md), dan spec tidak pernah mengalahkannya.
+2. Tabel divergensi di bawah adalah daftar yang MENGIKAT. Setiap ADR baru yang mencabut kalimat spec
+   WAJIB menambahkan barisnya di sini dalam ADR yang sama — kalau tidak, pencabutannya tidak berlaku
+   terhadap pembaca spec.
+3. Kalimat §0 baris 7-8 ("dibayar sama besar entah ia meluluskan atau menolak") **DILARANG DIKUTIP**
+   sebagai fakta di `README.md`, `demo/video-script.md`, dan `docs/posts/*` (mengikat task 4.3).
+   Yang boleh: menyebutnya sebagai RANCANGAN (ADR-004, fee di muka lewat x402) beserta angka chain yang
+   membantahnya. **§7 (naskah demo) TIDAK terpengaruh** dan tetap sumber naskah.
+4. Bila USER mencabut larangan (task 0.8f), 0.8b dijalankan dengan AC lamanya dan ADR-025 disusutkan
+   menjadi catatan sejarah — bukan dihapus, karena ia merekam kenapa spec sempat divergen.
+
+Tabel divergensi yang DIKETAHUI (tiap baris diverifikasi ulang @agent-api-verifier 2026-09-06):
+
+| # | Baris spec | Kalimat spec | Yang BERLAKU | Bukti / pencabut |
+|---|---|---|---|---|
+| (i)   | §0 baris 7-8 | "…dan yang **dibayar sama besar entah ia meluluskan atau menolak**" | Wasit dibayar HANYA saat `Completed`; pada REJECT ia dibayar 0. Fee sama-besar adalah rancangan (ADR-004), bukan fitur. | Dibantah oleh **§1 baris 19 di file yang SAMA** ("`evaluatorFeeBP` hanya dibayar saat Completed → insentif cacat") DAN oleh chain (di bawah). §0 berjudul "Pitch satu kalimat" — aspirasi, bukan catatan fakta. |
+| (ii)  | §3 baris 116 | "root onchain ada tapi memori lokal **hilang/tidak cocok** → mode aman" | Pemicu mode aman = **memori lokal tidak terbaca**, BUKAN perbandingan root. Presedensi PERSIS ada di **ADR-024 keputusan 2**: (1) kunci single-instance gagal ATAU `load_snapshot`/`memory_root` melempar → AMAN; (2) `memory.db`/`-wal`/`-shm` hilang: `lastMemoryRoot() == 0` → NAIF, selain itu → AMAN; (3) selebihnya → NORMAL, termasuk memori kosong nol job outcome. | ADR-023 (mencabut perbandingan root; `lastMemoryRoot`/`knownRoots` KELUAR dari jalur keputusan tx) + ADR-024 (mencabut aturan (b) ADR-023; `proves_origin` → `local_memory_readable`). Frasa "tidak cocok" tidak punya penegak mana pun hari ini. |
+| (iii) | §4 baris 138 (dan baris 134 yang memberinya konteks) | "revert jika `verdict.memoryRoot != lastMemoryRoot`" | **ADR-011**: `postVerdict` menandai `knownRoots[memoryRoot] = true` (revert bila `memoryRoot == 0`); `finalize` mensyaratkan `knownRoots[v.memoryRoot] == true`. Varian **`lastMemoryRoot`-sebagai-syarat DILARANG** — ia mengunci verdict yang tumpang tindih selamanya. `lastMemoryRoot` tetap disimpan & di-emit untuk auditor/UI saja. | ADR-011 (temuan @agent-hackathon-judge F1) + ADR-023 keputusan 1. Baris §4 ini harus dibaca menurut ADR-011, bukan apa adanya. |
+| (iv)  | §2 baris 46 & 50 | `m.set_entity(kind, name, body)` ; `m.search_entities(query)  # FTS5 lintas tier` | Parameter pertama bernama **`category`** (`kind=…` → `TypeError`). `search_entities(query, *, limit=20, prefix=False, category=None)` **hanya tier WARM**; lintas tier adalah **`search(query, *, limit=20, prefix=False, tiers=None)`** dengan tier sah `("entity","state","reference","journal")`. | `docs/api-facts.md` §C:523, §C:545, §C:549 dan §C.1. Diverifikasi ulang 2026-09-06 dengan `inspect.signature` pada paket TERPASANG di `agent/.venv` (`sibyl-memory-client` 0.7.0). §2 baris 52 ("TIDAK ADA tier FLAGGED") tetap **BENAR**: `schema.sql` 0.7.0 memuat tabel `flagged_actors`, tetapi `client.py`/`storage.py` nol kemunculan → tidak diekspos SDK; karantina tetap entity `category="suspicion"` (ADR-002). |
+
+Bukti chain untuk baris (i), diukur ulang 2026-09-06 (`cast call … --rpc-url https://sepolia.base.org`):
+- `evaluatorFeeBP()` pada ACP `0x0b93793923CD5De81850aF8604a233f3f24d461e` → **500** (5%), dan fee itu
+  cair HANYA di jalur `complete`; `reject` mengembalikan 100% budget ke client dengan fee evaluator 0
+  (`docs/api-facts.md` §A).
+- `balanceOf(vault)` pada token escrow `0xECc22a8F6fD62388498fBa19813E214605a2BDb3` → **50000**, yaitu
+  PERSIS 500 bp dari budget `1000000` job **417** yang berstatus **3 = Completed** — satu-satunya job
+  yang DILULUSKAN. Rantai demo A/B/C = job **418/419/420**, ketiganya berstatus **4 = Rejected**, dan
+  tidak menambah saldo itu satu unit pun → evaluator dibayar **0** untuk seluruh rantai REJECT.
+- 50000 itu hangus permanen: selector `sweepToken(address,address)` `0x258836fe` **nol kemunculan** di
+  `cast code 0x5c6EE4586ACABcb6326069c229E58091B21ef384` (kontrol positif: `lastMemoryRoot()` `0xdf103897`
+  → 1 kemunculan), dan `cast call` ke selector itu → `execution reverted`. Sejalan ADR-018 kep. 2 + ADR-022.
+- **Bukan risiko teoretis:** kalimat §0 itu pernah menjadi kalimat PEMBUKA `README.md` lengkap dengan
+  sitasi "(`docs/spec.md` §0)" — commit `e029faa`, dikoreksi baru di commit `54c6573`. Dicatat sebagai
+  kejutan terberat S1 (`docs/judge-reports/BLOCKED.md`).
+
+Konsekuensi:
+(+) Pembaca spec punya satu tempat untuk mengetahui baris mana yang sudah mati, tanpa menyentuh file
+    yang dilarang user. 0.8b tidak lagi memblokir apa pun.
+(+) Larangan kutip (keputusan 3) membuat regresi README/video/post terdeteksi lewat `grep`, bukan lewat
+    juri. Ini pertahanan yang sama untuk kelas kesalahan yang SUDAH terjadi sekali.
+(-) Divergensi kini hidup di DUA file: pembaca yang hanya membuka `docs/spec.md` masih bisa tersesat.
+    Itu harga yang dibayar untuk menghormati aturan user, dan hanya hilang bila 0.8f dijawab.
+(-) Tabel ini bisa basi diam-diam bila ADR baru lupa menambah barisnya. Keputusan 2 adalah satu-satunya
+    penjaganya, dan penjaga itu manusia/agen — bukan mesin.
+(-) §7 sengaja dikecualikan, jadi naskah demo tetap dibaca dari file yang dinyatakan historis. Diterima
+    sadar: tidak ada satu pun divergensi terbukti di §7 hari ini; begitu ada, ia masuk tabel di atas.
