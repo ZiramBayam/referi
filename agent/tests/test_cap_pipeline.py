@@ -757,3 +757,32 @@ def test_an_unreadable_cap_also_locks_every_later_transaction(db, artifacts, bun
     with pytest.raises(vc.SafeModeStop):
         client.finalize(JOB_A)
     assert sent_names(client) == [], "nol tx sesudah latch"
+
+
+def test_the_bundle_carries_the_value_that_actually_decided_the_rejection(db, artifacts, bundles):
+    """Mengikat perbaikan SEDANG-1 (bundel v4), bukan sekadar namanya.
+
+    Reviewer 3.0b menunjukkan empat mutan LOLOS dengan suite penuh hijau: kedua field
+    dihapus, di-hardcode `None` (bundel BERBOHONG), diisi cap MEMORI (provenance salah),
+    dan versi dikembalikan ke v3. Karena itu yang di-assert di sini adalah ISI bundel dan
+    REKOMPUTASI keputusannya, bukan keberadaan nama field.
+    """
+    digest = write_artifact(artifacts, JOB_A, DELIVERABLE_A)
+    client = build_client(db=db, job_id=JOB_A, status=1, budget=2_000_000, deliverable=digest)
+    client.w3.eth.provider_caps[PROVIDER.lower()] = 250_000
+
+    plan = vc.plan_job(client, client.job(JOB_A), deliverable_dir=artifacts)
+    bundel = vc.verdict_evidence(plan, bytes(32), vc.KIND_REJECT)
+    gate = bundel["gate"]
+
+    assert bundel["version"].endswith("/v4"), "isi berubah, jadi versinya WAJIB ikut"
+    assert gate["cap"]["usdc"] is None, "memori kosong: yang menolak adalah lantai, bukan cap memori"
+    assert gate["onchain_cap"] == 250_000, "lantai on-chain WAJIB ada di bukti"
+    assert gate["effective_cap"] == 250_000
+    assert gate["onchain_cap"] != gate["cap"]["usdc"], "provenance: lantai != cap memori"
+
+    # Rekomputasi independen dari BUNDEL saja — inilah klaim docstring yang diuji.
+    batas = [c for c in (gate["cap"]["usdc"], gate["onchain_cap"]) if c is not None]
+    assert min(batas) == gate["effective_cap"]
+    assert int(gate["budget"]) > min(batas), "auditor sampai ke accept=False dari bundel saja"
+    assert gate["accept"] is False
