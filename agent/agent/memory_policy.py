@@ -2211,9 +2211,14 @@ def _client_funded_its_own_job(client_address: str | None, provider_address: str
 
     Galatnya `MemoryIntegrityError`, bukan `ValueError` mentah: yang gagal bukan "argumen
     salah ketik" melainkan "bukti yang menjadi dasar tulisan ini tidak bisa dipercaya",
-    dan itu kelas yang sama dengan memori yang tidak bisa dijadikan preimage jujur. Di
-    `vault_client` ia sekelas mode aman; `ValueError` mentah hanya jatuh ke `except
-    Exception` generik dan terbaca sebagai bug Python.
+    dan itu kelas yang sama dengan memori yang tidak bisa dijadikan preimage jujur.
+
+    Perbedaan jenis itu MENGIKAT, bukan dekoratif: `vault_client.main()` mendaftarkan
+    `MemoryIntegrityError` di handler yang sama dengan `SafeModeStop` (`EXIT_REFUSED` bila
+    nol tx, laporan "berhenti di tengah pipa" bila sudah ada yang mendarat), sedangkan
+    `ValueError` mentah jatuh ke `except Exception` generik dan terbaca sebagai bug Python.
+    Ia BUKAN turunan `SafeModeStop` — kelas itu hidup di `vault_client`, dan modul ini
+    dilarang mengimpornya — jadi yang menyamakan perlakuannya adalah tuple di handler itu.
     """
     if client_address is None:
         return False
@@ -2252,11 +2257,23 @@ def record_job_outcome(
     yang mati.
 
     Defaultnya `None` semata-mata supaya "tidak diketahui" bisa diucapkan; ia BUKAN izin
-    untuk melewatkannya. Setiap pemanggil DI DALAM paket `agent/` wajib mengetik
-    `client_address=` — dijaga pemindai AST mekanis
-    (`tests/test_job_pipeline.py::test_every_production_call_of_record_job_outcome_passes_client_address`),
-    karena satu pemanggil yang lupa membuat filter ADR-021 keputusan 2 mati DIAM-DIAM:
-    tidak ada galat, tidak ada baris log, hanya cap yang tidak pernah turun.
+    untuk melewatkannya. Setiap pemanggil DI DALAM paket `agent/` wajib mengikat
+    `client_address` (keyword atau posisi ke-7), karena satu pemanggil yang lupa membuat
+    filter ADR-021 keputusan 2 mati DIAM-DIAM: tidak ada galat, tidak ada baris log, hanya
+    cap yang tidak pernah turun. DUA penjaga menegakkannya, dan masing-masing hanya
+    sejauh yang tertulis di sini:
+      - pemindai AST atas seluruh berkas paket
+        (`tests/test_job_pipeline.py::test_every_production_call_of_record_job_outcome_passes_client_address`)
+        — menangkap juga kode yang TIDAK PERNAH dieksekusi suite, tetapi hanya BENTUK yang
+        bisa dibaca statis; nama yang dirakit saat jalan (`"record_job" + "_outcome"`)
+        tidak terlihat olehnya, dan tesnya mengatakan itu apa adanya;
+      - penjaga RUNTIME (`tests/conftest.py`) yang membungkus fungsi ini selama seluruh
+        suite dan menolak panggilan dari berkas di dalam `agent/agent/` yang tidak
+        mengikat parameternya — bentuknya tidak relevan sama sekali, jadi `getattr`,
+        `partial`, tabel dispatch dan sejenisnya ikut tertangkap.
+    YANG TIDAK DIJAGA keduanya, dan sengaja: pemanggil DI LUAR paket ini (berkas tes,
+    proses anak, skrip pemulihan tangan). Bagi mereka `client_address=None` yang DIKETIK
+    tetap sah — yang ditolak adalah nilai RUSAK, dan itu urusan `_client_funded_its_own_job`.
 
     Job yang DITOLAK/Expired hanya menaikkan `stats.reject` (dan, bila ada cek deterministik
     yang gagal, menjadi insiden). Budgetnya TIDAK disimpan di mana pun — ADR-020 keputusan 2.

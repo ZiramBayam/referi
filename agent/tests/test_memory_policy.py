@@ -1471,7 +1471,11 @@ def test_a_broken_client_address_is_a_typed_memory_error_not_a_raw_valueerror(cl
 
     `ValueError` MENTAH salah dua kali. Pertama jenisnya: ia jatuh ke `except Exception`
     generik di `vault_client.main()` dan terbaca sebagai "bug Python", bukan sebagai
-    "kita tidak boleh menulis apa pun". Kedua pesannya: `normalize_address` mengatakan
+    "kita tidak boleh menulis apa pun" — perbedaan yang BUKAN teori, dan dibuktikan
+    berpasangan di `test_safe_mode.py`
+    (`test_main_treats_a_memory_integrity_error_as_a_safe_mode_stop` = `EXIT_REFUSED`
+    lawan `test_a_raw_valueerror_still_falls_to_the_generic_handler` = exit 1).
+    Kedua pesannya: `normalize_address` mengatakan
     "alamat PROVIDER tidak berbentuk…" padahal yang rusak adalah alamat CLIENT — operator
     akan mencari di tempat yang salah.
 

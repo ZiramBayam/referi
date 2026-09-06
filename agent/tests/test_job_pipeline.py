@@ -17,10 +17,14 @@ wallet agen sungguhan sebelum == sesudah) dijalankan manual, bukan di sini.
 
 from __future__ import annotations
 
+import functools
+import importlib
 import json
 import logging
+import operator
 import pathlib
 
+import conftest
 import pytest
 from sibyl_memory_client import MemoryClient
 from web3 import Web3
@@ -407,50 +411,97 @@ def test_record_outcome_uses_the_client_address_from_getJob(db, artifacts):
 
 
 def _record_outcome_calls_missing_client_address(source: str) -> list[str]:
-    """Panggilan `record_job_outcome` di sebuah modul yang TIDAK mengetik `client_address`.
+    """Setiap tempat di sebuah modul yang bisa memanggil `record_job_outcome` TANPA
+    mengetik `client_address`.
 
     Pemindaian AST, bukan substring: docstring dan pesan galat memuat kata
     `client_address` apa adanya (dan memang harus), jadi pemindai substring akan hijau
-    justru pada file yang salah. Yang dilacak sama seperti pemindai gerbang root:
-      - alias impor (`from agent.memory_policy import record_job_outcome as tulis`);
-      - bentuk atribut (`mp.record_job_outcome(...)`);
-      - `**kwargs` dan `*args` pada panggilan itu — dua jalur yang bisa MENGHILANGKAN
-        argumennya tanpa satu pun karakter yang bisa dibaca manusia sebagai kelalaian.
-    `def record_job_outcome(...)` sendiri BUKAN panggilan, jadi definisinya tidak ikut.
+    justru pada file yang salah.
+
+    Tiga aturan, dan aturan ke-2 dan ke-3 ada karena aturan ke-1 sendirian bisa dihindari
+    tanpa satu pun karakter yang salah:
+      1. PANGGILAN LANGSUNG (`record_job_outcome(...)`, alias impor, alias penugasan
+         berantai, bentuk atribut `mp.record_job_outcome(...)`) wajib mengetik
+         `client_address` — termasuk memeriksa `*args`/`**kwargs`, dua jalur yang bisa
+         MENGHILANGKAN argumennya tanpa satu pun karakter yang bisa dibaca manusia sebagai
+         kelalaian.
+      2. REFERENSI TANPA PANGGILAN LANGSUNG (`functools.partial(record_job_outcome, …)`,
+         `map(record_job_outcome, …)`, `{"w": record_job_outcome}`, `[record_job_outcome][0]`,
+         `record_job_outcome.__call__`, `x = record_job_outcome`) = pelanggaran apa adanya.
+         Bukan karena setiap bentuk itu pasti salah, melainkan karena tidak ada pemindai
+         STATIS yang bisa membuktikan argumennya diketik di titik panggilan yang sebenarnya.
+      3. NAMA SEBAGAI STRING (`getattr(mp, "record_job_outcome")`, `vars(mp)[…]`,
+         `mp.__dict__[…]`, `operator.attrgetter(…)`) = pencarian dinamis, dan sama saja
+         tidak bisa dibuktikan.
+
+    `def record_job_outcome(...)` sendiri BUKAN referensi, jadi definisinya tidak ikut;
+    begitu pula baris `from … import record_job_outcome`, yang memang wajib ada.
+
+    BATAS YANG DIAKUI: nama yang dirakit saat jalan (`"record_job" + "_outcome"`) tidak
+    terlihat pemindai mana pun yang membaca BENTUK — `ast.parse` tidak melipat konstanta.
+    Itu bukan lubang yang ditutup di sini melainkan alasan penjaga KEDUA ada:
+    `tests/conftest.py` membungkus fungsinya dan memeriksa panggilan yang BENAR-BENAR
+    terjadi, sehingga bentuknya tidak relevan sama sekali.
     """
     import ast
 
     tree = ast.parse(source)
     nama = "record_job_outcome"
     alias: set[str] = {nama}
+
+    def menunjuk_record(node) -> bool:
+        if isinstance(node, ast.Name):
+            return node.id in alias
+        # Bentuk atribut: yang menentukan adalah FUNGSI yang dipanggil, bukan lewat modul
+        # mana ia diambil (`mp.`, `memory_policy.`, `vc.` — semuanya fungsi yang sama).
+        return isinstance(node, ast.Attribute) and node.attr == nama
+
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
             for a in node.names:
                 if a.name == nama:
                     alias.add(a.asname or a.name)
 
-    def menunjuk_record(func) -> bool:
-        if isinstance(func, ast.Name):
-            return func.id in alias
-        # Bentuk atribut: yang menentukan adalah FUNGSI yang dipanggil, bukan lewat modul
-        # mana ia diambil (`mp.`, `memory_policy.`, `vc.` — semuanya fungsi yang sama).
-        return isinstance(func, ast.Attribute) and func.attr == nama
+    # Alias penugasan, sampai titik tetap: `tulis = record_job_outcome`, lalu `y = tulis`.
+    # Rantainya boleh sepanjang apa pun, jadi satu lintasan tidak cukup.
+    berubah = True
+    while berubah:
+        berubah = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                sasaran, nilai = node.targets, node.value
+            elif isinstance(node, ast.AnnAssign) and node.value is not None:
+                sasaran, nilai = [node.target], node.value
+            else:
+                continue
+            if not menunjuk_record(nilai):
+                continue
+            for t in sasaran:
+                if isinstance(t, ast.Name) and t.id not in alias:
+                    alias.add(t.id)
+                    berubah = True
 
-    pelanggar: list[str] = []
+    dipanggil_langsung: set[int] = set()
+    pelanggar: list[tuple[int, str]] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not menunjuk_record(node.func):
             continue
+        dipanggil_langsung.add(id(node.func))
         if any(isinstance(a, ast.Starred) for a in node.args):
-            pelanggar.append(f"{node.lineno} (*args)")
-            continue
-        if any(k.arg is None for k in node.keywords):
-            pelanggar.append(f"{node.lineno} (**kwargs)")
-            continue
+            pelanggar.append((node.lineno, "*args"))
+        elif any(k.arg is None for k in node.keywords):
+            pelanggar.append((node.lineno, "**kwargs"))
         # `client_address` adalah parameter ke-7; mengisinya secara posisional pun sah.
-        if any(k.arg == "client_address" for k in node.keywords) or len(node.args) >= 7:
-            continue
-        pelanggar.append(str(node.lineno))
-    return pelanggar
+        elif not (any(k.arg == "client_address" for k in node.keywords) or len(node.args) >= 7):
+            pelanggar.append((node.lineno, "client_address tidak diketik"))
+
+    for node in ast.walk(tree):
+        if menunjuk_record(node) and id(node) not in dipanggil_langsung:
+            pelanggar.append((node.lineno, "referensi tanpa panggilan langsung"))
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value == nama:
+            pelanggar.append((node.lineno, "nama sebagai string (pencarian dinamis)"))
+
+    return [f"{baris} ({sebab})" for baris, sebab in sorted(set(pelanggar))]
 
 
 def test_every_production_call_of_record_job_outcome_passes_client_address():
@@ -478,6 +529,39 @@ def test_every_production_call_of_record_job_outcome_passes_client_address():
         "MATI DIAM-DIAM di setiap panggilan itu: tidak ada galat, tidak ada log, hanya "
         "cap yang tidak pernah turun. Teruskan `getJob(jobId).client` ke sana."
     )
+
+
+# Bentuk-bentuk yang memanggil fungsi yang SAMA tanpa pernah menuliskan
+# `record_job_outcome(...)` sebagai panggilan biasa. Semuanya berasal dari serangan nyata
+# security-reviewer atas pemindai versi pertama, yang meloloskan SELURUH daftar ini.
+# Dipakai dua kali: sekali terhadap pemindai AST, sekali terhadap penjaga runtime.
+BYPASS_FORMS: tuple[tuple[str, str], ...] = (
+    ("alias penugasan", "tulis = record_job_outcome\ntulis(c, p, 1, 2, True)\n"),
+    ("getattr(nama literal)", "getattr(mp, 'record_job_outcome')(c, p, 1, 2, True)\n"),
+    ("functools.partial", "functools.partial(record_job_outcome, c, p)(1, 2, True)\n"),
+    (
+        "importlib.import_module",
+        # Referensi dulu, panggil kemudian: bentuk atribut yang dipanggil LANGSUNG sudah
+        # merah sejak pemindai versi pertama, yang lolos adalah yang dipegang dulu.
+        "f = importlib.import_module('agent.memory_policy').record_job_outcome\n"
+        "f(c, p, 1, 2, True)\n",
+    ),
+    ("vars(modul)[nama]", "vars(mp)['record_job_outcome'](c, p, 1, 2, True)\n"),
+    ("modul.__dict__[nama]", "mp.__dict__['record_job_outcome'](c, p, 1, 2, True)\n"),
+    ("tabel dispatch", "TABEL = {'w': record_job_outcome}\nTABEL['w'](c, p, 1, 2, True)\n"),
+    ("rantai alias dua langkah", "x = record_job_outcome\ny = x\ny(c, p, 1, 2, True)\n"),
+    ("__call__ eksplisit", "record_job_outcome.__call__(c, p, 1, 2, True)\n"),
+    ("map", "list(map(record_job_outcome, [c]))\n"),
+    ("operator.attrgetter", "operator.attrgetter('record_job_outcome')(mp)(c, p, 1, 2, True)\n"),
+    ("literal list lalu indeks", "[record_job_outcome][0](c, p, 1, 2, True)\n"),
+    ("diserahkan ke lambda", "(lambda f: f(c, p, 1, 2, True))(record_job_outcome)\n"),
+)
+
+# Nama yang DIRAKIT saat jalan. Sengaja TIDAK ada di daftar di atas: tidak ada pemindai
+# statis yang bisa melihatnya (`ast.parse` tidak melipat konstanta), dan berpura-pura
+# sebaliknya persis kelas cacat yang sedang diperbaiki di sini. Yang menangkapnya adalah
+# penjaga runtime, dan tes di bawah membuktikannya.
+BYPASS_INVISIBLE_TO_AST = "getattr(mp, 'record_job' + '_outcome')(c, p, 1, 2, True)\n"
 
 
 def test_the_scanner_itself_catches_every_way_of_dropping_the_argument():
@@ -520,6 +604,97 @@ def test_the_scanner_itself_catches_every_way_of_dropping_the_argument():
     )
 
 
+@pytest.mark.parametrize("nama,sumber", BYPASS_FORMS, ids=[n for n, _ in BYPASS_FORMS])
+def test_the_scanner_catches_the_indirect_forms_too(nama, sumber):
+    """Ke-13 bentuk yang MELOLOSKAN pemindai versi pertama. Versi ini harus merah pada
+    semuanya — dan pesannya menyebut sebab, bukan sekadar nomor baris."""
+    pelanggar = _record_outcome_calls_missing_client_address(
+        "from agent import memory_policy as mp\n"
+        "from agent.memory_policy import record_job_outcome\n" + sumber
+    )
+    assert pelanggar, f"bentuk {nama!r} lolos pemindai AST"
+
+
+def test_a_name_assembled_at_runtime_is_left_to_the_runtime_guard():
+    """Batas pemindai statis, ditulis sebagai tes supaya ia tidak bisa diklaim lebih luas."""
+    assert not _record_outcome_calls_missing_client_address(
+        "from agent import memory_policy as mp\n" + BYPASS_INVISIBLE_TO_AST
+    )
+
+
+# ----------------------------------------------------------------------
+# Penjaga RUNTIME (tests/conftest.py) — bentuknya tidak relevan sama sekali
+# ----------------------------------------------------------------------
+
+
+def _run_as_production(sumber: str) -> None:
+    """Menjalankan `sumber` seolah-olah ia baris di dalam paket `agent/agent/`.
+
+    `co_filename` yang menentukan, bukan keberadaan berkasnya: penjaga runtime memutuskan
+    "ini jalur produksi" dari nama berkas frame pemanggil. Objek yang dipanggil adalah
+    fungsi PRODUKSI yang sesungguhnya (`mp.record_job_outcome` yang sudah ditambal fixture),
+    bukan tiruan — kalau penjaganya lepas, tes ini tidak akan hijau diam-diam.
+    """
+    berkas = pathlib.Path(mp.__file__).parent / "penyelundup_untuk_tes.py"
+    ruang = {
+        "mp": mp,
+        "vc": vc,
+        "record_job_outcome": mp.record_job_outcome,
+        "functools": functools,
+        "importlib": importlib,
+        "operator": operator,
+        "c": None,
+        "p": PROVIDER,
+    }
+    exec(compile(sumber, str(berkas), "exec"), ruang)
+
+
+def test_the_runtime_guard_is_installed_on_the_real_functions():
+    """Kalau fixture-nya tidak terpasang, seluruh tes di bawah hijau tanpa menguji apa pun."""
+    assert getattr(mp.record_job_outcome, "__client_address_guard__", False)
+    assert getattr(vc.record_job_outcome, "__client_address_guard__", False)
+
+
+@pytest.mark.parametrize(
+    "nama,sumber",
+    BYPASS_FORMS + (("nama dirakit saat jalan", BYPASS_INVISIBLE_TO_AST),),
+    ids=[n for n, _ in BYPASS_FORMS] + ["nama dirakit saat jalan"],
+)
+def test_every_indirect_form_is_red_at_runtime(nama, sumber):
+    """Penjaga runtime tidak punya kelas bypass ini: ia melihat panggilan, bukan bentuk."""
+    with pytest.raises(conftest.ClientAddressGuardViolation) as exc:
+        _run_as_production(sumber)
+    assert "record_job_outcome" in str(exc.value) and "client_address" in str(exc.value)
+
+
+def test_the_runtime_guard_lets_a_production_call_that_types_it_through():
+    """Kontrol negatif: penjaga yang menolak semuanya bukan penjaga, hanya rem."""
+    dipanggil: list[dict] = []
+
+    def stub(client, provider_address, job_id, budget, passed, failed_checks=(), client_address=None):
+        dipanggil.append({"client_address": client_address})
+
+    ruang = {"tulis": conftest.guard_client_address(stub), "c": None, "p": PROVIDER}
+    berkas = pathlib.Path(mp.__file__).parent / "penyelundup_untuk_tes.py"
+    exec(compile("tulis(c, p, 1, 2, True, client_address=p)\n", str(berkas), "exec"), ruang)
+    # `None` yang DIKETIK tetap lolos: "tidak diketahui" adalah pernyataan yang sah
+    # (pemulihan tangan), dan yang menahan nilai RUSAK adalah `MemoryIntegrityError`.
+    exec(compile("tulis(c, p, 1, 2, True, client_address=None)\n", str(berkas), "exec"), ruang)
+    # Posisional pun sah — parameter ke-7.
+    exec(compile("tulis(c, p, 1, 2, True, (), p)\n", str(berkas), "exec"), ruang)
+    assert [d["client_address"] for d in dipanggil] == [PROVIDER, None, PROVIDER]
+
+
+def test_the_runtime_guard_does_not_police_calls_from_outside_the_package():
+    """Batas yang diakui: berkas tes memakai fungsinya untuk MENGUJI, bukan untuk menilai
+    job. Kalau penjaga ini ikut menjaga mereka, seluruh suite merah tanpa satu pun cacat."""
+    assert not conftest.caller_is_production(__file__)
+    dipanggil: list[str] = []
+    guarded = conftest.guard_client_address(lambda client, provider_address, **kw: dipanggil.append("ya"))
+    guarded(None, PROVIDER)  # dipanggil DARI berkas tes ini: tidak melempar
+    assert dipanggil == ["ya"]
+
+
 # ----------------------------------------------------------------------
 # (j) `client_address` RUSAK dari getJob = berhenti sebelum tx pertama
 # ----------------------------------------------------------------------
@@ -546,9 +721,33 @@ def test_a_broken_client_address_from_getJob_stops_the_run_with_zero_transaction
 
 
 def test_a_well_formed_client_address_is_not_stopped(db, artifacts):
-    """Kontrol negatif: alamat sah tidak ditahan penjaga itu."""
+    """Kontrol negatif: alamat sah tidak ditahan penjaga itu, dan kuncinya tetap kosong."""
     client = build_client(db=db, status=2, deliverable=DELIVERABLE_HASH)
-    vc.require_readable_client_address(client.job(JOB_ID))  # tidak melempar
+    vc.require_readable_client_address(client, client.job(JOB_ID))  # tidak melempar
+    assert client.refusal is None
+
+
+def test_a_broken_client_address_also_locks_every_later_transaction(db, artifacts):
+    """Sabuk kedua: jalur (j) memasang kunci sekali-jalan seperti dua jalur berhenti lain.
+
+    Tanpa kunci ini penjaga (j) hanya sekuat pemanggilnya — dan yang membuat `refuse()`
+    ada justru pemanggil yang lupa memeriksa: dengan kuncinya dilepas, `finalize` di bawah
+    ini TERKIRIM.
+    """
+    client = build_client(db=db, status=2, client_address="0x", deliverable=DELIVERABLE_HASH)
+    write_artifact(artifacts, JOB_ID, DELIVERABLE_TEXT)
+    with pytest.raises(vc.SafeModeStop):
+        vc.run_job(client, JOB_ID, vc.KIND_COMPLETE, deliverable_dir=artifacts)
+
+    assert client.refusal is not None and "ADR-021" in client.refusal
+    for call in (
+        lambda: client.post_verdict(JOB_ID, vc.KIND_REJECT, b"\x01" * 32, b"\x02" * 32),
+        lambda: client.finalize(JOB_ID),
+        lambda: client.set_provider_cap(PROVIDER, 250_000),
+    ):
+        with pytest.raises(vc.SafeModeStop):
+            call()
+    assert_nothing_was_sent(client)
 
 
 def test_a_self_funded_job_contributes_no_budget_through_this_path(db, artifacts):

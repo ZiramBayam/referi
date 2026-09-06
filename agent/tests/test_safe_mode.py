@@ -746,6 +746,82 @@ def test_a_clean_safe_mode_stop_still_exits_zero(db, monkeypatch, caplog):
     assert vc.EXIT_STOPPED_MIDWAY_MESSAGE not in caplog.text
 
 
+def _main_with_failing_run_job(
+    db, monkeypatch, exc: BaseException, kunci: str = "0x" + "11" * 32
+) -> tuple[int, dict]:
+    """Menjalankan `main()` dengan gerbang LOLOS dan `run_job` yang melempar `exc`."""
+    seed_memory(db)
+    dibangun = {}
+
+    def _fake_build_client(private_key: str | None = None) -> vc.VaultClient:
+        client = build_client(db=db)
+        client.account = _SigningAccount()
+        dibangun["client"] = client
+        return client
+
+    def _run_job(client, job_id, kind, **kwargs):
+        raise exc
+
+    monkeypatch.setattr(vc, "build_client", _fake_build_client)
+    monkeypatch.setattr(vc, "load_private_key", lambda: kunci)
+    monkeypatch.setattr(vc, "run_job", _run_job)
+    monkeypatch.setattr(vc.Account, "from_key", staticmethod(lambda key: _SigningAccount()))
+    return vc.main(["--job-id", "417", "--kind", "reject"]), dibangun
+
+
+def test_main_treats_a_memory_integrity_error_as_a_safe_mode_stop(db, monkeypatch, caplog):
+    """`MemoryIntegrityError` = "kita tidak boleh menulis apa pun", bukan bug Python.
+
+    Ia TIDAK bisa menjadi turunan `SafeModeStop` (kelas itu hidup di `vault_client`, dan
+    `memory_policy` dilarang mengimpornya), jadi satu-satunya hal yang membuat kalimat
+    "sekelas mode aman" benar adalah pendaftarannya di handler `main()`. Tanpa tes ini
+    kalimat itu hanya janji: yang menangkapnya akan `except Exception` yang SAMA dengan
+    nasib `ValueError` mentah — persis yang docstring-nya klaim dihindari.
+    """
+    with caplog.at_level(logging.INFO, logger="vault_client"):
+        kode, dibangun = _main_with_failing_run_job(
+            db, monkeypatch, mp.MemoryIntegrityError("body entity provider rusak")
+        )
+
+    assert kode == vc.EXIT_REFUSED
+    assert vc.EXIT_REFUSED_MESSAGE in caplog.text
+    assert "body entity provider rusak" in caplog.text
+    # Bukan handler generik: itu yang dulu menangkapnya, dan bunyinya "GAGAL: <tipe>".
+    assert "GAGAL: MemoryIntegrityError" not in caplog.text
+    assert dibangun["client"].sent_transactions == []
+
+
+def test_a_raw_valueerror_still_falls_to_the_generic_handler(db, monkeypatch, caplog):
+    """Kontrol yang membuat tes di atas berarti: kalau SEMUA galat berakhir EXIT_REFUSED,
+    pembedaan jenis galatnya tidak menegakkan apa pun."""
+    with caplog.at_level(logging.INFO, logger="vault_client"):
+        kode, _ = _main_with_failing_run_job(db, monkeypatch, ValueError("argumen salah ketik"))
+
+    assert kode == 1
+    assert "GAGAL: ValueError" in caplog.text
+    assert vc.EXIT_REFUSED_MESSAGE not in caplog.text
+
+
+def test_the_safe_mode_handler_redacts_the_private_key(db, monkeypatch, caplog):
+    """Handler mode aman menyensor sama seperti handler generik.
+
+    Nol pesan hari ini membawa kunci; yang dijaga di sini adalah besok — dan penjaga yang
+    hanya berlaku di sebagian jalur keluar bukan penjaga.
+    """
+    kunci = "0x" + "7d" * 32
+    with caplog.at_level(logging.INFO, logger="vault_client"):
+        kode, _ = _main_with_failing_run_job(
+            db,
+            monkeypatch,
+            vc.SafeModeStop(f"MODE AMAN: sesuatu membocorkan {kunci} ke pesan"),
+            kunci=kunci,
+        )
+
+    assert kode == vc.EXIT_REFUSED
+    assert kunci not in caplog.text and "7d" * 32 not in caplog.text
+    assert "MODE AMAN: sesuatu membocorkan [REDACTED] ke pesan" in caplog.text
+
+
 def test_the_gate_closes_the_memory_handle_it_opened(db):
     """Gerbang dibaca berkali-kali per tx; handle sqlite tidak boleh menumpuk."""
     seed_memory(db)

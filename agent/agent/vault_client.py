@@ -1229,8 +1229,9 @@ class VaultClient:
         # latch ini ada, alasan yang sama seperti mode aman ditegakkan di `_send()`.
         self.observed_readable_memory = False
         # KUNCI SEKALI-JALAN. Sekali diisi, `_send()` menolak setiap transaksi sampai proses
-        # ini mati. Diisi oleh dua penolakan yang bukan verdict: job milik evaluator lain,
-        # dan deliverable yang tidak terverifikasi (ADR-019 keputusan 2). Ia ada karena
+        # ini mati. Diisi oleh TIGA penolakan yang bukan verdict: job milik evaluator lain,
+        # deliverable yang tidak terverifikasi (ADR-019 keputusan 2), dan `getJob().client`
+        # yang tidak terbaca (task 2.4a AC (j)). Ia ada karena
         # alasan yang sama seperti gerbang mode aman ditegakkan di `_send()` dan bukan di
         # pemanggil: jalur baru yang lupa memeriksa nilai balik tetap harus berhenti.
         self.refusal: str | None = None
@@ -2208,7 +2209,7 @@ def verdict_kind(plan: JobPlan, requested: int) -> int:
     return required
 
 
-def require_readable_client_address(job: JobView) -> None:
+def require_readable_client_address(client: VaultClient, job: JobView) -> None:
     """`getJob(jobId).client` WAJIB berbentuk alamat sebelum job ini boleh menghasilkan tx.
 
     Bentuknya divalidasi dengan `memory_policy.normalize_address` — definisi alamat yang
@@ -2220,16 +2221,24 @@ def require_readable_client_address(job: JobView) -> None:
     menggantung separuh jalan), yang di memori menahan TULISAN (nol angka yang direkam
     dengan filter ADR-021 yang mati) — dan pemanggil memori tidak selalu lewat `run_job`.
 
-    `SafeModeStop`, bukan `client.refuse()`: "job ini bukan milik kita" adalah hasil normal
-    yang berakhir exit 0, sedangkan pembacaan chain yang gagal adalah keadaan yang harus
-    terlihat operator (`EXIT_REFUSED`, dan `main()` mencetak barisnya apa adanya).
+    DUA HAL sekaligus, dan keduanya perlu:
+      - `client.refuse()` memasang KUNCI sekali-jalan, sama seperti dua jalur berhenti
+        lain di `run_job` (evaluator asing, deliverable tak terverifikasi). Sejak itu
+        `_send()` menolak SETIAP transaksi, jadi jalur baru yang memanggil penjaga ini dan
+        lupa memeriksa nilai baliknya tetap berhenti. Tanpa kunci itu, sabuk keduanya
+        hilang: melepasnya membuat `finalize` bisa TERKIRIM.
+      - `SafeModeStop` yang dilempar sesudahnya membedakan keadaan ini dari "job ini bukan
+        milik kita": yang terakhir hasil normal yang berakhir exit 0, sedangkan pembacaan
+        chain yang GAGAL harus terlihat operator (`EXIT_REFUSED`).
+    Akibatnya barisnya muncul dua kali di log (sekali dari `refuse`, sekali dari handler
+    `main()`); itu harga yang jauh lebih murah daripada satu jalur tanpa kunci.
     """
     try:
         normalize_address(job.client_address)
     except ValueError as exc:
-        raise SafeModeStop(
-            BROKEN_CLIENT_TEMPLATE.format(job_id=job.job_id, client=job.client_address)
-        ) from exc
+        pesan = BROKEN_CLIENT_TEMPLATE.format(job_id=job.job_id, client=job.client_address)
+        client.refuse(pesan)
+        raise SafeModeStop(pesan) from exc
 
 
 def run_job(
@@ -2242,10 +2251,13 @@ def run_job(
 ) -> int:
     """Jalur `--job-id`: `getJob` → saring evaluator → keputusan memori → pipa verdict.
 
-    Dua jalur berhenti bersih dengan NOL transaksi dan exit 0, dan keduanya memasang kunci
+    TIGA jalur berhenti dengan NOL transaksi, dan ketiganya memasang kunci
     `client.refuse()` supaya tidak ada jalur lain yang bisa mengirim tx sesudahnya:
-      - `evaluator != VAULT` (ADR-022 keputusan 2);
-      - `DeliverableUnverifiedError` (ADR-019 keputusan 2, utang task 2.3-min).
+      - `evaluator != VAULT` (ADR-022 keputusan 2) — berhenti bersih, exit 0;
+      - `DeliverableUnverifiedError` (ADR-019 keputusan 2, utang task 2.3-min) — exit 0;
+      - `getJob(jobId).client` yang tidak terbaca (task 2.4a AC (j)) — ini BUKAN hasil
+        normal melainkan pembacaan chain yang gagal, jadi ia melempar `SafeModeStop` dan
+        run-nya berakhir `EXIT_REFUSED`, bukan 0.
     """
     job = client.job(job_id)
     log.info("%s", job.line)
@@ -2257,7 +2269,7 @@ def run_job(
             )
         )
         return 0
-    require_readable_client_address(job)
+    require_readable_client_address(client, job)
     try:
         plan = plan_job(
             client, job, deliverable_dir=deliverable_dir, lookback_blocks=lookback_blocks
@@ -2682,15 +2694,24 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
         parser.print_usage(sys.stdout)
         return 2
-    except (SafeModeStop, DeliverableUnverifiedError) as exc:
+    except (SafeModeStop, DeliverableUnverifiedError, MemoryIntegrityError) as exc:
         # Jaring kedua: gerbang di atas sudah menahan, jadi ini hanya terjadi bila sebuah
         # jalur baru mencoba mengirim tx tanpa lewat sana. `DeliverableUnverifiedError`
         # ikut di sini karena ADR-019 keputusan 2 menuntut perlakuan SEKELAS mode aman —
         # termasuk pembedaan "berhenti bersih" dari "berhenti di tengah pipa" di bawah.
+        # `MemoryIntegrityError` ikut karena alasan yang sama dan karena ia TIDAK bisa
+        # menjadi turunan `SafeModeStop`: ia hidup di `memory_policy`, yang tidak boleh
+        # mengimpor modul ini. Jadi ia didaftarkan di sini, satu-satunya tempat yang
+        # membuat kalimat "ia sekelas mode aman" benar. Isinya memang kelas yang sama:
+        # memori yang tidak bisa dijadikan preimage jujur, dan bukti `getJob` yang tidak
+        # bisa dipercaya — dua-duanya "kita tidak boleh menulis/mengirim apa pun", bukan
+        # "ada bug Python".
         # `log.error`, bukan `log.info`: yang sampai ke sini adalah penolakan SESUDAH
         # gerbang start lolos — mode aman yang muncul di tengah jalan, root asing, bukti
         # yang tidak cocok. Semuanya keadaan yang harus terlihat di log, bukan catatan.
-        log.error("%s", exc)
+        # Disensor seperti handler generik: nol pesan hari ini membawa kunci, dan penjaga
+        # yang hanya berlaku di sebagian jalur bukan penjaga.
+        log.error("%s", redact(str(exc), private_key))
         terkirim = landed_transactions(dibangun)
         if terkirim:
             # BERHENTI DI TENGAH PIPA. Ini BUKAN "berhenti bersih": sebagian tx sudah
