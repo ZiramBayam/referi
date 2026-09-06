@@ -20,8 +20,11 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import pathlib
+import socket
 import threading
+import time
 
 import pytest
 from eth_utils import keccak
@@ -150,8 +153,8 @@ BODY = json.dumps({"job_id": 421}).encode()
 
 
 class Server:
-    def __init__(self, app: px.RegisterApp) -> None:
-        self.httpd = px.serve(app, "127.0.0.1", 0)
+    def __init__(self, app: px.RegisterApp, **kwargs) -> None:
+        self.httpd = px.serve(app, "127.0.0.1", 0, **kwargs)
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self.thread.start()
 
@@ -179,8 +182,8 @@ class Server:
 def serve_app():
     servers: list[Server] = []
 
-    def factory(app: px.RegisterApp) -> Server:
-        server = Server(app)
+    def factory(app: px.RegisterApp, **kwargs) -> Server:
+        server = Server(app, **kwargs)
         servers.append(server)
         return server
 
@@ -684,3 +687,378 @@ def test_the_module_docstring_denies_x402_compatibility():
     assert "BUKAN x402" in doc
     assert "EIP-3009" in doc
     assert "transferWithAuthorization" in doc
+
+
+# ======================================================================
+# (1) SATU tx TIDAK BOLEH membayar dua job, TERMASUK lintas proses
+#
+# Bentuk kegagalan yang ditutup di sini persis yang terjadi saat `make demo` dan
+# `python -m agent.payment_402` hidup bersamaan dengan `PAYMENT_LEDGER_PATH` yang sama:
+# dua `PaymentLedger` atas SATU berkas, masing-masing memakai himpunan hash di memorinya
+# sendiri, sehingga hash yang sama membayar dua job. Dua objek `PaymentLedger` adalah model
+# yang setia untuk itu — `flock` melekat pada open file description, jadi dua `open()`
+# terpisah saling mengunci meski berada di dalam satu proses.
+# ======================================================================
+
+
+def test_two_ledgers_over_one_file_cannot_both_claim_one_hash(tmp_path):
+    path = tmp_path / "payments-402.jsonl"
+    first = px.PaymentLedger(path)
+    second = px.PaymentLedger(path)  # "proses kedua": membaca berkas yang sama saat start
+
+    assert first.claim(TX_OK, 100) is True
+    assert second.claim(TX_OK, 200) is False
+
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert [r["tx"] for r in records] == [TX_OK]
+    assert [r["job_id"] for r in records] == [100]
+
+
+def test_two_servers_sharing_one_ledger_file_take_the_payment_only_once(tmp_path):
+    """Reproduksi laporan: 200 untuk job 100 DAN 200 untuk job 200 dari satu hash."""
+    path = tmp_path / "payments-402.jsonl"
+    demo = make_app(receipts={TX_OK: good_receipt()}, ledger=px.PaymentLedger(path))
+    standalone = make_app(receipts={TX_OK: good_receipt()}, ledger=px.PaymentLedger(path))
+
+    first = demo.handle_register(auth(TX_OK), json.dumps({"job_id": 100}).encode())
+    second = standalone.handle_register(auth(TX_OK), json.dumps({"job_id": 200}).encode())
+
+    assert first[0] == 200
+    assert second[0] == 402
+    assert second[2]["reason"] == px.REASON_REPLAY
+
+    lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(lines) == 1
+
+
+def test_concurrent_claims_from_two_ledger_objects_yield_exactly_one_winner(tmp_path):
+    """Bukan sekadar muat-ulang: klaim yang benar-benar bersamaan pun hanya boleh satu menang."""
+    path = tmp_path / "payments-402.jsonl"
+    ledgers = [px.PaymentLedger(path), px.PaymentLedger(path)]
+    results: list[bool] = []
+    guard = threading.Lock()
+    start = threading.Barrier(8)
+
+    def worker(index: int) -> None:
+        start.wait()
+        won = ledgers[index % 2].claim(TX_OK, index)
+        with guard:
+            results.append(won)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=20)
+
+    assert results.count(True) == 1
+    assert results.count(False) == 7
+    lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(lines) == 1
+
+
+def test_a_claim_in_flight_blocks_the_other_process_until_it_lands(tmp_path):
+    """Muat-ulang saja TIDAK cukup, dan tes 8-thread di atas terlalu jarang menabrak
+    jendelanya untuk membuktikan itu. Di sini jendelanya dilebarkan sengaja: buku pertama
+    memuat ulang dengan lambat SAMBIL memegang kunci berkas. Tanpa `flock`, buku kedua
+    membaca berkas yang masih kosong dan ikut menang — satu tx membayar dua job.
+    """
+    path = tmp_path / "payments-402.jsonl"
+    slow = px.PaymentLedger(path)
+    fast = px.PaymentLedger(path)
+
+    real_load = px.PaymentLedger._load
+
+    def slow_load(target):
+        # Membaca DULU lalu tertidur: jendelanya ada di antara "membaca" dan "menulis", persis
+        # tempat proses kedua menyusup bila tidak ada kunci berkas.
+        loaded = real_load(target)
+        time.sleep(0.5)
+        return loaded
+
+    slow._load = slow_load  # atribut instans menutupi staticmethod-nya
+    outcome: dict[str, bool] = {}
+
+    thread = threading.Thread(target=lambda: outcome.__setitem__("slow", slow.claim(TX_OK, 100)))
+    thread.start()
+    time.sleep(0.2)  # `slow` sudah memegang kunci berkas dan sedang memuat ulang
+    outcome["fast"] = fast.claim(TX_OK, 200)
+    thread.join(timeout=10)
+
+    assert list(outcome.values()).count(True) == 1, outcome
+    lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(lines) == 1
+
+
+def test_the_ledger_normalises_hash_case_at_its_own_boundary(tmp_path):
+    """`PaymentLedger` adalah API publik: pemanggil baru yang tidak menormalkan hash
+    tidak boleh bisa membayar dua kali, tanpa bergantung pada normalisasi di `verify()`.
+
+    Diuji pada KEDUA bentuk buku — dengan berkas dan tanpa berkas — karena normalisasi
+    keduanya lahir di tempat berbeda (`_load` vs `claim`); satu bentuk saja membuat pencabutan
+    salah satunya lolos tanpa satu tes pun merah.
+    """
+    ledger = px.PaymentLedger(tmp_path / "payments-402.jsonl")
+    assert ledger.claim("0x" + "AA" * 32, 1) is True
+    assert ledger.claim("0x" + "aa" * 32, 2) is False
+    assert ledger.is_used("0x" + "Aa" * 32) is True
+
+    in_memory = px.PaymentLedger()
+    assert in_memory.claim("0x" + "AA" * 32, 1) is True
+    assert in_memory.claim("0x" + "aa" * 32, 2) is False
+    assert in_memory.is_used("0x" + "Aa" * 32) is True
+
+
+def test_every_ledger_record_is_flushed_to_disk(tmp_path, monkeypatch):
+    """Tanpa `fsync`, baris terakhir bisa hilang saat mati mendadak → hash itu membayar LAGI."""
+    synced: list[int] = []
+    real_fsync = os.fsync
+
+    def spy(fd: int) -> None:
+        synced.append(fd)
+        real_fsync(fd)
+
+    monkeypatch.setattr(px.os, "fsync", spy)
+    ledger = px.PaymentLedger(tmp_path / "payments-402.jsonl")
+    assert ledger.claim(TX_OK, 7) is True
+    assert synced, "catatan buku ditulis tanpa fsync"
+
+
+# ======================================================================
+# (2) Buku yang tidak bisa ditulis: 503 yang sopan, tanpa membakar pembayaran
+# ======================================================================
+
+
+def sabotage_ledger_dir(directory: pathlib.Path) -> None:
+    """Ganti direktori buku dengan BERKAS biasa: setiap tulisan/kunci di bawahnya jadi OSError.
+
+    Dipilih ketimbang `chmod 0444` supaya tesnya tetap merah saat dijalankan sebagai root.
+    """
+    for child in directory.iterdir():
+        child.unlink()
+    directory.rmdir()
+    directory.write_text("bukan direktori", encoding="utf-8")
+
+
+def repair_ledger_dir(directory: pathlib.Path) -> None:
+    directory.unlink()
+    directory.mkdir()
+
+
+def test_a_ledger_that_cannot_be_written_answers_503_and_does_not_burn_the_payment(tmp_path):
+    book = tmp_path / "book"
+    book.mkdir()
+    app = make_app(receipts={TX_OK: good_receipt()}, ledger=px.PaymentLedger(book / "payments.jsonl"))
+
+    sabotage_ledger_dir(book)
+    status, headers, body = app.handle_register(auth(TX_OK), BODY)
+
+    assert status == 503
+    rendered = json.dumps(body) + json.dumps(headers)
+    assert str(tmp_path) not in rendered and "book" not in rendered  # path buku TIDAK bocor
+    assert app.verifier.ledger.is_used(TX_OK) is False  # pembayaran BELUM terbakar
+
+    repair_ledger_dir(book)
+    assert app.handle_register(auth(TX_OK), BODY)[0] == 200  # klien yang sudah membayar bisa mengulang
+
+
+def test_a_broken_ledger_does_not_drop_the_connection(serve_app, tmp_path):
+    book = tmp_path / "book"
+    book.mkdir()
+    app = make_app(receipts={TX_OK: good_receipt()}, ledger=px.PaymentLedger(book / "payments.jsonl"))
+    server = serve_app(app)
+    sabotage_ledger_dir(book)
+
+    status, _, raw = server.request("POST", px.REGISTER_PATH, BODY, {"Authorization": auth(TX_OK)})
+
+    assert status == 503
+    assert json.loads(raw)["error"] == px.REASON_LEDGER
+    assert str(tmp_path) not in raw.decode()
+
+
+def test_an_unexpected_failure_answers_500_without_leaking_anything(serve_app):
+    app = make_app(demo_mode=True)
+
+    def explode(authorization, body_bytes):
+        raise RuntimeError(f"rahasia di {pathlib.Path(px.__file__)}")
+
+    app.handle_register = explode
+    server = serve_app(app)
+
+    status, _, raw = server.request("POST", px.REGISTER_PATH, BODY, {"Authorization": auth(TX_OK)})
+
+    assert status == 500
+    assert json.loads(raw) == {"error": "internal_error"}
+
+
+# ======================================================================
+# (3) Slowloris: koneksi yang menggantung tidak boleh memarkir thread selamanya
+# ======================================================================
+
+
+def raw_post(port: int, *, content_length: int, sent: bytes, headers: str = "") -> socket.socket:
+    sock = socket.create_connection(("127.0.0.1", port), timeout=10)
+    request = (
+        f"POST {px.REGISTER_PATH} HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+        f"Content-Length: {content_length}\r\n{headers}\r\n"
+    ).encode()
+    sock.sendall(request + sent)
+    return sock
+
+
+def test_a_stalled_body_does_not_park_a_thread_forever(serve_app):
+    server = serve_app(make_app(), timeout=0.5)
+    sock = raw_post(server.port, content_length=8000, sent=b"{")
+    try:
+        started = time.monotonic()
+        sock.settimeout(6)
+        data = sock.recv(4096)  # server MENUTUP (atau menjawab) sendiri; tanpa timeout ini menggantung
+        elapsed = time.monotonic() - started
+    finally:
+        sock.close()
+    assert elapsed < 5, "koneksi menggantung: thread terparkir"
+    assert b"HTTP/1.1 200" not in data
+
+
+def test_the_handler_has_a_socket_timeout_by_default():
+    assert px.RegisterHandler.timeout is not None
+    assert 0 < px.RegisterHandler.timeout <= 60
+
+
+def test_the_server_caps_the_number_of_live_connections(serve_app):
+    app = make_app(demo_mode=True)
+    entered = threading.Event()
+    release = threading.Event()
+    original = app.handle_register
+
+    def blocking(authorization, body_bytes):
+        entered.set()
+        release.wait(10)
+        return original(authorization, body_bytes)
+
+    app.handle_register = blocking
+    server = serve_app(app, max_connections=1, timeout=10)
+    first = raw_post(
+        server.port,
+        content_length=len(BODY),
+        sent=BODY,
+        headers=f'Authorization: {px.SCHEME} demo="true"\r\n',
+    )
+    try:
+        assert entered.wait(5), "permintaan pertama tidak pernah sampai ke handler"
+        second = socket.create_connection(("127.0.0.1", server.port), timeout=5)
+        try:
+            second.settimeout(5)
+            assert second.recv(1024) == b""  # ditolak plafon: ditutup tanpa dilayani
+        finally:
+            second.close()
+    finally:
+        release.set()
+        first.close()
+
+
+# ======================================================================
+# (4) Rate limit: permintaan tak berbayar tidak boleh mengamplifikasi RPC kita
+# ======================================================================
+
+
+def test_unpaid_requests_cannot_amplify_rpc_reads(serve_app):
+    w3 = FakeWeb3({})
+    app = make_app(w3=w3)
+    server = serve_app(app, limiter=px.RateLimiter(3, 60.0))
+
+    codes = []
+    for index in range(10):
+        status, headers, raw = server.request(
+            "POST",
+            px.REGISTER_PATH,
+            BODY,
+            {"Authorization": auth("0x" + f"{index:064x}")},
+        )
+        codes.append(status)
+        if status == 429:
+            assert int(headers["Retry-After"]) >= 1
+            assert json.loads(raw)["error"] == px.REASON_RATE_LIMITED
+
+    assert codes[:3] == [402, 402, 402]
+    assert set(codes[3:]) == {429}
+    assert len(w3.eth.receipt_reads) == 3  # NOL amplifikasi sesudah plafon
+
+
+def test_the_rate_limiter_forgets_after_its_window():
+    now = [1000.0]
+    limiter = px.RateLimiter(2, 10.0, clock=lambda: now[0])
+    assert limiter.check("a") is None
+    assert limiter.check("a") is None
+    wait = limiter.check("a")
+    assert wait is not None and 0 < wait <= 10
+    now[0] += 10.1
+    assert limiter.check("a") is None
+
+
+def test_the_rate_limiter_counts_clients_separately_and_bounds_its_memory():
+    limiter = px.RateLimiter(1, 60.0, max_keys=8)
+    assert limiter.check("a") is None
+    assert limiter.check("b") is None
+    assert limiter.check("a") is not None
+    for index in range(50):
+        limiter.check(f"klien-{index}")
+    assert limiter.tracked_keys() <= 8
+
+
+# ======================================================================
+# (5) PENGAKUAN: pembayaran adalah kredensial bearer, dan catatan buku bisa hilang
+# ======================================================================
+
+
+def test_a_transfer_paid_by_somebody_else_still_pays(serve_app):
+    """Perilaku yang DIAKUI docstring, dikunci di sini supaya tidak diam-diam diklaim lain:
+    `from` TIDAK diperiksa, jadi siapa pun yang mengutip hash transfer orang lain lolos."""
+    app = make_app(
+        receipts={TX_OK: receipt(logs=[transfer_log(token=TOKEN, to=PAY_TO, value=AMOUNT, sender=STRANGER)])}
+    )
+    assert app.handle_register(auth(TX_OK), BODY)[0] == 200
+
+
+def test_a_transfer_older_than_the_configured_block_floor_is_refused():
+    """Lantai blok opsional: transfer purba ke `payTo` tidak boleh berlaku selamanya."""
+    w3 = FakeWeb3({TX_OK: good_receipt() | {"blockNumber": 46_400_000}})
+    verifier = px.PaymentVerifier(
+        w3, make_terms(), CHAIN_ID, px.PaymentLedger(), min_block=46_500_000
+    )
+    result = verifier.verify(auth(TX_OK))
+    assert result.ok is False
+    assert result.reason == px.REASON_TOO_OLD
+
+
+def test_the_block_floor_accepts_a_transfer_at_or_above_it():
+    w3 = FakeWeb3({TX_OK: good_receipt() | {"blockNumber": 46_500_000}})
+    verifier = px.PaymentVerifier(
+        w3, make_terms(), CHAIN_ID, px.PaymentLedger(), min_block=46_500_000
+    )
+    assert verifier.verify(auth(TX_OK)).ok is True
+
+
+def test_a_receipt_without_a_block_number_is_refused_when_a_floor_is_set():
+    w3 = FakeWeb3({TX_OK: good_receipt()})
+    verifier = px.PaymentVerifier(w3, make_terms(), CHAIN_ID, px.PaymentLedger(), min_block=1)
+    result = verifier.verify(auth(TX_OK))
+    assert result.ok is False
+    assert result.reason == px.REASON_RECEIPT
+
+
+def test_the_block_floor_is_off_by_default():
+    assert px.PaymentVerifier(FakeWeb3(), make_terms(), CHAIN_ID, px.PaymentLedger()).min_block == 0
+
+
+def test_the_docstring_admits_the_payment_is_a_bearer_credential():
+    doc = (px.__doc__ or "").lower()
+    assert "bearer" in doc
+    assert "nonce" in doc
+    assert "front-running" in doc or "mendahului" in doc
+
+
+def test_the_docstring_admits_ledger_records_can_be_lost():
+    doc = (px.__doc__ or "").lower()
+    assert "dihapus" in doc
+    assert "fsync" in doc

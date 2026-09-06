@@ -35,13 +35,32 @@ Empat hal yang gampang salah dan karena itu ditulis eksplisit:
       pembandingan `log["address"]` sendiri, siapa pun bisa men-deploy token sampah, mengirim
       "1.000.000" ke `payTo`, dan lolos. Pembandingannya ada di `_matching_transfer()` dan
       dikunci tes.
-  (b) `nonce` di tantangan adalah **korelasi/logging saja**. Transfer ERC-20 polos tidak
-      membawa memo, jadi tidak ada cara mengikat nonce ke pembayaran on-chain. Yang benar-benar
-      mencegah replay adalah BUKU HASH TX (`PaymentLedger`) — di jalur x402 resmi pekerjaan itu
-      milik fasilitator; di jalur kita tidak ada yang mengerjakannya kecuali kode ini.
-  (c) Buku hash tx menjaga replay **di dalam satu proses dan lintas restart** (file JSON Lines).
-      Ia TIDAK memakai kunci file, jadi DUA proses server yang berbagi file yang sama tidak
-      saling menjaga. Jangan mengklaim lebih dari itu; jalankan satu proses.
+  (b) **Pembayaran di sini adalah kredensial bearer, dan itu bukan kiasan.** `nonce` di
+      tantangan hanya korelasi/logging: transfer ERC-20 polos tidak membawa memo, jadi nonce
+      TIDAK PERNAH disimpan dan TIDAK PERNAH dibandingkan saat klaim — konsekuensi ADR-010
+      baris 115 ("kedaluwarsa nonce jadi kode kita sendiri") yang implementasinya NOL, ditulis
+      di sini apa adanya alih-alih didiamkan. Yang diperiksa hanyalah ISI transfer, bukan siapa
+      penuntutnya: `_matching_transfer` tidak pernah membaca `event["args"]["from"]`, jadi
+      transfer yang dikirim ORANG LAIN tetap membayar bagi siapa pun yang mengutip hashnya.
+      Siapa pun yang membaca mempool/explorer bisa **mendahului (front-running)** klien yang
+      benar-benar membayar; klien itu lalu menerima `payment_already_used` dan ongkosnya hangus.
+      Mengikat `from` tidak menutupnya (mengaku sebagai alamat lain itu gratis — butuh tanda
+      tangan, dan itu di luar lingkup ADR-010); yang DIPASANG di sini hanya lantai blok opsional
+      `PAYMENT_MIN_BLOCK`, supaya transfer purba ke `payTo` tidak berlaku sebagai kredensial
+      selamanya. Default lantai itu 0 = mati, jadi tanpa konfigurasi sifat bearer tetap penuh.
+      Yang benar-benar mencegah pemakaian ULANG adalah BUKU HASH TX (`PaymentLedger`) — di jalur
+      x402 resmi pekerjaan itu milik fasilitator; di jalur kita tidak ada yang mengerjakannya
+      kecuali kode ini.
+  (c) Buku hash tx menjaga replay di dalam satu proses, **lintas proses**, dan lintas restart
+      (file JSON Lines). Lintas proses ditegakkan `fcntl.flock(LOCK_EX)` atas `<buku>.lock` yang
+      dipegang selama muat-ulang + cek + tulis, jadi dua server dengan `PAYMENT_LEDGER_PATH` yang
+      sama tidak bisa lagi menerima satu hash dua kali; tiap baris di-`fsync` sebelum klaimnya
+      diakui, jadi mati mendadak tidak meninggalkan baris terpotong yang membuat hash itu membayar
+      lagi sesudah restart. Yang TETAP tidak dijaga, dan karena itu ditulis: buku yang **DIHAPUS**
+      (atau dipindahkan/dikosongkan) saat server berjalan menghapus seluruh riwayat — sesudah
+      restart, hash lama membayar lagi. Kuncinya juga KOOPERATIF: ia hanya menahan proses yang
+      memakai modul ini, bukan editor, `rm`, atau penulis lain. Buku yang tidak bisa ditulis =
+      **503**, bukan 200: gerbang menolak mengakui pembayaran yang tidak bisa ia catat.
   (d) Fee ini **bukan pengaman ekonomi**. Token escrow Base Sepolia punya `mint()` tanpa
       kontrol akses (docs/versions.md), jadi siapa pun bisa mencetak sendiri ongkosnya. Ia
       penghalang spam + peragaan alur "fee di muka" (spec §5 "Perbaikan insentif fee"), titik.
@@ -54,6 +73,12 @@ Batas yang dipegang modul ini:
     aturan yang sama yang membuat `checks/*` menjadi satu-satunya sumber tulisan memori.
   - Respons 200 hanya memantulkan `job_id` (integer yang sudah divalidasi) dan metadata
     pembayaran; TIDAK ada teks pihak ketiga yang dipantulkan kembali ke klien/UI.
+  - **Setiap permintaan berbiaya bagi pemanggil sebelum ia berbiaya bagi kita**: `RateLimiter`
+    per alamat klien berjalan SEBELUM receipt dibaca, sehingga permintaan tak berbayar tidak
+    bisa mengubah gerbang ini menjadi amplifier `eth_getTransactionReceipt` atas kuota RPC kita.
+  - **Tidak ada koneksi yang boleh memarkir thread selamanya**: `RegisterHandler.timeout`
+    memasang batas waktu soket (klien yang menggantung di tengah badan diputus), dan jumlah
+    koneksi hidup dibatasi `BoundedThreadingHTTPServer`.
 """
 
 from __future__ import annotations
@@ -61,10 +86,14 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import re
 import secrets
 import threading
 import time
+from collections import OrderedDict, deque
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -81,6 +110,11 @@ from agent.vault_client import (
     agent_root,
     config_value,
 )
+
+try:  # pragma: no cover - Linux/macOS; cabang lain hanya ada supaya fail-closed
+    import fcntl
+except ImportError:  # pragma: no cover
+    fcntl = None  # type: ignore[assignment]
 
 log = logging.getLogger("payment_402")
 
@@ -113,6 +147,29 @@ DEFAULT_HOST = "127.0.0.1"  # sengaja loopback: server ini tidak punya autentika
 DEFAULT_PORT = 8000  # cocok dengan NEXT_PUBLIC_AGENT_API di .env.example
 
 DEFAULT_LEDGER_PATH = "./data/payments-402.jsonl"
+LEDGER_LOCK_SUFFIX = ".lock"
+
+# Batas tunggu kunci buku. Operasinya lokal dan berorde milidetik; batas ini hanya mencegah
+# permintaan menggantung bila proses lain macet sambil memegang kunci. Habis = 503, bukan 200.
+LEDGER_LOCK_TIMEOUT_SECONDS = 5.0
+LEDGER_LOCK_POLL_SECONDS = 0.01
+
+# Batas waktu soket per koneksi. Tanpa ini `rfile.read(length)` memblokir SELAMANYA pada klien
+# yang mengirim `Content-Length` besar lalu diam (slowloris), dan tiap koneksi seperti itu
+# memarkir satu thread permanen.
+REQUEST_TIMEOUT_SECONDS = 15.0
+
+# Plafon koneksi hidup. `ThreadingHTTPServer` polos membuat satu thread per koneksi tanpa batas.
+MAX_CONCURRENT_CONNECTIONS = 64
+
+# Rate limit per alamat klien. Nilainya longgar untuk demo satu klien, tetapi cukup untuk
+# memutus amplifikasi RPC oleh pemanggil tak berbayar. 0 = mati.
+DEFAULT_RATE_LIMIT_REQUESTS = 30
+DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60.0
+
+# Lantai blok opsional untuk transfer yang boleh dipakai membayar (lihat (b) di docstring).
+# 0 = mati; tanpa ini transfer ke `payTo` KAPAN PUN di masa lalu berlaku sebagai kredensial.
+DEFAULT_MIN_BLOCK = 0
 
 # Fragmen ABI ERC-20 seperlunya. Bentuk `Transfer(address,address,uint256)` adalah standar
 # ERC-20; topic0-nya `0xddf252ad…b3ef`.
@@ -147,6 +204,10 @@ REASON_TX_FAILED = "transaction_failed"
 REASON_NO_TRANSFER = "no_matching_transfer"
 REASON_WRONG_CHAIN = "wrong_chain"
 REASON_RPC = "rpc_unavailable"
+REASON_TOO_OLD = "transfer_too_old"
+REASON_LEDGER = "ledger_unavailable"
+REASON_RATE_LIMITED = "rate_limited"
+REASON_INTERNAL = "internal_error"
 
 _TX_HASH_RE = re.compile(r"\A0x[0-9a-fA-F]{64}\Z")
 _AUTH_PARAM_RE = re.compile(r'([A-Za-z0-9_\-]+)\s*=\s*(?:"([^"\\\r\n]*)"|([^,\s"]+))')
@@ -157,6 +218,15 @@ _DEMO_TRUE = frozenset({"1", "true", "yes", "demo"})
 
 class PaymentConfigError(RuntimeError):
     """Konfigurasi gerbang tidak sah (alamat/jumlah/realm). Fail-closed saat start."""
+
+
+class PaymentLedgerError(RuntimeError):
+    """Buku pembayaran tidak bisa dikunci/dibaca/ditulis SAAT BERJALAN.
+
+    Selalu fail-closed di pemanggil: pembayaran yang tidak bisa dicatat TIDAK diakui (503),
+    dan hashnya TIDAK ditandai terpakai supaya klien yang sudah membayar bisa mengulang.
+    Pesannya memuat path buku, jadi ia hanya boleh masuk LOG — tidak pernah badan respons.
+    """
 
 
 # ----------------------------------------------------------------------
@@ -239,12 +309,29 @@ def ledger_path_from_config() -> Path:
 class PaymentLedger:
     """Himpunan hash tx yang SUDAH dipakai, persisten sebagai JSON Lines.
 
-    `claim()` adalah operasi cek-dan-tulis di bawah satu lock: dua permintaan bersamaan dengan
-    hash yang sama TIDAK bisa dua-duanya menang. Batasnya jujur: lock ini milik satu proses.
+    `claim()` adalah operasi MUAT-ULANG → cek → tulis di bawah DUA kunci sekaligus:
+    `threading.Lock` untuk thread di proses ini, dan `fcntl.flock(LOCK_EX)` atas `<buku>.lock`
+    untuk proses lain yang menunjuk berkas yang sama. Dua permintaan bersamaan dengan hash yang
+    sama TIDAK bisa dua-duanya menang, termasuk bila datang dari dua server berbeda dengan
+    `PAYMENT_LEDGER_PATH` yang sama (`make demo` + `python -m agent.payment_402` bersamaan).
+
+    Muat-ulang di dalam kunci itu WAJIB, bukan hiasan: himpunan di memori lahir saat objek
+    dibuat, jadi tanpa membacanya lagi, proses kedua tidak akan pernah melihat baris yang
+    ditulis proses pertama sesudah start. `flock` sendiri hanya menyerialkan, ia tidak
+    memberitahu apa yang berubah.
+
+    `fcntl` ada di pustaka standar → ADR-010 (nol dependensi baru) aman. Mekanisme yang sama
+    sudah dipakai `agent/memory_lock.py`; batas kejujurannya juga sama: kunci ini KOOPERATIF.
     """
 
-    def __init__(self, path: Path | None = None) -> None:
+    def __init__(self, path: Path | None = None, *, lock_timeout_seconds: float | None = None) -> None:
         self._path = path
+        self._lock_path = (
+            path.with_name(path.name + LEDGER_LOCK_SUFFIX) if path is not None else None
+        )
+        self._lock_timeout = (
+            LEDGER_LOCK_TIMEOUT_SECONDS if lock_timeout_seconds is None else float(lock_timeout_seconds)
+        )
         self._lock = threading.Lock()
         self._used: set[str] = set()
         if path is not None:
@@ -279,24 +366,89 @@ class PaymentLedger:
         with self._lock:
             return tx_hash.lower() in self._used
 
+    @contextmanager
+    def _file_lock(self) -> Iterator[None]:
+        """Kunci eksklusif lintas proses atas buku. MELEMPAR `PaymentLedgerError` bila gagal.
+
+        Tidak pernah menunggu selamanya: gagal dapat kunci = 503 di pemanggil, bukan antrean
+        tak berbatas yang memarkir thread.
+        """
+        assert self._lock_path is not None
+        if fcntl is None:  # pragma: no cover - hanya di platform tanpa fcntl
+            raise PaymentLedgerError(
+                "fcntl tidak tersedia: buku pembayaran tidak bisa dikunci lintas proses, dan "
+                "menulis tanpa kunci DILARANG (satu tx bisa membayar dua job)"
+            )
+        try:
+            self._lock_path.parent.mkdir(parents=True, exist_ok=True)
+            fd = os.open(self._lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        except OSError as exc:
+            raise PaymentLedgerError(
+                f"kunci buku pembayaran tidak bisa dibuka: {self._lock_path} ({exc})"
+            ) from exc
+        deadline = time.monotonic() + max(0.0, self._lock_timeout)
+        try:
+            while True:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        raise PaymentLedgerError(
+                            f"kunci buku pembayaran {self._lock_path} dipegang proses lain lebih "
+                            f"dari {self._lock_timeout:g} detik"
+                        ) from None
+                    time.sleep(LEDGER_LOCK_POLL_SECONDS)
+            try:
+                yield
+            finally:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+
     def claim(self, tx_hash: str, job_id: int) -> bool:
-        """True bila hash ini BARU dan berhasil diklaim; False bila sudah pernah dipakai."""
+        """True bila hash ini BARU dan berhasil diklaim; False bila sudah pernah dipakai.
+
+        MELEMPAR `PaymentLedgerError` bila buku tidak bisa dikunci/dibaca/ditulis. Dalam kasus
+        itu hash TIDAK ditandai terpakai — pembayaran yang gagal dicatat tidak boleh terbakar.
+        """
         key = tx_hash.lower()
         with self._lock:
-            if key in self._used:
-                return False
-            self._used.add(key)
-            if self._path is not None:
-                self._append(key, job_id)
-            return True
+            if self._path is None:
+                if key in self._used:
+                    return False
+                self._used.add(key)
+                return True
+            with self._file_lock():
+                try:
+                    self._used = self._load(self._path)
+                except PaymentConfigError as exc:
+                    raise PaymentLedgerError(str(exc)) from exc
+                if key in self._used:
+                    return False
+                self._append(key, job_id)  # gagal → melempar SEBELUM hash ditandai terpakai
+                self._used.add(key)
+                return True
 
     def _append(self, tx_hash: str, job_id: int) -> None:
+        """Satu baris, `O_APPEND` + `fsync`, di bawah kunci berkas milik `claim()`.
+
+        `O_APPEND` membuat setiap baris utuh meski ada penulis lain; `fsync` membuat klaim
+        yang sudah diakui tidak bisa hilang saat mati mendadak (baris terpotong = hash itu
+        membayar LAGI sesudah restart).
+        """
         assert self._path is not None
         record = json.dumps({"tx": tx_hash, "job_id": job_id, "at": int(time.time())}, sort_keys=True)
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        with self._path.open("a", encoding="utf-8") as handle:
-            handle.write(record + "\n")
-            handle.flush()
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            fd = os.open(self._path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            try:
+                os.write(fd, (record + "\n").encode("utf-8"))
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        except OSError as exc:
+            raise PaymentLedgerError(f"buku pembayaran tidak bisa ditulis: {self._path} ({exc})") from exc
 
 
 # ----------------------------------------------------------------------
@@ -351,12 +503,14 @@ class PaymentVerifier:
         ledger: PaymentLedger,
         *,
         demo_mode: bool = False,
+        min_block: int = DEFAULT_MIN_BLOCK,
     ) -> None:
         self.w3 = w3
         self.terms = terms.validate()
         self.chain_id = chain_id
         self.ledger = ledger
         self.demo_mode = demo_mode
+        self.min_block = max(0, int(min_block))
         self._token = w3.eth.contract(address=Web3.to_checksum_address(terms.asset), abi=ERC20_TRANSFER_ABI)
         self._chain_id_verified = False
 
@@ -457,6 +611,18 @@ class PaymentVerifier:
         if status != 1:
             return PaymentResult(False, REASON_TX_FAILED, tx_hash=tx_hash)
 
+        # Lantai blok opsional: tanpa ini transfer ke `payTo` KAPAN PUN di masa lalu berlaku
+        # sebagai kredensial (docstring (b)). Receipt tanpa `blockNumber` DITOLAK saat lantai
+        # dipasang — "tidak bisa dibuktikan cukup baru" tidak boleh berarti "lolos".
+        if self.min_block > 0:
+            try:
+                block_number = int(receipt["blockNumber"])
+            except (KeyError, TypeError, ValueError):
+                return PaymentResult(False, REASON_RECEIPT, tx_hash=tx_hash)
+            if block_number < self.min_block:
+                log.warning("pembayaran ditolak: transfer di blok %d di bawah lantai", block_number)
+                return PaymentResult(False, REASON_TOO_OLD, tx_hash=tx_hash)
+
         value = self._matching_transfer(receipt)
         if value is None:
             return PaymentResult(False, REASON_NO_TRANSFER, tx_hash=tx_hash)
@@ -532,7 +698,24 @@ class RegisterApp:
         job_id = parsed
 
         if result.tx_hash is not None:
-            if not self.verifier.ledger.claim(result.tx_hash, job_id):
+            try:
+                claimed = self.verifier.ledger.claim(result.tx_hash, job_id)
+            except PaymentLedgerError as exc:
+                # Buku tidak bisa dikunci/ditulis. Arah amannya: JANGAN mengakui pembayaran yang
+                # tidak bisa dicatat (kalau diakui, hash yang sama bisa dipakai lagi nanti).
+                # Hashnya juga TIDAK terbakar, jadi klien yang sudah membayar bisa mengulang.
+                # Pesan galat memuat path buku → hanya masuk log, tidak pernah badan respons.
+                log.error("buku pembayaran tidak bisa dicatat: %s", exc)
+                return (
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    {"Retry-After": "5"},
+                    {
+                        "error": REASON_LEDGER,
+                        "detail": "buku pembayaran tidak bisa dicatat; pembayaran BELUM dipakai",
+                        "retry_with_same_tx": True,
+                    },
+                )
+            if not claimed:
                 # Balapan: hash yang sama menang di permintaan lain sesudah `verify()`.
                 return self.challenge(REASON_REPLAY)
 
@@ -600,6 +783,74 @@ def _parse_body(body_bytes: bytes) -> int | str:
 
 
 # ----------------------------------------------------------------------
+# Rate limit — pustaka standar, per alamat klien
+# ----------------------------------------------------------------------
+
+
+class RateLimiter:
+    """Jendela geser sederhana per kunci (alamat klien), in-process.
+
+    Ada karena verifikasi pembayaran MEMBACA CHAIN sebelum pemanggil membayar apa pun: tanpa
+    pembatas, 200 permintaan tak berbayar berisi hash acak = 200 `eth_getTransactionReceipt`
+    atas kuota RPC KITA, dan komponen yang alasan hidupnya "penghalang spam" justru menjadi
+    amplifier. Sengaja sederhana (stdlib, tanpa dependensi baru — ADR-010).
+
+    Ingatannya DIBATASI `max_keys`: peta per-klien yang tumbuh bebas hanyalah kebocoran memori
+    dengan nama lain. Kunci yang paling lama tidak tersentuh dibuang lebih dulu.
+
+    `clock` bisa disuntik supaya kedaluwarsa jendela bisa diuji tanpa `sleep`.
+    """
+
+    def __init__(
+        self,
+        max_requests: int = DEFAULT_RATE_LIMIT_REQUESTS,
+        window_seconds: float = DEFAULT_RATE_LIMIT_WINDOW_SECONDS,
+        *,
+        max_keys: int = 1024,
+        clock: Any = time.monotonic,
+    ) -> None:
+        self.max_requests = max(1, int(max_requests))
+        self.window_seconds = max(0.001, float(window_seconds))
+        self.max_keys = max(1, int(max_keys))
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._hits: OrderedDict[str, deque[float]] = OrderedDict()
+
+    def check(self, key: str) -> float | None:
+        """`None` bila permintaan boleh lanjut (dan sudah dihitung); detik tunggu bila ditolak."""
+        now = float(self._clock())
+        cutoff = now - self.window_seconds
+        with self._lock:
+            hits = self._hits.get(key)
+            if hits is None:
+                hits = deque()
+                self._hits[key] = hits
+            self._hits.move_to_end(key)
+            while hits and hits[0] <= cutoff:
+                hits.popleft()
+            if len(hits) >= self.max_requests:
+                return max(0.0, hits[0] + self.window_seconds - now)
+            hits.append(now)
+            while len(self._hits) > self.max_keys:
+                self._hits.popitem(last=False)
+            return None
+
+    def tracked_keys(self) -> int:
+        with self._lock:
+            return len(self._hits)
+
+
+def limiter_from_config() -> RateLimiter | None:
+    """`None` bila `PAYMENT_RATE_LIMIT` <= 0 (sengaja dimatikan)."""
+    max_requests = int(config_value("PAYMENT_RATE_LIMIT", str(DEFAULT_RATE_LIMIT_REQUESTS)))
+    window = float(config_value("PAYMENT_RATE_WINDOW_SECONDS", str(DEFAULT_RATE_LIMIT_WINDOW_SECONDS)))
+    if max_requests <= 0:
+        log.warning("PAYMENT_RATE_LIMIT <= 0: rate limit gerbang 402 DIMATIKAN")
+        return None
+    return RateLimiter(max_requests, window)
+
+
+# ----------------------------------------------------------------------
 # Jembatan http.server
 # ----------------------------------------------------------------------
 
@@ -608,9 +859,15 @@ class RegisterHandler(BaseHTTPRequestHandler):
     """Handler stdlib. `app` dipasang lewat subclass yang dibuat `make_handler()`."""
 
     app: RegisterApp
+    limiter: RateLimiter | None = None
     protocol_version = "HTTP/1.1"
     server_version = "evaluator-402"
     sys_version = ""  # jangan bocorkan versi Python ke klien
+
+    # Batas waktu soket per koneksi. `socketserver.StreamRequestHandler.setup` memasangnya ke
+    # soket, jadi `rfile.read(length)` TIDAK bisa lagi memblokir selamanya: klien yang mengirim
+    # `Content-Length: 8000` lalu satu byte akan diputus, bukan memarkir satu thread permanen.
+    timeout = REQUEST_TIMEOUT_SECONDS
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 — tanda tangan stdlib
         log.info("http %s", format % args)
@@ -625,6 +882,56 @@ class RegisterHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    @contextmanager
+    def _guard(self) -> Iterator[None]:
+        """Satu-satunya penangan galat umum. Tanpa ini, galat apa pun di jalur permintaan
+        menembus ke `socketserver`, yang MENUTUP koneksi tanpa respons dan mencetak traceback
+        (berisi path absolut) ke stderr. Klien mendapat 500 JSON yang tidak menyebut apa pun."""
+        try:
+            yield
+        except TimeoutError:
+            raise  # slowloris: dibiarkan naik supaya stdlib menutup koneksinya
+        except Exception as exc:  # noqa: BLE001 — permukaan jaringan: tidak boleh ada yang lolos
+            log.error("permintaan gagal tak terduga: %s", type(exc).__name__)
+            self.close_connection = True
+            try:
+                self._respond(
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                    {"Connection": "close"},
+                    {"error": REASON_INTERNAL},
+                )
+            except OSError:  # koneksi sudah mati — tidak ada yang bisa dikirim
+                pass
+
+    def _client_key(self) -> str:
+        address = getattr(self, "client_address", None)
+        if isinstance(address, tuple) and address:
+            return str(address[0])
+        return "-"
+
+    def _rate_limited(self) -> bool:
+        """True (dan respons 429 sudah dikirim) bila pemanggil melewati plafon lajunya.
+
+        Dicek SEBELUM badan dibaca dan sebelum pembayaran diverifikasi, karena verifikasi itulah
+        yang memanggil RPC. Karena badan tidak dikuras, framing keep-alive tidak bisa dipercaya
+        lagi → koneksi ditutup.
+        """
+        limiter = self.limiter
+        if limiter is None:
+            return False
+        wait = limiter.check(self._client_key())
+        if wait is None:
+            return False
+        retry_after = max(1, int(wait) + 1)
+        self.close_connection = True
+        self._respond(
+            HTTPStatus.TOO_MANY_REQUESTS,
+            {"Connection": "close", "Retry-After": str(retry_after)},
+            {"error": REASON_RATE_LIMITED, "retry_after": retry_after},
+        )
+        self.close_connection = True
+        return True
+
     def _read_body(self) -> bytes | None:
         raw_length = self.headers.get("Content-Length")
         if raw_length is None:
@@ -638,8 +945,16 @@ class RegisterHandler(BaseHTTPRequestHandler):
         return self.rfile.read(length)
 
     def do_POST(self) -> None:  # noqa: N802 — tanda tangan stdlib
+        with self._guard():
+            self._post()
+
+    def _post(self) -> None:
+        if self._rate_limited():
+            return
         # Badan dibaca (atau ditolak) SEBELUM routing: koneksi keep-alive yang masih menyimpan
-        # sisa badan akan membaca sisa itu sebagai baris permintaan berikutnya.
+        # sisa badan akan membaca sisa itu sebagai baris permintaan berikutnya. Ia dibatasi DUA
+        # arah — ukuran (`MAX_BODY_BYTES`) dan waktu (`timeout`) — dan tetap TIDAK PERNAH
+        # di-parse sebelum pembayaran diverifikasi (`RegisterApp.handle_register`).
         body = self._read_body()
         if body is None:
             # Badan terlalu besar TIDAK dikuras — satu-satunya penutup yang benar adalah
@@ -659,6 +974,12 @@ class RegisterHandler(BaseHTTPRequestHandler):
         self._respond(status, headers, payload)
 
     def do_GET(self) -> None:  # noqa: N802 — tanda tangan stdlib
+        with self._guard():
+            self._get()
+
+    def _get(self) -> None:
+        if self._rate_limited():
+            return
         if self._read_body() is None:
             self.close_connection = True
             self._respond(
@@ -681,8 +1002,55 @@ class RegisterHandler(BaseHTTPRequestHandler):
     do_DELETE = do_GET
 
 
-def make_handler(app: RegisterApp) -> type[RegisterHandler]:
-    return type("BoundRegisterHandler", (RegisterHandler,), {"app": app})
+def make_handler(
+    app: RegisterApp,
+    *,
+    limiter: RateLimiter | None = None,
+    timeout: float = REQUEST_TIMEOUT_SECONDS,
+) -> type[RegisterHandler]:
+    return type(
+        "BoundRegisterHandler",
+        (RegisterHandler,),
+        {"app": app, "limiter": limiter, "timeout": float(timeout)},
+    )
+
+
+class BoundedThreadingHTTPServer(ThreadingHTTPServer):
+    """`ThreadingHTTPServer` dengan PLAFON koneksi hidup.
+
+    Versi polosnya membuat satu thread per koneksi tanpa batas apa pun; batas waktu soket
+    memang sudah membuat tiap thread berumur terbatas, tetapi tidak membatasi BERAPA BANYAK
+    yang hidup sekaligus. Slot diambil sebelum thread dibuat dan dikembalikan saat thread
+    selesai; koneksi yang melewati plafon ditutup TANPA dilayani (bukan diantrekan).
+    """
+
+    daemon_threads = True
+
+    def __init__(
+        self,
+        *args: Any,
+        max_connections: int = MAX_CONCURRENT_CONNECTIONS,
+        **kwargs: Any,
+    ) -> None:
+        self._slots = threading.BoundedSemaphore(max(1, int(max_connections)))
+        super().__init__(*args, **kwargs)
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        if not self._slots.acquire(blocking=False):
+            log.warning("plafon koneksi tercapai — koneksi baru ditutup tanpa dilayani")
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._slots.release()
+            raise
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
 
 
 def build_app(w3: Any | None = None) -> RegisterApp:
@@ -693,16 +1061,29 @@ def build_app(w3: Any | None = None) -> RegisterApp:
     terms = terms_from_config()
     chain_id = int(config_value("CHAIN_ID", str(DEFAULT_CHAIN_ID)))
     demo = demo_mode_enabled()
+    min_block = int(config_value("PAYMENT_MIN_BLOCK", str(DEFAULT_MIN_BLOCK)))
     if w3 is None:
         w3 = Web3(Web3.HTTPProvider(config_value("RPC_URL", DEFAULT_RPC_URL)))
     ledger = PaymentLedger(ledger_path_from_config())
-    verifier = PaymentVerifier(w3, terms, chain_id, ledger, demo_mode=demo)
+    verifier = PaymentVerifier(w3, terms, chain_id, ledger, demo_mode=demo, min_block=min_block)
     return RegisterApp(verifier, demo_mode=demo)
 
 
-def serve(app: RegisterApp, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> ThreadingHTTPServer:
+def serve(
+    app: RegisterApp,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    *,
+    limiter: RateLimiter | None = None,
+    timeout: float = REQUEST_TIMEOUT_SECONDS,
+    max_connections: int = MAX_CONCURRENT_CONNECTIONS,
+) -> ThreadingHTTPServer:
     """Server yang SUDAH terikat, belum melayani. Pemanggil memutuskan cara menjalankannya."""
-    return ThreadingHTTPServer((host, port), make_handler(app))
+    return BoundedThreadingHTTPServer(
+        (host, port),
+        make_handler(app, limiter=limiter, timeout=timeout),
+        max_connections=max_connections,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -717,7 +1098,7 @@ def main(argv: list[str] | None = None) -> int:
     app = build_app()
     terms = app.verifier.terms
     log.info(
-        "402 gate: %s%s skema=%s network=%s asset=%s payTo=%s amount=%d demo=%s",
+        "402 gate: %s%s skema=%s network=%s asset=%s payTo=%s amount=%d demo=%s minBlock=%d buku=%s",
         f"http://{args.host}:{args.port}",
         REGISTER_PATH,
         SCHEME,
@@ -726,8 +1107,10 @@ def main(argv: list[str] | None = None) -> int:
         terms.pay_to,
         terms.amount,
         app.demo_mode,
+        app.verifier.min_block,
+        ledger_path_from_config(),
     )
-    httpd = serve(app, args.host, args.port)
+    httpd = serve(app, args.host, args.port, limiter=limiter_from_config())
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
