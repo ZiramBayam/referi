@@ -19,6 +19,8 @@ tidak ada pintu belakang yang melewati verifikasi hash.
 from __future__ import annotations
 
 import json
+import pathlib
+import re
 
 import pytest
 from web3 import Web3
@@ -458,3 +460,92 @@ def test_moduleNeverReadsQuarantine_norTouchesMemoryDirectly():
         assert re.search(r"^\s*(?:import|from)\s+sibyl", code, re.M) is None, path
         assert "MemoryClient" not in code, path
         assert "set_entity" not in code and "set_reference" not in code, path
+
+
+# ----------------------------------------------------------------------
+# Pasangan job D/E (task 3.0a) — kedalaman yang benar-benar MENGUBAH verdict
+#
+# Temuan 1 gerbang fase 2: artefak demo lama (`demo/deliverables/418.json`, `419.json`)
+# masing-masing hanya SATU bagian, sehingga `sections_in_scope(doc,"sampling")` dan
+# `…("full")` mengembalikan objek yang IDENTIK — bundel 419 mencatat `depth: "full"`
+# padahal verdictnya mustahil berbeda dari `sampling`. Tes di bawah mengikat berkas
+# skenario yang benar-benar diserahkan ke chain (`sim/scenarios/depth-demo.md`, dibaca
+# `client_min.ts` lewat `DELIVERABLE_FILE`) pada properti yang membuat langkah demo itu
+# berarti: >= 3 bagian, cacat di bagian ke-3, lolos pada `sampling`, DITOLAK pada `full`.
+# ----------------------------------------------------------------------
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+DEPTH_DEMO_PATH = REPO_ROOT / "sim" / "scenarios" / "depth-demo.md"
+SIM_CLIENT_PATH = REPO_ROOT / "sim" / "src" / "client_min.ts"
+
+
+def depth_demo_text() -> str:
+    """Teks deliverable job D/E — dibaca dari berkas yang SAMA yang dipakai `sim/`.
+
+    Menyalinnya ke sini akan membuat tes hijau atas teks yang tidak pernah diserahkan;
+    itu persis bentuk kegagalan yang task 3.0a perbaiki.
+    """
+    return DEPTH_DEMO_PATH.read_text(encoding="utf-8")
+
+
+def sim_job_description() -> str:
+    """`JOB_DESCRIPTION` milik `sim/src/client_min.ts`, apa adanya.
+
+    Deskripsi itulah yang memilih kategori rubric, jadi kategori yang diuji di sini WAJIB
+    yang benar-benar dipakai on-chain — bukan deskripsi yang enak untuk tes.
+    """
+    source = SIM_CLIENT_PATH.read_text(encoding="utf-8")
+    match = re.search(r'const JOB_DESCRIPTION =\s*"((?:[^"\\]|\\.)*)"', source)
+    assert match is not None, "JOB_DESCRIPTION tidak ditemukan di sim/src/client_min.ts"
+    return match.group(1)
+
+
+def test_depthDemo_deliverableHasAtLeastThreeSections_soDepthIsNotInert():
+    doc = base.parse_document(depth_demo_text())
+    sampling = base.sections_in_scope(doc, DEPTH_SAMPLING)
+    full = base.sections_in_scope(doc, DEPTH_FULL)
+    assert len(doc.sections) >= 3
+    assert len(sampling) == base.SAMPLING_SECTION_LIMIT
+    assert len(sampling) < len(full)
+    assert sampling != full  # 418/419 GAGAL di baris ini: keduanya satu bagian
+
+
+def test_singleSectionDeliverable_makesDepthInert_theBugBehindJobs418And419():
+    """Kontrol negatif: bentuk artefak demo LAMA, supaya kegagalannya tercatat sebagai tes."""
+    doc = base.parse_document(
+        "# Summary\nRingkasan pekerjaan untuk job A rantai demo the-evaluator.\n\n"
+        "- TODO: lengkapi angka supply dari chain\n"
+    )
+    assert len(doc.sections) == 1
+    assert base.sections_in_scope(doc, DEPTH_SAMPLING) == base.sections_in_scope(doc, DEPTH_FULL)
+
+
+def test_depthDemo_samplingCompletes_butFullRejects_onTheSameBytes(tmp_path):
+    """Job D dan job E: teks SAMA, verdict BERLAWANAN, satu-satunya variabel = kedalaman."""
+    text = depth_demo_text()
+    description = sim_job_description()
+    assert C.resolve_rubric_category(description) == C.CATEGORY_GENERAL
+
+    job_d = evaluate(tmp_path, 801, text, depth=DEPTH_SAMPLING, description=description)
+    job_e = evaluate(tmp_path, 802, text, depth=DEPTH_FULL, description=description)
+
+    assert job_d.deliverable_hash == job_e.deliverable_hash  # byte yang sama persis
+    assert job_d.passed is True
+    assert job_d.verdict_kind == C.VERDICT_COMPLETE
+    assert job_d.failed_checks == ()
+    assert job_e.passed is False
+    assert job_e.verdict_kind == C.VERDICT_REJECT
+    assert job_e.failed_checks == ("format",)
+
+
+def test_depthDemo_defectSitsBeyondTheSamplingLimit(tmp_path):
+    """Cacatnya HARUS di bagian ke->=3; kalau ia maju ke depan, job D ikut ditolak."""
+    job_e = evaluate(
+        tmp_path, 803, depth_demo_text(), depth=DEPTH_FULL, description=sim_job_description()
+    )
+    failed = job_e.failed_results[0]
+    assert failed.check_id == base.CHECK_FORMAT
+    assert failed.criterion_id == C.CRITERION_PLACEHOLDER
+    assert failed.pattern_id == fmt.PATTERN_PLACEHOLDER
+    assert failed.section_index is not None
+    assert failed.section_index >= base.SAMPLING_SECTION_LIMIT

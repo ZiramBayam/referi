@@ -3,10 +3,11 @@
  *
  * createJob (CLIENT) -> setBudget (PROVIDER) -> fund (CLIENT) -> submit (PROVIDER)
  *
- * SATU putaran = SATU job. Rantai A/B/C spec §7 langkah 1-3 dijalankan dengan MEMANGGIL file ini
- * tiga kali, bukan dengan menambah alur baru di sini; yang berbeda antar panggilan hanya tiga
- * variabel lingkungan (lihat "Tombol skenario" di bawah): `DELIVERABLE_TEXT`, `BUDGET_RAW`,
- * `STOP_AFTER`. Urutan panggilan ACP dan pemegang tanda tangan tiap langkah TIDAK berubah.
+ * SATU putaran = SATU job. Rantai A/B/C spec §7 langkah 1-3 dan pasangan D/E langkah 4 dijalankan
+ * dengan MEMANGGIL file ini berulang kali, bukan dengan menambah alur baru di sini; yang berbeda
+ * antar panggilan hanya variabel lingkungan (lihat "Tombol skenario" di bawah): `DELIVERABLE_TEXT`
+ * atau `DELIVERABLE_FILE`, `BUDGET_RAW`, `STOP_AFTER`, `PROVIDER_SLOT`. Urutan panggilan ACP dan
+ * pemegang tanda tangan tiap langkah TIDAK berubah.
  *
  * SEMUA transaksi lewat SDK `@virtuals-protocol/acp-node-v2@0.1.12`. File ini TIDAK
  * meng-encode satu pun calldata ACP sendiri: kalender panggilan, ABI, dan urutan approve+fund
@@ -29,7 +30,7 @@
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -80,12 +81,14 @@ const VAULT_ADDRESS = "0x5c6EE4586ACABcb6326069c229E58091B21ef384" as Address;
 const ESCROW_TOKEN_ADDRESS = "0xECc22a8F6fD62388498fBa19813E214605a2BDb3" as Address;
 
 /** Alamat wallet agen/evaluator. Ia TIDAK boleh muncul sebagai client maupun provider. */
+const AGENT_ADDRESS = "0xfa5AF5BAeB4aC500267D7189fa1f0AA923eCA894" as Address;
+
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 
 // ---------------------------------------------------------------------------
 // Tombol skenario (spec §7 langkah 1-3)
 //
-// Ketiganya dibaca dari `process.env` SAJA — sengaja TIDAK lewat configValue()/.env root.
+// Semuanya dibaca dari `process.env` SAJA — sengaja TIDAK lewat configValue()/.env root.
 // Nilainya berganti tiap job dalam satu rantai A/B/C, jadi nilai yang mengendap di `.env`
 // akan diam-diam ikut ke job berikutnya: `STOP_AFTER=fund` yang tertinggal membuat job A/B
 // tidak pernah `submit`, dan `BUDGET_RAW` yang tertinggal membuat job A/B melebihi cap.
@@ -95,6 +98,8 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 const BUDGET_RAW_ENV = "BUDGET_RAW";
 const STOP_AFTER_ENV = "STOP_AFTER";
 const DELIVERABLE_TEXT_ENV = "DELIVERABLE_TEXT";
+const DELIVERABLE_FILE_ENV = "DELIVERABLE_FILE";
+const PROVIDER_SLOT_ENV = "PROVIDER_SLOT";
 
 /**
  * Budget default 1 USDC (6 desimal) — nilai yang dipakai job 1.3c/1.3d, dipertahankan supaya
@@ -138,6 +143,38 @@ export function parseStopAfter(raw: string | undefined): StopAfter {
 }
 
 /**
+ * PROVIDER mana yang menandatangani `setBudget` + `submit`.
+ *
+ * Dua slot, dua wallet TERPISAH, dan pemisahan itu bukan gaya: pasangan job D/E spec §7
+ * langkah 4 menyerahkan teks deliverable yang SAMA PERSIS dari dua provider yang riwayat
+ * memorinya berbeda, supaya satu-satunya variabel yang tersisa adalah KEDALAMAN cek yang
+ * diturunkan agen dari memorinya sendiri. Kalau keduanya memakai satu wallet, riwayatnya
+ * ikut sama dan klaim itu mustahil dibuktikan.
+ *
+ *   alpha = `PROVIDER_PRIVATE_KEY`  — provider ber-riwayat (2 insiden, risk 2 → `full`);
+ *   beta  = `PROVIDER2_PRIVATE_KEY` — provider BERSIH tanpa riwayat (risk 0 → `sampling`).
+ *
+ * Nama VARIABEL yang dipilih, bukan nilainya: kunci tetap hanya hidup di `.env`.
+ */
+const PROVIDER_KEY_BY_SLOT = {
+  alpha: "PROVIDER_PRIVATE_KEY",
+  beta: "PROVIDER2_PRIVATE_KEY",
+} as const;
+type ProviderSlot = keyof typeof PROVIDER_KEY_BY_SLOT;
+
+export function parseProviderSlot(raw: string | undefined): ProviderSlot {
+  const text = (raw ?? "").trim().toLowerCase();
+  if (!text) return "alpha";
+  const match = (Object.keys(PROVIDER_KEY_BY_SLOT) as ProviderSlot[]).find((slot) => slot === text);
+  if (!match) {
+    throw new Error(
+      `${PROVIDER_SLOT_ENV}="${text}" tidak dikenal; pilih ${Object.keys(PROVIDER_KEY_BY_SLOT).join(" atau ")}`,
+    );
+  }
+  return match;
+}
+
+/**
  * `expiredAt` = now + 1 jam.
  *
  * Batas BAWAH: kontrak menolak `expiredAt <= now + 300` dengan `ExpiryTooShort()` 0xf7a0748c.
@@ -162,7 +199,11 @@ const JOB_DESCRIPTION =
  * (`postDeliverable` → 404 "Agent not found"), jadi file itulah satu-satunya sumber teks.
  *
  * Isinya bisa diganti lewat env `DELIVERABLE_TEXT` (skenario provider jujur / angka salah /
- * setengah jadi pada spec §7) tanpa mengubah kode.
+ * setengah jadi pada spec §7) tanpa mengubah kode, atau lewat `DELIVERABLE_FILE` yang membaca
+ * teksnya dari satu BERKAS. Berkas dipakai untuk pasangan job D/E: dua putaran yang WAJIB
+ * menyerahkan byte yang identik tidak boleh bergantung pada pengutipan shell yang diketik dua kali.
+ * Berkas skenario kedalaman ada di `sim/scenarios/depth-demo.md`; `agent/tests/test_criteria.py`
+ * membaca berkas YANG SAMA, jadi properti "lolos saat sampling, ditolak saat full" terikat tes.
  */
 const DEFAULT_DELIVERABLE_TEXT = [
   "# Summary",
@@ -182,7 +223,25 @@ const DEFAULT_DELIVERABLE_TEXT = [
  * on-chain — job "berhasil" dengan deliverable yang tidak pernah ada. Hapus variabelnya bila
  * memang menginginkan teks default.
  */
-export function parseDeliverableText(raw: string | undefined): { text: string; source: "env" | "default" } {
+export function parseDeliverableText(
+  raw: string | undefined,
+  file: string | undefined = undefined,
+  readText: (path: string) => string = (path) => readFileSync(path, "utf8"),
+): { text: string; source: "env" | "file" | "default" } {
+  const path = (file ?? "").trim();
+  if (path) {
+    // DUA sumber teks = dua kesempatan untuk berbeda. Job D dan job E hanya bisa membuktikan
+    // "teks SAMA, verdict BERLAWANAN" bila keduanya membaca berkas yang sama, jadi kombinasi
+    // yang ambigu ditolak alih-alih dimenangkan salah satu diam-diam.
+    if (raw !== undefined) {
+      throw new Error(
+        `${DELIVERABLE_TEXT_ENV} dan ${DELIVERABLE_FILE_ENV} disetel bersamaan — pilih satu sumber teks`,
+      );
+    }
+    const text = readText(isAbsolute(path) ? path : join(REPO_ROOT, path));
+    if (!text.trim()) throw new Error(`${DELIVERABLE_FILE_ENV}="${path}" kosong/spasi saja`);
+    return { text, source: "file" };
+  }
   if (raw === undefined) return { text: DEFAULT_DELIVERABLE_TEXT, source: "default" };
   if (!raw.trim()) throw new Error(`${DELIVERABLE_TEXT_ENV} disetel tapi kosong/spasi saja`);
   return { text: raw, source: "env" };
@@ -618,12 +677,20 @@ async function main(): Promise<void> {
   // sebelum kunci dimuat, sebelum RPC disentuh, dan jauh sebelum transaksi pertama.
   const budgetRaw = parseBudgetRaw(process.env[BUDGET_RAW_ENV]);
   const stopAfter = parseStopAfter(process.env[STOP_AFTER_ENV]);
-  const deliverable = parseDeliverableText(process.env[DELIVERABLE_TEXT_ENV]);
+  const deliverable = parseDeliverableText(
+    process.env[DELIVERABLE_TEXT_ENV],
+    process.env[DELIVERABLE_FILE_ENV],
+  );
+  const providerSlot = parseProviderSlot(process.env[PROVIDER_SLOT_ENV]);
 
   const rpcUrl = configValue("RPC_URL", DEFAULT_RPC_URL);
 
   const client = await makeAgent("client-sim", loadPrivateKey("CLIENT_PRIVATE_KEY"), rpcUrl);
-  const provider = await makeAgent("provider-sim", loadPrivateKey("PROVIDER_PRIVATE_KEY"), rpcUrl);
+  const provider = await makeAgent(
+    `provider-sim-${providerSlot}`,
+    loadPrivateKey(PROVIDER_KEY_BY_SLOT[providerSlot]),
+    rpcUrl,
+  );
 
   // Tiga alamat berbeda. Kontrak yang memaksanya; cek ini hanya supaya kita gagal SEBELUM
   // membayar gas untuk revert yang sudah bisa diramalkan.
@@ -632,6 +699,14 @@ async function main(): Promise<void> {
   }
   if (provider.address.toLowerCase() === VAULT_ADDRESS.toLowerCase()) {
     throw new Error("PROVIDER == evaluator → createJob revert EvaluatorIsProvider() 0xc7b4e9eb");
+  }
+  // ADR-017 poin 3 sampai hari ini hanya hidup sebagai KOMENTAR di kepala berkas. Sejak ada
+  // slot provider kedua, salah ketik nama variabel kunci bisa membuat wallet AGEN menjadi
+  // provider yang ia nilai sendiri — kontrak TIDAK merevert itu, jadi penjaganya harus di sini.
+  if (provider.address.toLowerCase() === AGENT_ADDRESS.toLowerCase()) {
+    throw new Error(
+      `PROVIDER == wallet agen ${AGENT_ADDRESS} → evaluator menilai pekerjaannya sendiri (ADR-017 poin 3)`,
+    );
   }
 
   const budget = AssetToken.usdcFromRaw(budgetRaw, CHAIN_ID);
@@ -649,6 +724,7 @@ async function main(): Promise<void> {
     rpc: rpcUrl,
     acp: ACP_ADDRESS,
     clientAddress: client.address,
+    providerSlot,
     providerAddress: provider.address,
     evaluatorAddress: VAULT_ADDRESS,
     escrowToken: budget.address,
