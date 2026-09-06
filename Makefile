@@ -10,8 +10,8 @@ doctor:
 	case "$$v" in v24.*) ;; "") v=MISSING; FAIL="$$FAIL node";; *) FAIL="$$FAIL node";; esac; \
 	echo "node   : $$v  (harus v24.x LTS)"; \
 	v=$$(pnpm -v 2>/dev/null); \
-	case "$$v" in "") v=MISSING; FAIL="$$FAIL pnpm";; esac; \
-	echo "pnpm   : $$v  (pin = latest via corepack)"; \
+	case "$$v" in 11.*) ;; "") v=MISSING; FAIL="$$FAIL pnpm";; *) FAIL="$$FAIL pnpm";; esac; \
+	echo "pnpm   : $$v  (harus 11.x — mayor dipin; ganti mayor = ADR, docs/versions.md)"; \
 	py=$$(uv python find 2>/dev/null); \
 	v=$$([ -n "$$py" ] && "$$py" --version 2>/dev/null); \
 	case "$$v" in "Python 3.13."*) ;; "") v=MISSING; FAIL="$$FAIL python";; *) FAIL="$$FAIL python";; esac; \
