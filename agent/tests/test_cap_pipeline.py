@@ -786,3 +786,41 @@ def test_the_bundle_carries_the_value_that_actually_decided_the_rejection(db, ar
     assert min(batas) == gate["effective_cap"]
     assert int(gate["budget"]) > min(batas), "auditor sampai ke accept=False dari bundel saja"
     assert gate["accept"] is False
+
+
+def test_plan_job_hands_the_depth_the_memory_decided_to_the_checks(db, artifacts, bundles):
+    """TB-1 juri 3.0a: KABEL memori→kedalaman, bukan daunnya.
+
+    Juri memutus kabel `depth=decision.depth` (`vault_client.py:1970`) dengan menambal
+    `evaluate_job` supaya SELALU `sampling` — dan 601 tes tetap HIJAU. Lapis kebijakan
+    (`check_depth`) sudah terjaga, tetapi barisnya yang menyerahkan hasil itu ke cek TIDAK.
+    Ini kelas yang sama dengan yang memblokir 3.0b ronde-1: penjaga ada, tidak ada yang
+    memanggilnya. Tes ini menangkap `depth` yang BENAR-BENAR diterima `evaluate_job`.
+    """
+    dilihat: list[str] = []
+    asli = vc.evaluate_job
+
+    def rekam(job_id, onchain, **kw):
+        dilihat.append(kw["depth"])
+        return asli(job_id, onchain, **kw)
+
+    # provider BERSIH (risk 0) -> sampling
+    digest = write_artifact(artifacts, JOB_A, DELIVERABLE_A)
+    bersih = build_client(db=db, job_id=JOB_A, status=2, budget=250_000, deliverable=digest)
+    vc.evaluate_job = rekam  # type: ignore[assignment]
+    try:
+        vc.plan_job(bersih, bersih.job(JOB_A), deliverable_dir=artifacts)
+        assert dilihat == [mp.DEPTH_SAMPLING], dilihat
+
+        # provider yang SUDAH punya dua insiden terkonfirmasi -> full
+        run_submitted_job(db, artifacts, JOB_A, DELIVERABLE_A)
+        run_submitted_job(db, artifacts, JOB_B, DELIVERABLE_B)
+        assert view(db).provider(PROVIDER).risk_level == 2, "prasyarat: risk 2"
+        dilihat.clear()   # penyemai di atas juga lewat evaluate_job; hitung hanya yang berikut
+
+        digest_c = write_artifact(artifacts, JOB_C, DELIVERABLE_A)
+        kotor = build_client(db=db, job_id=JOB_C, status=2, budget=250_000, deliverable=digest_c)
+        vc.plan_job(kotor, kotor.job(JOB_C), deliverable_dir=artifacts)
+        assert dilihat == [mp.DEPTH_FULL], dilihat
+    finally:
+        vc.evaluate_job = asli  # type: ignore[assignment]
