@@ -115,6 +115,10 @@ class FakeEth:
         self.reads: list[str] = []
         self.built: list[str] = []
         self.sent: list[bytes] = []
+        # Penghitung TERPISAH dari `sent`: `sent` bisa saja dikosongkan/dipalsukan oleh
+        # tes lain, sedangkan angka ini hanya bisa naik dari `send_raw_transaction` —
+        # satu-satunya pintu keluar sebuah transaksi ke jaringan (AC (f) 2.4a).
+        self.raw_sends = 0
         self.nonce_reads = 0
         self.chain_id = 84532
         self.block_number = 46_400_000
@@ -127,6 +131,7 @@ class FakeEth:
         return 75
 
     def send_raw_transaction(self, raw):
+        self.raw_sends += 1
         self.sent.append(raw)
         return b"\xaa" * 32
 
@@ -174,7 +179,13 @@ def seed_memory(db: pathlib.Path, jobs: int = 1, provider: str = "0x" + "a9" * 2
 
 
 def attempt_all_three(client: vc.VaultClient) -> list[Exception]:
-    """Ketiga jalur tulis dicoba SUNGGUHAN; kesalahannya dikembalikan untuk diperiksa."""
+    """Ketiga jalur tulis dicoba SUNGGUHAN; kesalahannya dikembalikan untuk diperiksa.
+
+    Inilah AC (f) 2.4a (ADR-020 keputusan 8): mode aman menahan `postVerdict`, `finalize`,
+    DAN `setProviderCap` — ketiganya, bukan dua yang pertama. Dipasangkan dengan
+    `assert_nothing_was_sent`, yang menegaskan `send_raw_transaction` tidak pernah
+    dipanggil sama sekali.
+    """
     errors = []
     for call in (
         lambda: client.post_verdict(1, vc.KIND_COMPLETE, b"\x01" * 32, b"\x02" * 32),
@@ -189,6 +200,7 @@ def attempt_all_three(client: vc.VaultClient) -> list[Exception]:
 
 def assert_nothing_was_sent(client: vc.VaultClient) -> None:
     eth = client.w3.eth
+    assert eth.raw_sends == 0, f"send_raw_transaction dipanggil {eth.raw_sends}x"
     assert eth.sent == [], f"ada transaksi terkirim: {eth.sent}"
     assert eth.built == [], f"ada transaksi dibangun: {eth.built}"
     assert eth.nonce_reads == 0, "nonce dibaca — artinya jalur tx sudah dimulai"
@@ -294,6 +306,9 @@ def test_zero_onchain_root_is_naive_mode_and_actually_sends(db):
     tx_hash = client.post_verdict(1, vc.KIND_COMPLETE, b"\x01" * 32, root)
     assert tx_hash
     assert client.w3.eth.sent, "mode naif seharusnya benar-benar mengirim (kontrol negatif)"
+    # Penghitung yang dipakai `assert_nothing_was_sent` BISA naik — tanpa baris ini,
+    # `raw_sends == 0` di mode aman bisa saja benar karena penghitungnya mati (AC (f)).
+    assert client.w3.eth.raw_sends == 1
     assert client.w3.eth.built == ["postVerdict"]
     with pytest.raises(vc.MemoryRootMismatch):
         client.post_verdict(1, vc.KIND_COMPLETE, b"\x01" * 32, b"\x02" * 32)

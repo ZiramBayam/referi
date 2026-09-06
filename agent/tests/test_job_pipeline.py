@@ -406,6 +406,151 @@ def test_record_outcome_uses_the_client_address_from_getJob(db, artifacts):
     assert terekam["args"][2] == JOB_ID
 
 
+def _record_outcome_calls_missing_client_address(source: str) -> list[str]:
+    """Panggilan `record_job_outcome` di sebuah modul yang TIDAK mengetik `client_address`.
+
+    Pemindaian AST, bukan substring: docstring dan pesan galat memuat kata
+    `client_address` apa adanya (dan memang harus), jadi pemindai substring akan hijau
+    justru pada file yang salah. Yang dilacak sama seperti pemindai gerbang root:
+      - alias impor (`from agent.memory_policy import record_job_outcome as tulis`);
+      - bentuk atribut (`mp.record_job_outcome(...)`);
+      - `**kwargs` dan `*args` pada panggilan itu — dua jalur yang bisa MENGHILANGKAN
+        argumennya tanpa satu pun karakter yang bisa dibaca manusia sebagai kelalaian.
+    `def record_job_outcome(...)` sendiri BUKAN panggilan, jadi definisinya tidak ikut.
+    """
+    import ast
+
+    tree = ast.parse(source)
+    nama = "record_job_outcome"
+    alias: set[str] = {nama}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            for a in node.names:
+                if a.name == nama:
+                    alias.add(a.asname or a.name)
+
+    def menunjuk_record(func) -> bool:
+        if isinstance(func, ast.Name):
+            return func.id in alias
+        # Bentuk atribut: yang menentukan adalah FUNGSI yang dipanggil, bukan lewat modul
+        # mana ia diambil (`mp.`, `memory_policy.`, `vc.` — semuanya fungsi yang sama).
+        return isinstance(func, ast.Attribute) and func.attr == nama
+
+    pelanggar: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not menunjuk_record(node.func):
+            continue
+        if any(isinstance(a, ast.Starred) for a in node.args):
+            pelanggar.append(f"{node.lineno} (*args)")
+            continue
+        if any(k.arg is None for k in node.keywords):
+            pelanggar.append(f"{node.lineno} (**kwargs)")
+            continue
+        # `client_address` adalah parameter ke-7; mengisinya secara posisional pun sah.
+        if any(k.arg == "client_address" for k in node.keywords) or len(node.args) >= 7:
+            continue
+        pelanggar.append(str(node.lineno))
+    return pelanggar
+
+
+def test_every_production_call_of_record_job_outcome_passes_client_address():
+    """AC (h) 2.4a: pemindai MEKANIS, karena kelalaian di sini tidak berbunyi.
+
+    `client_address` berdefault `None` supaya "tidak diketahui" bisa diucapkan — dan
+    justru default itu yang membuat pemanggil BERIKUTNYA bisa melupakannya tanpa satu pun
+    galat, satu pun baris log, atau satu pun tes merah. Yang mati diam-diam adalah filter
+    ADR-021 keputusan 2 (`client == provider` -> budget dibuang): provider mendanai jobnya
+    sendiri lewat EOA kedua, budgetnya masuk median, dan cap tidak pernah turun.
+
+    Hari ini pemanggil produksinya SATU (`vault_client.record_outcome`). Tes ini yang
+    membuat kalimat itu tetap benar besok — bukan disiplin, bukan review.
+    """
+    paket = pathlib.Path(vc.__file__).parent
+    pelanggar: list[str] = []
+    for berkas in sorted(paket.rglob("*.py")):
+        for baris in _record_outcome_calls_missing_client_address(
+            berkas.read_text(encoding="utf-8")
+        ):
+            pelanggar.append(f"{berkas.relative_to(paket)}:{baris}")
+    assert pelanggar == [], (
+        "record_job_outcome dipanggil TANPA client_address di jalur produksi "
+        f"{pelanggar} — filter ADR-021 keputusan 2 (client == provider -> budget dibuang) "
+        "MATI DIAM-DIAM di setiap panggilan itu: tidak ada galat, tidak ada log, hanya "
+        "cap yang tidak pernah turun. Teruskan `getJob(jobId).client` ke sana."
+    )
+
+
+def test_the_scanner_itself_catches_every_way_of_dropping_the_argument():
+    """Pemindai yang tidak pernah merah tidak menjaga apa pun — inilah buktinya merah."""
+    impor = "from agent.memory_policy import record_job_outcome\n"
+    assert _record_outcome_calls_missing_client_address(
+        impor + "record_job_outcome(c, p, 1, 2, True)\n"
+    )
+    assert _record_outcome_calls_missing_client_address(
+        impor + "record_job_outcome(c, p, 1, 2, True, failed_checks=())\n"
+    )
+    # Alias impor: namanya berubah, fungsinya sama.
+    assert _record_outcome_calls_missing_client_address(
+        "from agent.memory_policy import record_job_outcome as tulis\ntulis(c, p, 1, 2, True)\n"
+    )
+    # Bentuk atribut.
+    assert _record_outcome_calls_missing_client_address(
+        "from agent import memory_policy as mp\nmp.record_job_outcome(c, p, 1, 2, True)\n"
+    )
+    # Penyelundupan lewat pembongkaran: argumennya tidak terbaca mata.
+    assert _record_outcome_calls_missing_client_address(
+        impor + "record_job_outcome(c, p, 1, 2, True, **kw)\n"
+    )
+    assert _record_outcome_calls_missing_client_address(impor + "record_job_outcome(*a)\n")
+
+    # Kontrol negatif — tanpa ini "selalu merah" akan lolos sebagai pemindai yang bekerja.
+    assert not _record_outcome_calls_missing_client_address(
+        impor + "record_job_outcome(c, p, 1, 2, True, client_address=x)\n"
+    )
+    assert not _record_outcome_calls_missing_client_address(
+        impor + "record_job_outcome(c, p, 1, 2, True, client_address=None)\n"
+    )
+    assert not _record_outcome_calls_missing_client_address(
+        impor + "record_job_outcome(c, p, 1, 2, True, (), x)\n"
+    )
+    # Definisinya sendiri bukan panggilan.
+    assert not _record_outcome_calls_missing_client_address(
+        "def record_job_outcome(c, p, j, b, passed, failed_checks=(), client_address=None):\n"
+        "    return client_address\n"
+    )
+
+
+# ----------------------------------------------------------------------
+# (j) `client_address` RUSAK dari getJob = berhenti sebelum tx pertama
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("rusak", ["", "0x", "0x" + "cc" * 19, "bukan-alamat"])
+def test_a_broken_client_address_from_getJob_stops_the_run_with_zero_transactions(
+    db, artifacts, rusak
+):
+    """AC (j) 2.4a: `getJob` yang gagal decode DITOLAK sebelum `postVerdict` dibangun.
+
+    Tanpa penjaga ini urutannya adalah yang paling buruk yang mungkin: `postVerdict`
+    MENDARAT, lalu `record_outcome` melempar, dan job menggantung sampai `expiredAt`
+    dengan verdict yang sudah diumumkan tetapi tidak pernah difinalisasi.
+    """
+    client = build_client(db=db, status=2, client_address=rusak, deliverable=DELIVERABLE_HASH)
+    write_artifact(artifacts, JOB_ID, DELIVERABLE_TEXT)
+    with pytest.raises(vc.SafeModeStop) as exc:
+        vc.run_job(client, JOB_ID, vc.KIND_COMPLETE, deliverable_dir=artifacts)
+    pesan = str(exc.value)
+    assert "client" in pesan and "ADR-021" in pesan, pesan
+    assert repr(rusak) in pesan, pesan
+    assert_nothing_was_sent(client)
+
+
+def test_a_well_formed_client_address_is_not_stopped(db, artifacts):
+    """Kontrol negatif: alamat sah tidak ditahan penjaga itu."""
+    client = build_client(db=db, status=2, deliverable=DELIVERABLE_HASH)
+    vc.require_readable_client_address(client.job(JOB_ID))  # tidak melempar
+
+
 def test_a_self_funded_job_contributes_no_budget_through_this_path(db, artifacts):
     """ADR-021 keputusan 2 END-TO-END: client == provider → budget dibuang, jobs tetap naik."""
     client = build_client(db=db, status=2, client_address=PROVIDER, deliverable=DELIVERABLE_HASH)

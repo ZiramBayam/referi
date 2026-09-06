@@ -2195,6 +2195,43 @@ def _add_confirmed_pattern(
     )
 
 
+def _client_funded_its_own_job(client_address: str | None, provider_address: str) -> bool:
+    """Filter ADR-021 keputusan 2, dengan `client_address` RUSAK sebagai galat BERJENIS.
+
+    Tiga keadaan, dan ketiganya harus dibedakan (task 2.4a AC (j)):
+      - `None` = TIDAK DIKETAHUI. Sah: pemanggil yang memang tidak punya `getJob` (mis.
+        pemulihan tangan) tetap boleh merekam outcome; filternya hanya tidak menyala.
+      - alamat yang sah = dibandingkan PERSIS dengan provider (case-insensitive lewat
+        `normalize_address`, definisi alamat yang SATU untuk seluruh modul ini).
+      - apa pun yang lain (`""`, `"0x"`, bytes, int) = hasil `getJob` yang GAGAL. Ia
+        DILARANG diperlakukan seperti "tidak diketahui": diam-diam menjadi
+        `self_funded=False` berarti menjalankan filter ADR-021 keputusan 2 dalam keadaan
+        MATI, dan budget yang dikendalikan provider masuk ke median cap tanpa satu baris
+        pun yang mengatakannya. Jadi outcome-nya ditolak, bukan direkam separuh benar.
+
+    Galatnya `MemoryIntegrityError`, bukan `ValueError` mentah: yang gagal bukan "argumen
+    salah ketik" melainkan "bukti yang menjadi dasar tulisan ini tidak bisa dipercaya",
+    dan itu kelas yang sama dengan memori yang tidak bisa dijadikan preimage jujur. Di
+    `vault_client` ia sekelas mode aman; `ValueError` mentah hanya jatuh ke `except
+    Exception` generik dan terbaca sebagai bug Python.
+    """
+    if client_address is None:
+        return False
+    try:
+        normalized = normalize_address(client_address)
+    except ValueError as exc:
+        raise MemoryIntegrityError(
+            f"client_address {client_address!r} tidak berbentuk alamat EVM — hasil `getJob` "
+            "yang gagal DILARANG dipakai: filter ADR-021 keputusan 2 (client == provider → "
+            "budget dibuang) tidak bisa dievaluasi, jadi outcome ini ditolak alih-alih "
+            "direkam dengan filter yang mati"
+            # Sebab aslinya menempel lewat `raise ... from exc`, TIDAK disalin ke teks:
+            # pesan `normalize_address` berbunyi "alamat PROVIDER", dan menyalinnya ke
+            # sini akan menunjuk operator ke alamat yang salah.
+        ) from exc
+    return normalized == normalize_address(provider_address)
+
+
 @under_memory_lock
 def record_job_outcome(
     client: MemoryClient,
@@ -2207,9 +2244,19 @@ def record_job_outcome(
 ) -> ProviderProfile:
     """Memperbarui `provider` dari HASIL CEK agen (spec §3 aturan 3), bukan dari klaim pihak.
 
-    `client_address` (opsional, diambil watcher dari `getJob(jobId)` — `client` TIDAK
-    indexed di `JobFunded`) dipakai untuk ADR-021 keputusan 2: bila ia PERSIS sama dengan
-    alamat provider, budgetnya dibuang dan `stats.jobs` tetap naik.
+    `client_address` diambil dari `getJob(jobId)` — `client` TIDAK indexed di `JobFunded`
+    — dan dipakai untuk ADR-021 keputusan 2: bila ia PERSIS sama dengan alamat provider,
+    budgetnya dibuang dan `stats.jobs` tetap naik. Nilainya boleh `None` (= TIDAK
+    DIKETAHUI), tetapi TIDAK boleh RUSAK: `""`/`"0x"` dari `getJob` yang gagal menghasilkan
+    `MemoryIntegrityError` (`_client_funded_its_own_job`), bukan tulisan dengan filter
+    yang mati.
+
+    Defaultnya `None` semata-mata supaya "tidak diketahui" bisa diucapkan; ia BUKAN izin
+    untuk melewatkannya. Setiap pemanggil DI DALAM paket `agent/` wajib mengetik
+    `client_address=` — dijaga pemindai AST mekanis
+    (`tests/test_job_pipeline.py::test_every_production_call_of_record_job_outcome_passes_client_address`),
+    karena satu pemanggil yang lupa membuat filter ADR-021 keputusan 2 mati DIAM-DIAM:
+    tidak ada galat, tidak ada baris log, hanya cap yang tidak pernah turun.
 
     Job yang DITOLAK/Expired hanya menaikkan `stats.reject` (dan, bila ada cek deterministik
     yang gagal, menjadi insiden). Budgetnya TIDAK disimpan di mana pun — ADR-020 keputusan 2.
@@ -2246,9 +2293,7 @@ def record_job_outcome(
     # "Sekerabat" BERHENTI di kesamaan alamat PERSIS (keputusan 3): deteksi EOA kedua
     # adalah masalah Sybil terbuka, dan kita memagari BESARNYA kerugian lewat plafon
     # pertumbuhan, bukan berpura-pura menyelesaikannya.
-    self_funded = client_address is not None and normalize_address(
-        client_address
-    ) == normalize_address(provider_address)
+    self_funded = _client_funded_its_own_job(client_address, provider_address)
 
     profile = _load_provider_for_write(client, provider_address)
     if job_id in profile.recorded_jobs:

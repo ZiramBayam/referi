@@ -139,6 +139,7 @@ from agent.memory_policy import (
     empty_memory_root,
     gate_job,
     local_memory_evidence,
+    normalize_address,
     promote_suspicions,
     record_job_outcome,
     record_suspicion,
@@ -350,6 +351,19 @@ JOB_LINE_TEMPLATE = (
 FOREIGN_JOB_TEMPLATE = (
     "JOB BUKAN MILIK VAULT INI: jobId={job_id} evaluator={evaluator} != vault={vault}; "
     "menolak menilai; nol postVerdict/finalize/setProviderCap"
+)
+
+# `getJob(jobId).client` yang tidak berbentuk alamat = pembacaan chain yang GAGAL, dan
+# satu-satunya masukan filter ADR-021 keputusan 2. Menilai job dengan nilai itu berarti
+# menjalankan filternya dalam keadaan mati, jadi run-nya berhenti SEBELUM tx pertama —
+# bukan sesudah `postVerdict` mendarat, yang akan meninggalkan job menggantung dengan
+# verdict yang diumumkan tetapi tidak pernah difinalisasi (task 2.4a AC (j)).
+BROKEN_CLIENT_TEMPLATE = (
+    "MODE AMAN: getJob(jobId={job_id}).client={client!r} bukan alamat EVM — pembacaan "
+    "chain GAGAL, dan filter ADR-021 keputusan 2 (client == provider -> budget dibuang) "
+    "tidak bisa dievaluasi; menolak postVerdict/finalize/setProviderCap; "
+    "job menggantung sampai expiredAt, refund lewat claimRefund publik; "
+    "ulangi run ini dengan RPC yang sehat untuk melanjutkan"
 )
 
 # Baris ringkas hasil keputusan memori atas satu job (spec §5 langkah 2-3). Ia LAPORAN,
@@ -2194,6 +2208,30 @@ def verdict_kind(plan: JobPlan, requested: int) -> int:
     return required
 
 
+def require_readable_client_address(job: JobView) -> None:
+    """`getJob(jobId).client` WAJIB berbentuk alamat sebelum job ini boleh menghasilkan tx.
+
+    Bentuknya divalidasi dengan `memory_policy.normalize_address` — definisi alamat yang
+    SATU, bukan salinan regex kedua yang bisa menyimpang dari sisi memori.
+
+    Ini penjaga LAPIS PERTAMA; lapis keduanya `record_job_outcome` sendiri, yang menolak
+    `client_address` rusak dengan `MemoryIntegrityError`. Dua lapis karena keduanya
+    menjawab pertanyaan berbeda: yang di sini menahan TRANSAKSI (nol tx, job tidak
+    menggantung separuh jalan), yang di memori menahan TULISAN (nol angka yang direkam
+    dengan filter ADR-021 yang mati) — dan pemanggil memori tidak selalu lewat `run_job`.
+
+    `SafeModeStop`, bukan `client.refuse()`: "job ini bukan milik kita" adalah hasil normal
+    yang berakhir exit 0, sedangkan pembacaan chain yang gagal adalah keadaan yang harus
+    terlihat operator (`EXIT_REFUSED`, dan `main()` mencetak barisnya apa adanya).
+    """
+    try:
+        normalize_address(job.client_address)
+    except ValueError as exc:
+        raise SafeModeStop(
+            BROKEN_CLIENT_TEMPLATE.format(job_id=job.job_id, client=job.client_address)
+        ) from exc
+
+
 def run_job(
     client: VaultClient,
     job_id: int,
@@ -2219,6 +2257,7 @@ def run_job(
             )
         )
         return 0
+    require_readable_client_address(job)
     try:
         plan = plan_job(
             client, job, deliverable_dir=deliverable_dir, lookback_blocks=lookback_blocks

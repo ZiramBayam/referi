@@ -1446,6 +1446,88 @@ def test_record_job_outcome_ignoresBudget_whenClientEqualsProvider(client):
     assert lain.passed_budgets == (900_000,)
 
 
+# ----------------------------------------------------------------------
+# (j) 2.4a: `client_address` RUSAK = galat berjenis, bukan `ValueError` mentah
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "rusak",
+    [
+        "",          # `getJob` yang gagal decode: string kosong
+        "0x",        # prefix saja, tanpa 20 byte
+        "0x0",
+        "0x" + "cc" * 19,          # 19 byte: terlalu pendek satu byte
+        "0x" + "cc" * 21,          # 21 byte: terlalu panjang satu byte
+        "0x" + "zz" * 20,          # bukan hex
+        "0x" + "cc" * 20 + ":pola",  # `:` = pemisah nama karantina
+        b"0x" + b"cc" * 20,        # bytes, bukan str
+        12345,
+        object(),
+    ],
+)
+def test_a_broken_client_address_is_a_typed_memory_error_not_a_raw_valueerror(client, rusak):
+    """AC (j) 2.4a: `""`/`"0x"` dari `getJob` yang gagal → `MemoryIntegrityError`.
+
+    `ValueError` MENTAH salah dua kali. Pertama jenisnya: ia jatuh ke `except Exception`
+    generik di `vault_client.main()` dan terbaca sebagai "bug Python", bukan sebagai
+    "kita tidak boleh menulis apa pun". Kedua pesannya: `normalize_address` mengatakan
+    "alamat PROVIDER tidak berbentuk…" padahal yang rusak adalah alamat CLIENT — operator
+    akan mencari di tempat yang salah.
+
+    Yang lebih penting dari jenis galatnya: outcome-nya TIDAK BOLEH tercatat. Merekamnya
+    dengan `self_funded=False` berarti menjalankan filter ADR-021 keputusan 2 dalam
+    keadaan mati, dan budget yang dikendalikan provider masuk ke median cap tanpa satu
+    baris pun yang mengatakannya.
+    """
+    provider = addr(0xC0EE)
+    with pytest.raises(mp.MemoryIntegrityError) as exc:
+        mp.record_job_outcome(client, provider, 9, 100_000_000, passed=True,
+                              client_address=rusak)
+    pesan = str(exc.value)
+    assert "client_address" in pesan
+    assert "ADR-021" in pesan, pesan
+    assert "getJob" in pesan, pesan
+    # `MemoryPolicyError` adalah induknya: pemanggil yang menangkap keluarga itu ikut aman.
+    assert isinstance(exc.value, mp.MemoryPolicyError)
+    # NOL tulisan: profil provider bahkan tidak lahir.
+    assert mp.DecisionMemoryView(client).provider(provider).stats_jobs == 0
+
+
+def test_the_broken_client_address_check_runs_before_anything_is_written(client):
+    """Job yang sudah punya riwayat pun tidak boleh bergerak satu angka pun."""
+    provider = addr(0xC0ED)
+    mp.record_job_outcome(client, provider, 1, 5_000, passed=True, client_address=addr(0xBEEF))
+    sebelum = mp.DecisionMemoryView(client).provider(provider)
+
+    with pytest.raises(mp.MemoryIntegrityError):
+        mp.record_job_outcome(client, provider, 2, 100_000_000, passed=True, client_address="0x")
+
+    sesudah = mp.DecisionMemoryView(client).provider(provider)
+    assert sesudah == sebelum
+
+
+def test_an_unknown_client_address_is_still_allowed_and_means_unknown(client):
+    """`None` TETAP sah: ia berarti "tidak diketahui", dan itu bukan keadaan rusak.
+
+    Kontrol negatif untuk tes di atas — tanpa ini, "perketat sampai semuanya merah" akan
+    lolos sebagai perbaikan.
+    """
+    provider = addr(0xC0EC)
+    profil = mp.record_job_outcome(client, provider, 1, 900_000, passed=True,
+                                   client_address=None)
+    assert profil.stats_jobs == 1
+    assert profil.passed_budgets == (900_000,)
+
+
+@pytest.mark.parametrize("sah", ["0x" + "cc" * 20, "0x" + "CC" * 20, "0x" + "Cc" * 20])
+def test_a_well_formed_client_address_still_passes_in_any_casing(client, sah):
+    provider = addr(0xC0EB)
+    profil = mp.record_job_outcome(client, provider, 1, 900_000, passed=True, client_address=sah)
+    assert profil.passed_budgets == (900_000,)
+    assert profil.stats_jobs == 1
+
+
 def test_passedBudget_cappedAtBaseline():
     """AC (m): satu job LOLOS 500 USDC berkontribusi 1.000.000, bukan 500.000.000."""
     profile = mp.ProviderProfile(address=addr(0xC0FD), risk_level=1,
