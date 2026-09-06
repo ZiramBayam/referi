@@ -1474,8 +1474,15 @@ def decide_mode(onchain_root: Any, local: LocalMemoryEvidence | None) -> ModeDec
     # (2) File memori HILANG. INILAH satu-satunya cabang yang membaca root on-chain, dan ia
     # membacanya untuk SATU pertanyaan saja: apakah vault ini sudah pernah hidup?
     #   - root nol  → hari pertama; tidak ada apa pun yang bisa hilang → NAIF (stateless).
-    #                 §7 langkah 4 / 3.3b varian A menuntut ini: memori dihapus di vault
-    #                 SEGAR harus tetap berjalan supaya degradasinya terlihat.
+    #                 §7 langkah 4 / 3.3b varian A menuntut agen TETAP BERJALAN di vault
+    #                 SEGAR yang memorinya dihapus, supaya degradasinya terlihat; cabang
+    #                 inilah yang membuatnya mungkin — tanpanya keadaan itu jadi mode aman,
+    #                 run keluar 0 sebelum menyentuh path DB, dan agen tidak pernah
+    #                 bootstrap. Yang TIDAK boleh diklaim (task 2.5a, ADR-026): bahwa
+    #                 verdict varian A diumumkan DALAM mode ini. Lewat `--job-id` tidak:
+    #                 `plan_job` membuat `memory.db`, jadi invokasi pertama berakhir
+    #                 MODE_DRIFT (nol tx) dan yang kedua mengumumkan dalam mode `normal`
+    #                 atas DB kosong — depth, cap, dan root-nya identik.
     #   - selain itu → vault sudah hidup tetapi memorinya lenyap → AMAN.
     #   - tidak terbaca → kita tidak bisa membedakan keduanya, dan ketidaktahuan TIDAK
     #                 PERNAH memberi izin lebih besar → AMAN.
@@ -1846,6 +1853,11 @@ def empty_memory_root() -> bytes:
     "kosong". Membiarkan cabang naif memakai konstanta apa pun mengembalikan persis lubang
     yang ditutup 2.4b; menolak berjalan sama sekali akan mengubah mode naif menjadi mode
     aman, yang bertentangan dengan ADR-024 keputusan 3 tanpa ADR baru.
+
+    JANGKAUAN, diukur (task 2.5a, ADR-026): lewat `--job-id` nilai ini TIDAK PERNAH sampai
+    ke `postVerdict`, karena `plan_job` sudah membuat `memory.db` sebelum tx dan penjaga
+    MODE_DRIFT menolak run pertama. Yang membuat itu tidak berakibat apa-apa ada di paragraf
+    berikut: root DB yang baru dibuat itu SAMA PERSIS dengan nilai ini.
 
     Nilainya DIHITUNG dari encoding beku, bukan ditulis sebagai hex: ia otomatis ikut
     berubah bila encoding disentuh, dan ia identik dengan yang dicetak

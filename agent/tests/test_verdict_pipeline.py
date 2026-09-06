@@ -31,6 +31,11 @@ TINGGI-1/TINGGI-2 di atas sudah tertutup:
   SEDANG-3  `set_provider_cap()` tanpa penjaga nilai 0 (= TANPA BATAS, ADR-001).
   RENDAH    `run_live` tidak memeriksa bahwa rencananya milik jobId yang diumumkan.
 
+2.5a (blok terakhir file): SELISIH yang sengaja DIBIARKAN (ADR-026) — mode NAIF tidak bisa
+menghasilkan verdict lewat `--job-id`, karena `plan_job` membuat `memory.db` dan MODE_DRIFT
+menolak invokasi pertama. Dikunci di kedua arah: menutup selisihnya (NAIF mengumumkan verdict)
+maupun memperburuknya (invokasi kedua ikut ditolak) membuat blok itu MERAH.
+
 RPC dipalsukan seluruhnya: offline, deterministik, tanpa kunci. Tidak satu pun tes di sini
 mengirim transaksi ke jaringan mana pun.
 """
@@ -1309,3 +1314,142 @@ def test_the_genuine_bundle_still_satisfies_all_four_conditions(db):
     assert vc.bundle_reproduces_onchain(teks, JOB_C, onchain) is True
     # Bundel yang isinya diedit satu byte pun bukan preimage lagi.
     assert vc.bundle_reproduces_onchain(teks + " ", JOB_C, onchain) is False
+
+
+# ======================================================================
+# 2.5a — MODE NAIF tak terjangkau dari `--job-id` (ADR-026)
+#
+# Yang dikunci di sini adalah SELISIH yang sengaja DIBIARKAN, bukan sebuah perbaikan.
+# ADR-026 keputusan 1 memilih membiarkannya karena perilakunya fail-closed dan sembuh di
+# invokasi kedua, dan keputusan 5 menuntut selisih itu dikunci tes supaya ia tidak berubah
+# diam-diam ke arah mana pun: menutupnya (membuat NAIF benar-benar mengumumkan verdict) dan
+# memperburuknya (invokasi kedua ikut ditolak) sama-sama membuat blok ini MERAH.
+# ======================================================================
+
+
+def build_fresh_vault_client(db: pathlib.Path, artifacts: pathlib.Path) -> vc.VaultClient:
+    """Vault SEGAR (`lastMemoryRoot() == 0`) + job Submitted yang deliverablenya LOLOS cek.
+
+    `db` sengaja TIDAK dibuat: itu keadaan hari pertama yang seluruh blok ini bicarakan.
+    """
+    digest = write_artifact(artifacts, JOB_C, DELIVERABLE_OK)
+    return build_client(
+        db=db, job_id=JOB_C, status=2, budget=2_000_000, deliverable=digest, onchain_root=ZERO
+    )
+
+
+def test_the_first_invocation_on_a_fresh_vault_refuses_and_only_creates_the_memory_file(
+    tmp_path, artifacts, monkeypatch, caplog
+):
+    """ADR-026 (b)+(c): `plan_job` MEMBUAT `memory.db`, jadi modenya bergeser sebelum tx.
+
+    Gerbang start membaca NAIF — jadi run ini memang diteruskan, bukan berhenti seperti mode
+    aman — lalu MODE_DRIFT menolaknya. Yang tersisa dari invokasi ini persis satu hal: file
+    memorinya lahir.
+    """
+    db = tmp_path / "memory.db"
+    monkeypatch.setenv("DELIVERABLE_DIR", str(artifacts))
+    client = build_fresh_vault_client(db, artifacts)
+    assert db.exists() is False
+    assert client.refresh_memory_gate().decision.mode == mp.MODE_NAIVE
+
+    with caplog.at_level(logging.INFO, logger="vault_client"):
+        kode = run_main_with(monkeypatch, client, ["--job-id", str(JOB_C), "--kind", "complete"])
+
+    assert kode == vc.EXIT_REFUSED
+    assert "MODE NAIF" in caplog.text
+    assert "MODE BERUBAH DI TENGAH PIPA" in caplog.text
+    assert_nothing_was_sent(client)
+    assert db.exists() is True, "justru pembuatan file inilah yang menggeser modenya"
+
+
+def test_the_second_invocation_reaches_the_gate_and_announces_the_empty_root(
+    tmp_path, artifacts, monkeypatch
+):
+    """ADR-026 (d)+(e): sembuh di invokasi kedua, dan yang diumumkan identik dengan NAIF.
+
+    Inilah alasan selisih ini boleh dibiarkan: root yang sampai ke `postVerdict` SAMA PERSIS
+    dengan `empty_memory_root()` milik cabang NAIF, dan gerbangnya tetap `TANPA CAP` dengan
+    depth `sampling` (ADR-024 keputusan 3 — memori kosong = evaluator stateless). Nol byte
+    on-chain yang berbeda; yang berbeda hanya label mode dan jumlah invokasi.
+    """
+    db = tmp_path / "memory.db"
+    monkeypatch.setenv("DELIVERABLE_DIR", str(artifacts))
+    pertama = build_fresh_vault_client(db, artifacts)
+    assert run_main_with(monkeypatch, pertama, ["--job-id", str(JOB_C), "--kind", "complete"]) == (
+        vc.EXIT_REFUSED
+    )
+
+    kedua = build_fresh_vault_client(db, artifacts)
+    gate = kedua.refresh_memory_gate()
+    assert gate.decision.mode == mp.MODE_NORMAL
+    assert gate.local.job_outcomes == 0
+
+    plan = vc.plan_job(kedua, kedua.job(JOB_C), deliverable_dir=artifacts)
+    assert plan.gate.accept is True and plan.gate.cap.cap_usdc is None
+    assert plan.gate.depth == mp.DEPTH_SAMPLING
+    assert plan.memory_root == mp.empty_memory_root()
+
+    terekam: dict = {}
+    asli = vc.VaultClient.post_verdict
+
+    def spy(self, job_id, kind, reason_hash, memory_root):
+        terekam.update({"kind": kind, "root": memory_root})
+        return asli(self, job_id, kind, reason_hash, memory_root)
+
+    monkeypatch.setattr(vc.VaultClient, "post_verdict", spy)
+    kode = run_main_with(monkeypatch, kedua, ["--job-id", str(JOB_C), "--kind", "complete"])
+
+    assert kode == 0
+    assert kedua.w3.eth.built == ["postVerdict", "finalize"]
+    assert terekam["kind"] == vc.KIND_COMPLETE
+    assert terekam["root"] == mp.empty_memory_root(), (
+        "root yang diumumkan invokasi kedua WAJIB sama dengan root cabang NAIF — kalau tidak, "
+        "membiarkan selisih ini mulai berharga sesuatu on-chain"
+    )
+
+
+def test_a_fresh_vault_never_announces_a_verdict_in_naive_mode(tmp_path, artifacts, monkeypatch):
+    """ADR-026 (f): TIDAK ADA `postVerdict` yang lahir dari mode NAIF lewat `--job-id`.
+
+    Ditulis sebagai pernyataan langsung supaya perubahan yang MENUTUP selisih ini (mis.
+    `plan_job` berhenti membuat file) tidak lolos diam-diam: ia menambah permukaan pada
+    jalur yang dikunci 2.4b dan menuntut ADR yang membalikkan ADR-026 keputusan 1-2.
+    """
+    db = tmp_path / "memory.db"
+    monkeypatch.setenv("DELIVERABLE_DIR", str(artifacts))
+    mode_saat_post: list[str] = []
+    asli = vc.VaultClient.post_verdict
+
+    def spy(self, job_id, kind, reason_hash, memory_root):
+        mode_saat_post.append(self.refresh_memory_gate().decision.mode)
+        return asli(self, job_id, kind, reason_hash, memory_root)
+
+    monkeypatch.setattr(vc.VaultClient, "post_verdict", spy)
+    for _ in range(2):
+        client = build_fresh_vault_client(db, artifacts)
+        run_main_with(monkeypatch, client, ["--job-id", str(JOB_C), "--kind", "complete"])
+
+    assert mode_saat_post == [mp.MODE_NORMAL], "hanya invokasi kedua yang mengumumkan, dan ia normal"
+
+
+def test_safe_mode_still_never_touches_the_memory_path(tmp_path, artifacts, monkeypatch, caplog):
+    """Kontrol 3.3b varian B (ADR-026 (g)): mode aman keluar SEBELUM `plan_job`.
+
+    Kalau file memori sampai lahir di sini, varian B gugur diam-diam — gerbang berikutnya
+    membaca `normal` dan tx terbangun. Urutan "gerbang dulu, alat belakangan" itulah yang
+    dijaga tes ini.
+    """
+    db = tmp_path / "memory.db"
+    monkeypatch.setenv("DELIVERABLE_DIR", str(artifacts))
+    client = build_fresh_vault_client(db, artifacts)
+    client.w3.eth.returns["lastMemoryRoot"] = ROOT_ONCHAIN  # vault yang SUDAH hidup
+    monkeypatch.setattr(vc, "build_client", lambda private_key=None: client)
+    monkeypatch.setattr(vc, "load_private_key", lambda: pytest.fail("kunci tidak boleh dimuat"))
+
+    with caplog.at_level(logging.INFO, logger="vault_client"):
+        assert vc.main(["--job-id", str(JOB_C), "--kind", "complete"]) == 0
+
+    assert "MODE AMAN" in caplog.text
+    assert_nothing_was_sent(client)
+    assert db.exists() is False, "mode aman DILARANG melahirkan memory.db"

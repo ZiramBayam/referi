@@ -69,6 +69,17 @@ yang sudah hidup" — dan di luar itu ia konteks log/UI saja.
 BOOTSTRAP job A TIDAK punya jalur khusus (ADR-024 keputusan 3): memori kosong = mode normal
 tanpa kalibrasi, yang perilakunya memang sama dengan evaluator stateless (spec §3 aturan 6).
 
+HARI PERTAMA BUTUH DUA INVOKASI, dan itu perilaku yang DISENGAJA (task 2.5a, ADR-026). Pada
+vault segar (`lastMemoryRoot() == 0`) dengan `memory.db` belum ada, gerbang start membaca
+NAIF dan run diteruskan — tetapi `plan_job` membuka `MemoryClient.local(db)` yang MEMBUAT
+filenya, sehingga gerbang yang dibaca ulang di `run_live` sudah `normal`, penjaga MODE_DRIFT
+menolak, dan run berakhir `EXIT_REFUSED` dengan NOL transaksi. Invokasi KEDUA berjalan
+sampai selesai dalam mode `normal` atas DB kosong itu — depth `sampling`, `TANPA CAP`, dan
+root yang diumumkan SAMA PERSIS dengan `empty_memory_root()`. Jadi mode NAIF tidak pernah
+mengumumkan apa pun dari jalur ini, dan yang hilang cuma satu invokasi, bukan satu perilaku.
+Cabang NAIF tetap load-bearing: tanpanya "DB hilang + root nol" akan jatuh ke mode aman,
+run pertama keluar 0 sebelum menyentuh path DB, dan agen tidak pernah bisa bootstrap.
+
 GERBANG DIBACA ULANG SETIAP TX, bukan sekali saat start. Alasannya diukur reviewer: dengan
 pembacaan sekali, memori yang diracuni SESUDAH start (kunci `memory.db` bersifat kooperatif)
 dan root on-chain yang berubah di tengah jalan tidak pernah terlihat, dan tx tetap terkirim.
@@ -1193,8 +1204,15 @@ class VaultClient:
         # NAIF dan `postVerdict` akan membawa root DB KOSONG sementara `reasonHash`
         # mengikat bundel yang menyatakan mode sebelumnya. Auditor yang merekonstruksi
         # memori pelahir verdict itu mendapat DB kosong — persis klaim yang ditutup 2.4b.
-        # Prasyaratnya (`lastMemoryRoot == 0`) memang tidak berlaku di vault beku, tetapi
-        # BERLAKU di Anvil / vault segar yang dipakai TASKS 2.5 AC (e).
+        # JANGKAUANNYA, diukur bukan diklaim (task 2.5a, ADR-026): latch ini TIDAK PERNAH
+        # menggigit lewat `--job-id`. Cabang yang dijaganya menuntut mode NAIF saat tx
+        # dikirim, dan mode itu tidak bisa bertahan sampai ke sana: `plan_job` membuka
+        # `MemoryClient.local(db)` yang MEMBUAT filenya, sehingga gerbang yang dibaca ulang
+        # `run_live` sudah `normal` dan penjaga MODE_DRIFT menolak lebih dulu (exit 4, nol
+        # tx). Prasyarat `lastMemoryRoot == 0` juga tidak berlaku di vault beku ADR-022.
+        # Yang tersisa adalah pemanggil PUSTAKA yang memanggil `post_verdict()`/
+        # `derived_memory_root()` langsung tanpa lewat `run_live` — dan justru untuk merekalah
+        # latch ini ada, alasan yang sama seperti mode aman ditegakkan di `_send()`.
         self.observed_readable_memory = False
         # KUNCI SEKALI-JALAN. Sekali diisi, `_send()` menolak setiap transaksi sampai proses
         # ini mati. Diisi oleh dua penolakan yang bukan verdict: job milik evaluator lain,
@@ -1277,6 +1295,14 @@ class VaultClient:
         # di sana benar-benar tidak punya profil, jadi yang diumumkan adalah root memori
         # KOSONG: dihitung dari encoding beku, bukan konstanta. Semua cabang lain yang
         # kehilangan root sudah MODE AMAN dan tidak pernah sampai ke sini.
+        # JANGKAUAN cabang ini, diukur (task 2.5a, ADR-026): NOL lewat `--job-id`. Sebelum
+        # `run_live` sempat memakainya, `plan_job` sudah membuat `memory.db`, jadi gerbang
+        # yang mengikat tx membaca `normal` dan MODE_DRIFT menolak (exit 4, nol tx). Yang
+        # diumumkan pada vault segar karena itu SELALU root DB kosong yang baru dibuat —
+        # dan nilainya SAMA PERSIS dengan `empty_memory_root()` (dijaga tes), sehingga
+        # ketidakterjangkauan ini tidak mengubah satu byte pun yang sampai ke chain.
+        # Cabang ini tetap ada untuk pemanggil PUSTAKA (`post_verdict()` langsung) dan
+        # sebagai nilai yang benar bagi mode NAIF; menghapusnya butuh ADR baru.
         if gate.decision.mode == MODE_NAIVE:
             # SATU pengecualian atas cabang itu: klien yang pernah membaca memori yang ADA
             # tidak boleh "kembali" menjadi naif. Lihat `observed_readable_memory`.

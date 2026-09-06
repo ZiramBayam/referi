@@ -709,3 +709,68 @@ Konsekuensi:
     penjaganya, dan penjaga itu manusia/agen — bukan mesin.
 (-) §7 sengaja dikecualikan, jadi naskah demo tetap dibaca dari file yang dinyatakan historis. Diterima
     sadar: tidak ada satu pun divergensi terbukti di §7 hari ini; begitu ada, ia masuk tabel di atas.
+
+## ADR-026 Mode NAIF dibiarkan tak terjangkau dari `--job-id`; hari pertama butuh dua invokasi
+Tanggal: 2026-09-06. Status: diterima. TIDAK membalikkan ADR-024 (cabang NAIF tetap ada dan tetap
+load-bearing); ia hanya menyatakan JANGKAUAN cabang itu apa adanya dan memilih untuk tidak menutup
+selisihnya. Pemicu: temuan @agent-agent-engineer saat menjalankan task 2.5 AC (e), diangkat jadi task 2.5a.
+
+Konteks — yang diukur hari ini, bukan diingat (harness RPC palsu `agent/tests/test_verdict_pipeline.py`,
+vault segar `lastMemoryRoot() == 0`, `memory.db` belum ada, job Submitted yang deliverablenya LOLOS cek):
+(a) Gerbang saat start membaca `naive` (ADR-024 keputusan 2 cabang 2) dan run diteruskan — benar.
+(b) `plan_job` (`agent/agent/vault_client.py`) membuka `MemoryClient.local(str(client.db_path))` untuk
+    membangun `DecisionMemoryView`, dan panggilan itu **MEMBUAT** filenya. Sifat ini bukan baru: AC task
+    3.3b sudah memuat peringatan "URUTAN WAJIB … `MemoryClient.local(path)` MEMBUAT file".
+(c) `run_live` membaca ULANG gerbang sebelum tx (memang wajib, ADR-023/2.4a-fix), kini melihat file itu
+    ADA → mode `normal`, sementara `plan.mode` masih `naive` → penjaga MODE_DRIFT menolak.
+    Hasil terukur invokasi PERTAMA: `EXIT_REFUSED` (4), `sent_transactions == []`, nonce tidak dibaca.
+(d) Invokasi KEDUA atas job yang sama berjalan sampai selesai: mode `normal`, depth `sampling`,
+    `cap=TANPA CAP`, `postVerdict` + `finalize` mendarat, exit 0.
+(e) Yang membuat (c)+(d) tidak merugikan apa pun: `empty_memory_root()` dan `memory_root` atas DB kosong
+    yang baru dibuat adalah **nilai yang SAMA PERSIS** —
+    `0x4e2a1ca1697b2a287fcfc8158fd5c460298aa69af8d5bec2d35671d71c4dff5a` pada kedua jalur. Depth dan cap
+    juga identik (`DEPTH_SAMPLING`, risk 0 → `TANPA CAP`), karena ADR-024 keputusan 3 memang menyamakan
+    "memori kosong" dengan evaluator stateless. Satu-satunya beda yang tersisa adalah label `mode` di
+    dalam bundel bukti (dan karenanya `reasonHash`), plus jumlah invokasi.
+(f) Akibatnya cabang NAIF di `derived_memory_root()` dan `empty_memory_root()` TAK TERJANGKAU dari CLI;
+    keduanya hidup hanya untuk pemanggil pustaka yang memanggil `post_verdict()` langsung.
+(g) Mode AMAN tidak tersentuh: pada "DB hilang + root non-nol" `main()` keluar 0 di gerbang start, jauh
+    SEBELUM `plan_job`, jadi tidak ada yang membuat file dan 3.3b varian B tetap utuh.
+
+Keputusan:
+1. Selisih ini **DIBIARKAN**, bukan ditutup. Perilakunya fail-closed (nol tx, nol verdict palsu) dan
+   sembuh sendiri pada invokasi berikutnya.
+2. Alasan menolak "menutupnya": menutup berarti membuat NAIF benar-benar terjangkau dari CLI, yaitu
+   memberi jalur produksi izin mengumumkan `empty_memory_root()` pada vault segar. Itu MENAMBAH permukaan
+   pada jalur yang baru saja dikunci 2.4b (root wajib turunan memori) demi keuntungan yang, menurut (e),
+   NOL byte on-chain: root, depth, dan cap yang diumumkan sama saja. Harganya satu invokasi ekstra pada
+   hari pertama — jelek, tetapi jujur dan terukur.
+3. Cabang NAIF di `decide_mode` **TIDAK boleh dihapus** walau tak terjangkau dari CLI: ia yang membuat
+   "DB hilang + root nol" TIDAK jatuh ke mode aman. Tanpa cabang itu invokasi pertama keluar 0 di gerbang
+   start tanpa pernah menyentuh path DB, `memory.db` tidak pernah lahir, dan agen tidak pernah bootstrap.
+4. Komentar yang mengklaim jangkauan lebih besar dari (f) DILARANG. Yang dikoreksi hari ini:
+   `vault_client.py` (latch `observed_readable_memory` yang mengklaim "BERLAKU di Anvil / vault segar
+   yang dipakai TASKS 2.5 AC (e)" — SALAH, AC (e) berakhir di MODE_DRIFT), komentar cabang NAIF di
+   `derived_memory_root()`, docstring modul `vault_client`, komentar cabang (2) `decide_mode`, dan
+   docstring `empty_memory_root()`.
+5. Perilaku ini DIKUNCI TES supaya tidak berubah diam-diam: invokasi pertama = exit 4 + nol tx +
+   `memory.db` LAHIR; invokasi kedua = 2 tx + mode `normal`; root yang diumumkan == `empty_memory_root()`;
+   dan kontrol mode aman = file TIDAK pernah dibuat. Membalik keputusan 1 berarti tes-tes itu MERAH.
+6. Operator WAJIB diberi tahu di README (task 4.3c): pada vault segar, jalankan `--job-id` sekali untuk
+   melahirkan `memory.db` (atau lahirkan lewat `python -m agent.memory_export`), baru jalankan yang
+   menghasilkan verdict. Menyembunyikan ini akan membuat exit 4 pertama terbaca sebagai kerusakan.
+
+Konsekuensi:
+(+) Nol perubahan pada jalur tx; penjaga 2.4b/2.5 (gerbang `_send`, latch refusal, lantai cap, empat
+    syarat `bundle_reproduces_onchain`, toko bukti sekali-tulis) tidak disentuh sama sekali.
+(+) Klaim di komentar kembali sama besar dengan perilaku yang bisa diperagakan — kelas cacat yang sudah
+    dua kali menggigit proyek ini ("tidak ada jalur teks pihak ke memori", sitasi "api-facts §C").
+(-) Hari pertama pada vault SEGAR menuntut DUA invokasi `--job-id`, dan yang pertama keluar 4. Itu jelek
+    di depan operator dan WAJIB tertulis, bukan ditemukan sendiri.
+(-) `MODE NAIF` praktis hanya muncul sebagai baris log invokasi pertama; ia TIDAK PERNAH menjadi mode
+    yang melahirkan verdict lewat CLI. README/video/post DILARANG menyajikannya seperti itu.
+(-) Cabang NAIF di `derived_memory_root()`/`empty_memory_root()` adalah kode yang tidak dilewati jalur
+    produksi mana pun. Ia tetap diuji, tetapi setiap perubahan di sana tidak akan pernah tertangkap oleh
+    pipa nyata — hanya oleh tesnya.
+Tidak ada baris `docs/spec.md` yang dicabut ADR ini, jadi tabel divergensi ADR-025 tidak bertambah:
+mode aman/naif sudah diwakili baris (ii) apa adanya.
