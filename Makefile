@@ -40,8 +40,21 @@ test:
 	cd contracts && forge test
 	cd agent && uv run pytest
 	pnpm -r test
+# demo: naskah docs/spec.md §7 langkah 1-4 DARI NOL di Anvil lokal, lalu bongkar lagi.
+#
+# Tidak menyentuh jaringan apa pun: `sim/src/demo.ts` menyalakan `anvil --chain-id 84532` di
+# 127.0.0.1, men-deploy mock ACP + MockUSDC + EvaluatorVault, lalu menjalankan sim dan agen di
+# atasnya. chainId 84532 WAJIB (bukan 31337): SDK Virtuals memetakan chainId lewat registri
+# bawaannya dan gagal-tertutup untuk id yang tidak terdaftar.
+#
+# `SIBYL_DB_PATH`, `VERDICT_BUNDLE_DIR`, dan `DELIVERABLE_DIR` diteruskan EKSPLISIT oleh skrip
+# itu ke `agent/data/demo/`, dan TIDAK PERNAH diwarisi dari `.env` — `.env` repo ini menunjuk
+# memori operasional yang terikat vault Base Sepolia.
+#
+# Butuh `anvil`/`forge` (foundry), `node`/`pnpm`, dan `uv` di PATH: jalankan dari shell
+# INTERAKTIF, alasan yang sama dengan `make doctor`.
 demo:
-	@echo "Belum tersedia."
+	cd sim && pnpm run demo
 
 # Satu-satunya entrypoint deploy yang sah (ADR-016).
 #

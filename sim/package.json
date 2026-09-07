@@ -5,6 +5,7 @@
   "scripts": {
     "job:min": "tsx src/client_min.ts",
     "sim:run": "tsx src/scenario.ts",
+    "demo": "tsx src/demo.ts",
     "mint:client": "tsx src/mint_min.ts",
     "typecheck": "tsc --noEmit"
   },
