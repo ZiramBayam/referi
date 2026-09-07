@@ -987,7 +987,16 @@ MemoryRootUpdated(bytes32 indexed memoryRoot, uint256 indexed jobId)
   topic0 0xc6028d32061c1f0b8f4f1370b6f1ab5105a96bfc6631a3840371ebbcb27c7923  (ada di bytecode terdeploy)
 VerdictPosted(uint256 indexed jobId, uint8 kind, bytes32 reasonHash, bytes32 memoryRoot, uint64 readyAt)
   topic0 0x6744a0f4fac82e60e8b7fdcca821ce8a15f365465f8c2ad497249e023511eb7e
+Finalized(uint256 indexed jobId, uint8 kind, bytes32 reasonHash)
+  topic0 0x642e932534104f1bb949c7593c10c039babcf12b89d90da5c889ca1e833f87b5
 ```
+TAMBAHAN 2026-09-06 — `Finalized` (satu-satunya argumen indexed = `jobId`; `kind` + `reasonHash` ada di `data`, 64 byte).
+Dicek dua arah: `cast sig-event "Finalized(uint256,uint8,bytes32)"` → topic0 di atas, DAN log nyata vault
+(`cast logs --address 0x5c6EE4586ACABcb6326069c229E58091B21ef384 --from-block 46455400 --to-block 46455700
+--rpc-url https://sepolia.base.org`): blok 46455526 job 421 `data` `0x…0001` + `fd08390f…bd7d`, blok 46455616 job 422
+`data` `0x…0002` + `2b0ca574…0704`. `kind` = **1 → `acp.complete`**, **2 → `acp.reject`** (bukan tebakan: sumber terdeploy
+`git show 8d3e596:contracts/src/EvaluatorVault.sol` baris 310/311/318, dan live `cast call <VAULT> "KIND_COMPLETE()(uint8)"`
+→ 1, `"KIND_REJECT()(uint8)"` → 2). `VerdictPosted` juga hanya `jobId` yang indexed → keempat field lain dari `data`.
 **KEDUA argumen `MemoryRootUpdated` indexed → `data` kosong (`0x`)**; `memoryRoot` = topic 1, `jobId` = topic 2. Dikonfirmasi
 pada log nyata blok 46355036 & 46355080 (`cast logs --address <VAULT> "MemoryRootUpdated(bytes32,uint256)" --from-block
 46350000 --to-block 46359999`): `data: 0x`. Skrip AC (d) yang men-decode `memoryRoot` dari `data` akan mendapat kosong.
