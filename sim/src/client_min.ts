@@ -65,23 +65,50 @@ const CHAIN = baseSepolia;
 const CHAIN_ID = baseSepolia.id; // 84532
 const DEFAULT_RPC_URL = "https://sepolia.base.org";
 
+/**
+ * Alamat DEFAULT = Base Sepolia. TIGA di antaranya bisa ditimpa lewat env dengan nama yang SAMA
+ * seperti di `.env.example` (`ACP_ADDRESS`, `VAULT_ADDRESS`, `AGENT_ADDRESS`), supaya rantai yang
+ * sama bisa dijalankan di Anvil lokal terhadap mock ACP tanpa menyalin file ini. Yang KEEMPAT —
+ * alamat token escrow — sengaja TIDAK punya env: ia dibaca dari `paymentToken()` kontrak ACP. Yang TIDAK ikut berubah: chainId. SDK memetakan chainId → keluarga rantai lewat
+ * `ACP_CONTRACT_ADDRESSES` miliknya sendiri dan MELEMPAR `UnknownChainIdError` untuk id yang
+ * tidak terdaftar (`dist/core/constants.js` `getChainFamily`, "Fails closed"), jadi node lokal
+ * WAJIB dijalankan dengan `--chain-id 84532`. Alamat kontraknya sendiri memang boleh ditimpa:
+ * `CreateAcpClientInput.contractAddresses` adalah parameter publik SDK (`dist/clientFactory.d.ts`).
+ */
+
 /** Proxy AgenticCommerceV3 Base Sepolia. */
-const ACP_ADDRESS = "0x0b93793923CD5De81850aF8604a233f3f24d461e" as Address;
+const DEFAULT_ACP_ADDRESS = "0x0b93793923CD5De81850aF8604a233f3f24d461e" as Address;
 
 /** EvaluatorVault kita — dipakai sebagai `evaluatorAddress`, WAJIB, bukan alamat nol. */
-const VAULT_ADDRESS = "0x5c6EE4586ACABcb6326069c229E58091B21ef384" as Address;
+const DEFAULT_VAULT_ADDRESS = "0x5c6EE4586ACABcb6326069c229E58091B21ef384" as Address;
 
 /**
  * Token yang benar-benar ditarik escrow ACP = `paymentToken()`.
- * BUKAN USDC Circle (0x036CbD…): kedua token menjawab `symbol()` = "USDC", jadi satu-satunya
- * pembeda yang mengikat adalah ALAMAT. Nilai ini hanya dipakai sebagai ASERSI terhadap alamat
- * yang dipilih `AssetToken.usdc*` untuk chainId 84532 — kalau SDK memilih token lain, `fund`
- * akan menarik token yang salah dan kita berhenti sebelum mengirim transaksi apa pun.
+ * BUKAN USDC Circle (0x036CbD…): kedua token menjawab `symbol()` = "USDC" DAN `decimals()` = 6,
+ * jadi satu-satunya pembeda yang mengikat adalah ALAMAT — dan satu-satunya sumber alamat yang sah
+ * adalah `paymentToken()` kontrak ACP itu sendiri. Konstanta di bawah TIDAK dipakai untuk memilih
+ * token (skrip membacanya dari kontrak); ia dipakai sebagai ASERSI terhadap jawaban kontrak saat
+ * kita memang berbicara dengan ACP Base Sepolia. SENGAJA tidak ada env `USDC_ADDRESS` di sini:
+ * alamat token yang boleh menimpa jawaban kontrak adalah persis jenis nilai yang tidak boleh ada.
  */
-const ESCROW_TOKEN_ADDRESS = "0xECc22a8F6fD62388498fBa19813E214605a2BDb3" as Address;
+const DEFAULT_ESCROW_TOKEN_ADDRESS = "0xECc22a8F6fD62388498fBa19813E214605a2BDb3" as Address;
 
 /** Alamat wallet agen/evaluator. Ia TIDAK boleh muncul sebagai client maupun provider. */
-const AGENT_ADDRESS = "0xfa5AF5BAeB4aC500267D7189fa1f0AA923eCA894" as Address;
+const DEFAULT_AGENT_ADDRESS = "0xfa5AF5BAeB4aC500267D7189fa1f0AA923eCA894" as Address;
+
+/** Desimal token escrow ACP. Sama di Base Sepolia (docs/versions.md) dan di MockUSDC lokal. */
+const ESCROW_TOKEN_DECIMALS = 6;
+
+/** Satu-satunya view ACP yang dibaca skrip ini sendiri; sisanya lewat SDK. */
+const ACP_PAYMENT_TOKEN_ABI = [
+  {
+    type: "function",
+    name: "paymentToken",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+] as const;
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 
@@ -313,6 +340,22 @@ function configValue(name: string, fallback: string): string {
   return fromFile && fromFile.trim() ? fromFile.trim() : fallback;
 }
 
+/**
+ * Alamat dari env/.env dengan default Base Sepolia.
+ *
+ * Divalidasi bentuknya di sini, bukan nanti: alamat salah ketik yang lolos sampai `createJob`
+ * akan muncul sebagai revert tanpa nama atau — lebih buruk — sebagai job yang dibuat terhadap
+ * kontrak yang salah. Tidak ada checksum EIP-55 yang dituntut (mock lokal sering ditulis huruf
+ * kecil apa adanya oleh `forge create`), hanya `0x` + 40 digit hex.
+ */
+function addressConfig(name: string, fallback: Address): Address {
+  const raw = configValue(name, fallback);
+  if (!/^0x[0-9a-fA-F]{40}$/.test(raw)) {
+    throw new Error(`${name}="${raw}" bukan alamat EVM (0x + 40 digit hex)`);
+  }
+  return raw as Address;
+}
+
 const secrets: string[] = [];
 
 function loadPrivateKey(name: string): Hex {
@@ -489,6 +532,11 @@ class LocalKeyEvmProvider extends ViemProviderAdapter {
     }) as Promise<Log[]>;
   }
 
+  /** chainId yang BENAR-BENAR dilayani node — bukan yang kita klaim di konstruktor. */
+  async chainIdOfNode(): Promise<number> {
+    return this.publicClient.getChainId();
+  }
+
   override async getBlockNumber(chainId: number): Promise<bigint> {
     this.assertChain(chainId);
     return this.publicClient.getBlockNumber();
@@ -651,11 +699,11 @@ async function fetchJobUntil(
   throw new Error(`gagal membaca job untuk ${label} setelah ${READ_RETRIES} percobaan: ${lastError}`);
 }
 
-async function makeAgent(name: string, privateKey: Hex, rpcUrl: string) {
+async function makeAgent(name: string, privateKey: Hex, rpcUrl: string, acpAddress: Address) {
   const provider = new LocalKeyEvmProvider(name, privateKey, rpcUrl);
   const api = new OnChainJobApi();
   const agent = await AcpAgent.create({
-    contractAddresses: { [CHAIN_ID]: ACP_ADDRESS },
+    contractAddresses: { [CHAIN_ID]: acpAddress },
     evmProvider: provider,
     api,
   });
@@ -684,37 +732,86 @@ async function main(): Promise<void> {
   const providerSlot = parseProviderSlot(process.env[PROVIDER_SLOT_ENV]);
 
   const rpcUrl = configValue("RPC_URL", DEFAULT_RPC_URL);
+  const acpAddress = addressConfig("ACP_ADDRESS", DEFAULT_ACP_ADDRESS);
+  const vaultAddress = addressConfig("VAULT_ADDRESS", DEFAULT_VAULT_ADDRESS);
+  const agentAddress = addressConfig("AGENT_ADDRESS", DEFAULT_AGENT_ADDRESS);
 
-  const client = await makeAgent("client-sim", loadPrivateKey("CLIENT_PRIVATE_KEY"), rpcUrl);
+  const client = await makeAgent("client-sim", loadPrivateKey("CLIENT_PRIVATE_KEY"), rpcUrl, acpAddress);
   const provider = await makeAgent(
     `provider-sim-${providerSlot}`,
     loadPrivateKey(PROVIDER_KEY_BY_SLOT[providerSlot]),
     rpcUrl,
+    acpAddress,
   );
+
+  // RPC yang menunjuk rantai lain adalah salah-ketik yang paling mahal di sini: adapter
+  // menolaknya nanti dengan pesan viem tentang "chain mismatch", sesudah kunci dimuat.
+  const nodeChainId = await client.provider.chainIdOfNode();
+  if (nodeChainId !== CHAIN_ID) {
+    throw new Error(
+      `RPC ${rpcUrl} melayani chainId ${nodeChainId}, sedangkan skrip ini terikat ${CHAIN_ID}. ` +
+        `Anvil lokal WAJIB dijalankan dengan --chain-id ${CHAIN_ID}: SDK memetakan chainId ke ` +
+        `keluarga rantai lewat registrinya sendiri dan melempar UnknownChainIdError untuk id lain.`,
+    );
+  }
 
   // Tiga alamat berbeda. Kontrak yang memaksanya; cek ini hanya supaya kita gagal SEBELUM
   // membayar gas untuk revert yang sudah bisa diramalkan.
   if (client.address.toLowerCase() === provider.address.toLowerCase()) {
     throw new Error("CLIENT dan PROVIDER memakai alamat yang sama → createJob revert ClientIsProvider() 0x332ff0f9");
   }
-  if (provider.address.toLowerCase() === VAULT_ADDRESS.toLowerCase()) {
+  if (provider.address.toLowerCase() === vaultAddress.toLowerCase()) {
     throw new Error("PROVIDER == evaluator → createJob revert EvaluatorIsProvider() 0xc7b4e9eb");
   }
   // ADR-017 poin 3 sampai hari ini hanya hidup sebagai KOMENTAR di kepala berkas. Sejak ada
   // slot provider kedua, salah ketik nama variabel kunci bisa membuat wallet AGEN menjadi
   // provider yang ia nilai sendiri — kontrak TIDAK merevert itu, jadi penjaganya harus di sini.
-  if (provider.address.toLowerCase() === AGENT_ADDRESS.toLowerCase()) {
+  if (provider.address.toLowerCase() === agentAddress.toLowerCase()) {
     throw new Error(
-      `PROVIDER == wallet agen ${AGENT_ADDRESS} → evaluator menilai pekerjaannya sendiri (ADR-017 poin 3)`,
+      `PROVIDER == wallet agen ${agentAddress} → evaluator menilai pekerjaannya sendiri (ADR-017 poin 3)`,
     );
   }
 
-  const budget = AssetToken.usdcFromRaw(budgetRaw, CHAIN_ID);
-  if (budget.address.toLowerCase() !== ESCROW_TOKEN_ADDRESS.toLowerCase()) {
+  // Token escrow — SATU-SATUNYA cek yang mengikat (docs/api-facts.md §A): tanyakan ke kontrak ACP
+  // yang benar-benar akan kita panggil. `symbol()`/`decimals()` TIDAK bisa membedakan dua "USDC"
+  // di Base Sepolia, jadi yang dibandingkan adalah ALAMAT.
+  const paymentToken = ((await client.provider.readContract(CHAIN_ID, {
+    address: acpAddress,
+    abi: ACP_PAYMENT_TOKEN_ABI,
+    functionName: "paymentToken",
+  })) as Address).toLowerCase();
+
+  // `AssetToken.usdcFromRaw` mengambil alamat dari registri BAWAAN SDK, dan untuk chainId 84532
+  // registri itu SELALU menunjuk token Base Sepolia — benar di testnet, salah di Anvil lokal.
+  const sdkToken = AssetToken.usdcFromRaw(budgetRaw, CHAIN_ID);
+  let budget: AssetToken;
+  if (sdkToken.address.toLowerCase() === paymentToken) {
+    // Jalur Base Sepolia, tidak berubah: token pilihan SDK = token yang ditarik escrow.
+    if (paymentToken !== DEFAULT_ESCROW_TOKEN_ADDRESS.toLowerCase()) {
+      throw new Error(`paymentToken() ${paymentToken} tidak dikenal untuk ACP ${acpAddress} — dihentikan.`);
+    }
+    budget = sdkToken;
+  } else if (acpAddress.toLowerCase() === DEFAULT_ACP_ADDRESS.toLowerCase()) {
+    // ACP NYATA menjawab token yang berbeda dari yang dipilih SDK → jangan pernah dilanjutkan.
     throw new Error(
-      `SDK memilih token ${budget.address} untuk chainId ${CHAIN_ID}, sedangkan escrow ACP menarik ` +
-        `${ESCROW_TOKEN_ADDRESS}. fund() akan menarik token yang salah — dihentikan.`,
+      `SDK memilih token ${sdkToken.address} untuk chainId ${CHAIN_ID}, sedangkan ACP ${acpAddress} ` +
+        `menarik ${paymentToken}. fund() akan menarik token yang salah — dihentikan.`,
     );
+  } else {
+    // ACP yang DITIMPA (mock di Anvil): ikuti jawaban kontraknya. `AssetToken.create` adalah static
+    // PUBLIK SDK yang menerima alamat eksplisit (`dist/core/assetToken.d.ts`), jadi jalur lokal tetap
+    // memakai tipe AssetToken milik SDK, bukan objek buatan sendiri.
+    budget = AssetToken.create(
+      paymentToken as Address,
+      "USDC",
+      ESCROW_TOKEN_DECIMALS,
+      Number(budgetRaw) / 10 ** ESCROW_TOKEN_DECIMALS,
+    );
+  }
+  // AssetToken menghitung ulang rawAmount dari `amount` bertipe number: pembulatan float di sana
+  // akan mendanai jumlah yang BERBEDA dari yang diminta, diam-diam.
+  if (budget.rawAmount !== budgetRaw) {
+    throw new Error(`AssetToken menghasilkan ${budget.rawAmount} unit, diminta ${budgetRaw} — dihentikan.`);
   }
 
   const expiredAt = Math.floor(Date.now() / 1000) + EXPIRY_SECONDS;
@@ -722,11 +819,11 @@ async function main(): Promise<void> {
   log("config", {
     chainId: CHAIN_ID,
     rpc: rpcUrl,
-    acp: ACP_ADDRESS,
+    acp: acpAddress,
     clientAddress: client.address,
     providerSlot,
     providerAddress: provider.address,
-    evaluatorAddress: VAULT_ADDRESS,
+    evaluatorAddress: vaultAddress,
     escrowToken: budget.address,
     budgetRaw: budget.rawAmount,
     stopAfter,
@@ -743,7 +840,7 @@ async function main(): Promise<void> {
   const markCreate = client.provider.sentTxHashes.length;
   const jobId = await client.agent.createJob(CHAIN_ID, {
     providerAddress: provider.address,
-    evaluatorAddress: VAULT_ADDRESS, // eksplisit: alamat nol = evaluasi DILEWATI
+    evaluatorAddress: vaultAddress, // eksplisit: alamat nol = evaluasi DILEWATI
     expiredAt,
     description: JOB_DESCRIPTION,
   });
@@ -806,7 +903,12 @@ async function main(): Promise<void> {
     jobId,
     status: finalJob.status,
     budgetRaw: finalJob.budget.rawAmount,
-    escrowToken: finalJob.budget.address,
+    // `finalJob.budget.address` BUKAN fakta rantai: SDK membangunnya dengan
+    // `AssetToken.usdcFromRaw(raw, chainId)` (`dist/acpJob.js:42`), yang selalu mengambil alamat
+    // dari registri BAWAANNYA — untuk chainId 84532 selalu token Base Sepolia, bahkan saat kita
+    // berjalan di Anvil terhadap mock. Yang dilaporkan di sini adalah jawaban `paymentToken()`
+    // kontrak ACP yang sudah diverifikasi di preflight.
+    escrowToken: paymentToken,
     providerAddress: finalJob.providerAddress,
     evaluatorAddress: finalJob.evaluatorAddress,
     deliverablePath,
