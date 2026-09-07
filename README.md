@@ -4,9 +4,10 @@ Wasit escrow ERC-8183 yang ingatannya tentang tiap provider bisa **dihitung ulan
 
 **Insentifnya BELUM diperbaiki.** Hari ini `evaluatorFeeBP` = 500 (5%) dan fee itu hanya cair saat job
 berstatus `Completed` (`docs/spec.md` §1 baris 19, fakta ERC-8183 terverifikasi) — jadi wasit ini masih
-dibayar hanya kalau ia **meluluskan**, persis bias yang menjadi alasan proyek ini ada. Di rantai demo
-A/B/C (tiga REJECT) ia dibayar **0**, dan satu-satunya fee yang pernah ia terima — **50.000 unit dari job
-417 yang ia LULUSKAN** — hangus permanen di vault yang tidak punya jalan keluar (Batasan butir 4 dan 14).
+dibayar hanya kalau ia **meluluskan**, persis bias yang menjadi alasan proyek ini ada. Pada empat job yang
+ia TOLAK (418, 419, 420, 422) ia dibayar **0**; seluruh fee yang pernah ia terima — **62.500 unit dari dua
+job yang ia LULUSKAN** (417 dan 421) — hangus permanen di vault yang tidak punya jalan keluar (Batasan
+butir 4 dan 14).
 Fee di muka lewat x402, yang akan membuat kalimat "dibayar sama besar entah ia meluluskan atau menolak"
 menjadi benar, adalah **rancangan (ADR-004), bukan fitur** (Batasan butir 11). Kalimat itu berasal dari
 `docs/spec.md` §0, dan §0 berjudul "Pitch satu kalimat" — aspirasi, bukan catatan fakta; README ini tidak
@@ -23,11 +24,14 @@ Kontrak submission (BEKU, ADR-022): [`0x5c6EE4586ACABcb6326069c229E58091B21ef384
 ## Batasan & asumsi kepercayaan
 
 Bagian ini sengaja ditaruh **paling atas** dan ditulis lebih dulu daripada bagian pitch mana pun. Butir
-1-13 dipindahkan apa adanya dari ADR dan artefak deploy; butir 14-21 ditambahkan sesudah audit "klaim vs
+1-13 dipindahkan apa adanya dari ADR dan artefak deploy; butir 14-25 ditambahkan sesudah audit "klaim vs
 kenyataan" dan sumbernya adalah kode serta chain yang bisa Anda buka sendiri. Angkanya tidak dilunakkan.
 
-Kalau waktu Anda hanya cukup untuk tiga: **butir 14** (insentif fee belum diperbaiki — pembalikan terbesar),
-**butir 16** (jangkar root melingkar dan tanpa konsekuensi), **butir 19** (tes destruktif belum berartefak).
+Kalau waktu Anda hanya cukup untuk empat: **butir 14** (insentif fee belum diperbaiki — pembalikan
+terbesar), **butir 16** (jangkar root melingkar dan tanpa konsekuensi), **butir 19** (tes destruktif belum
+berartefak), dan **butir 22** — `lastMemoryRoot()` vault **sengaja tidak sama** dengan `memory_export` atas
+DB hari ini, karena memori ditulis sesudah `postVerdict`. Kalau Anda hanya akan menyalin satu blok perintah
+dari README ini, baca butir 22 lebih dulu supaya Anda tahu nilai mana yang seharusnya cocok.
 
 ### 1. Yang dipertaruhkan evaluator hari ini = nol
 
@@ -81,7 +85,7 @@ Akibatnya dua arah dan permanen: **kunci hilang** → vault ini tidak akan perna
 `setProviderCap` / `finalize` lagi, dan verdict yang belum final menggantung selamanya; **kunci dicuri** →
 verdict, cap, dan `memoryRoot` sewenang-wenang tanpa jalur pembatalan apa pun (`resolve` stub, butir 2).
 
-### 4. Kontrak terdeploy TIDAK punya `sweepToken`; 50.000 unit token hangus permanen
+### 4. Kontrak terdeploy TIDAK punya `sweepToken`; 62.500 unit token hangus permanen
 
 ```
 $ cast call 0x5c6EE4586ACABcb6326069c229E58091B21ef384 "sweepToken(address,address)" \
@@ -94,20 +98,25 @@ execution reverted
 ADR-022 membekukan alamat di atas sebagai kontrak submission dan membatalkan redeploy, jadi fungsi itu
 tidak ada di bytecode terdeploy.
 
-Vault memegang **50.000 unit** token escrow, dan itu saldo yang masih bisa Anda baca sendiri sekarang:
+Vault memegang **62.500 unit** token escrow, dan itu saldo yang masih bisa Anda baca sendiri sekarang:
 
 ```
 $ cast call 0xECc22a8F6fD62388498fBa19813E214605a2BDb3 "balanceOf(address)(uint256)" \
     0x5c6EE4586ACABcb6326069c229E58091B21ef384 --rpc-url https://sepolia.base.org
-50000
+62500
 ```
 
-Angka itu = `evaluatorFeeBP()` 500 = 5% dari budget 1.000.000 job 417 (`deployments/pipeline-84532.md:84`,
-tabel aliran dana) — satu-satunya job yang pernah `Completed`, dan job yang evaluator **luluskan**
-(butir 14). Kalimat artefak itu apa adanya:
+Angka itu = `evaluatorFeeBP()` 500 = 5% dari budget dua job yang pernah `Completed`: **50.000** dari job 417
+(budget 1.000.000, `deployments/pipeline-84532.md:84`, tabel aliran dana) + **12.500** dari job 421
+(budget 250.000, demo kedalaman — butir 25). Keduanya job yang evaluator **luluskan**; empat job yang ia
+tolak menyumbang nol (butir 14). Kalimat artefak ADR-018 ditulis saat saldonya masih 50.000, dan kami
+tempel apa adanya beserta koreksinya:
 
 > `50.000 unit (0,05 USDC testnet) hangus permanen; ini dilepas secara sadar oleh ADR-018 keputusan 2,
 > bukan kelalaian.`
+
+Yang hangus hari ini **62.500**, bukan 50.000 — angka di artefak itu benar pada tanggalnya dan sudah
+dilewati oleh job 421. Penalarannya tidak berubah: tidak ada jalan keluar dari vault beku ini.
 
 ### 5. `claimRefund` publik + `EVALUATOR_GRACE_PERIOD` 900 detik → verdict yatim = risiko yang DITERIMA
 
@@ -135,11 +144,11 @@ nilai `deliverable` on-chain sebelum menilai; tidak cocok atau file hilang → a
 `postVerdict` dan nol `finalize`. Ini artefak lokal yang terikat ke chain, tetapi **bukan** sumber resmi ACP,
 dan itu batasan nyata dari submission ini.
 
-### 7. Tiga dari enam root vault BUKAN turunan memori — dan satu root lagi hilang permanen
+### 7. Tiga dari delapan root vault BUKAN turunan memori — dan satu root lagi hilang permanen
 
 Jalur mundur ADR-018 aktif (ADR-022 membekukan v1), jadi riwayat root vault memuat sisa dari pipa awal.
 Dua **nilai** root berikut adalah **konstanta berlabel**, bukan turunan memori (dan keduanya mengisi
-**tiga** dari enam event `MemoryRootUpdated` — tabel lengkapnya di bawah). **Keduanya tidak bisa
+**tiga** dari delapan event `MemoryRootUpdated` — tabel lengkapnya di bawah). **Keduanya tidak bisa
 direkonstruksi dari `memory.db` mana pun**, dan preimage-nya kami tempel supaya bisa Anda cek sendiri:
 
 ```
@@ -165,8 +174,8 @@ $ cast logs --address 0x5c6EE4586ACABcb6326069c229E58091B21ef384 \
     0xc6028d32061c1f0b8f4f1370b6f1ab5105a96bfc6631a3840371ebbcb27c7923 \
     --from-block 46355036 --to-block 46355080 --rpc-url https://sepolia.base.org
 
-blok 46355036  jobId 0x895440 = 8999488  root(topic1) 0x5ff921fd…a19e
-blok 46355080  jobId 0x895441 = 8999489  root(topic1) 0x5ff921fd…a19e
+blok 46355036  jobId 0x895440 = 9000000  root(topic1) 0x5ff921fd…a19e
+blok 46355080  jobId 0x895441 = 9000001  root(topic1) 0x5ff921fd…a19e
 ```
 
 (`MemoryRootUpdated` kedua argumennya `indexed`, jadi root ada di **topic1** dan `data` kosong — skrip yang
@@ -175,40 +184,62 @@ men-decode `data` akan mendapat hasil kosong.)
 Keduanya sudah **DICABUT dari jalur produksi** oleh task 2.4b (commit `190cb44`): satu-satunya sumber
 `memory_root` yang boleh dikirim ke `postVerdict` adalah `memory_policy.memory_root()`, fungsi yang sama yang
 dipakai `agent/memory_export.py`, dan `_send()` **menolak menandatangani** bila root di calldata tidak cocok
-dengan memori saat itu — penegakannya di `_send()`, bukan di pemanggil (`agent/agent/vault_client.py:186-201`).
+dengan memori saat itu — penegakannya di `_send()`, bukan di pemanggil (`agent/agent/vault_client.py:1339`, `_require_derived_root`, dipanggil dari `_send()` :1473).
 
 Tetapi `postVerdict` menulis setiap root ke `knownRoots` **tanpa penghapus** (ADR-011), jadi kedua konstanta
 itu tetap menjadi root sah selamanya di vault yang dibekukan. Bingkainya apa adanya: **vault submission
 menyimpan jejak permanen dari fase sebelum aturan itu ada.** Itu fakta yang kami akui, bukan yang kami
 sembunyikan.
 
-**Seluruh riwayat root vault ini, keenamnya, supaya tidak ada yang tersisa untuk ditemukan sendiri.**
-`MemoryRootUpdated` diemit **enam kali** sepanjang umur vault (`cast logs` atas topic0
-`0xc6028d32…7923`, blok 46350667→46436600, dipecah sembilan jendela ≤ 9.999 blok karena batas RPC publik —
+**Seluruh riwayat root vault ini, kedelapannya, supaya tidak ada yang tersisa untuk ditemukan sendiri.**
+`MemoryRootUpdated` diemit **delapan kali** sepanjang umur vault (`cast logs` atas topic0
+`0xc6028d32…7923`, blok 46350667→46455552, dipecah jendela ≤ 9.999 blok karena batas RPC publik —
 `docs/api-facts.md` §E). Root ada di topic1, jobId di topic2:
 
 | # | root | jobId | apa itu | bisa dihitung ulang hari ini? |
 |---|---|---|---|---|
-| 1 | `0x5ff921fd…a19e` | 8999488 (sintetis) | konstanta selftest | tidak — konstanta berlabel, preimage di atas |
-| 2 | `0x5ff921fd…a19e` | 8999489 (sintetis) | konstanta selftest | tidak — sama |
+| 1 | `0x5ff921fd…a19e` | 9000000 (sintetis) | konstanta selftest | tidak — konstanta berlabel, preimage di atas |
+| 2 | `0x5ff921fd…a19e` | 9000001 (sintetis) | konstanta selftest | tidak — sama |
 | 3 | `0x1fa62c3d…7bf0` | **417** | konstanta warisan pipa awal | tidak — konstanta berlabel, preimage di atas |
 | 4 | `0x4e2a1ca1697b2a287fcfc8158fd5c460298aa69af8d5bec2d35671d71c4dff5a` | **418** | root memori **kosong** | **ya** — siapa pun bisa, dari DB baru |
 | 5 | `0x3f506e52977407d8a4a1eb88179773f66679c992e6c74ac3cf20adcd7b9eecc2` | **419** | keadaan antara | **tidak — HILANG PERMANEN** |
-| 6 | `0xcfdab1b0…5b26` | **420** | keadaan memori sekarang | **ya** — cocok dengan `memory_export.py` |
+| 6 | `0xcfdab1b0…5b26` | **420** | keadaan sesudah 419 (job 420 gerbang-rejection: tidak menulis memori) | **tidak — HILANG PERMANEN** |
+| 7 | `0xcfdab1b0…5b26` | **421** | keadaan yang SAMA dengan #6 — lihat penjelasan di bawah | **tidak — HILANG PERMANEN** |
+| 8 | `0x999a9570…9b7d` | **422** | keadaan sesudah job 421 menulis memori | **tidak — HILANG PERMANEN** |
 
 Baris 4 perlu dijelaskan supaya tidak terbaca lebih hebat dari yang sebenarnya: root job 418 **identik
 dengan root DB kosong**, dan itu **kebetulan mekanis**, bukan properti yang kami rancang. Sebabnya ada di
 `docs/spec.md` §5 langkah 5 — memori ditulis **sesudah** `postVerdict`, jadi saat verdict job A diumumkan,
-memorinya memang masih kosong. Ia bisa direproduksi siapa pun: `memory_export.py` atas DB alas rantai
-(keadaan sebelum job A) mencetak nilai yang sama persis, dan begitu pula DB baru mana pun. Justru karena
-itu, root ini **tidak membuktikan apa-apa tentang isi memori** — ia hanya membuktikan memorinya kosong.
+memorinya memang masih kosong. Ia bisa direproduksi siapa pun **tanpa file memori kami sama sekali**:
 
-Jadi klaim yang benar bukan "hanya root terakhir yang bisa diaudit", melainkan: **root yang bisa diaudit
-hari ini adalah 420 (keadaan sekarang) dan 418 (karena memorinya masih kosong saat itu); root 419 hilang
-permanen.** DB Sibyl menyimpan keadaan **sekarang** — tidak ada tabel versi, tidak ada snapshot per job —
-sehingga keadaan antara seperti 419 tidak bisa dibangun ulang begitu memori maju. Kesimpulannya tetap yang
-paling penting: **jangkar ini kedaluwarsa setiap kali memori berubah.** Log root per job untuk audit mundur
-adalah v2 (ADR-023 keputusan 5).
+```
+$ cd agent && uv run python -c "from agent.memory_policy import empty_memory_root; print(empty_memory_root().hex())"
+4e2a1ca1697b2a287fcfc8158fd5c460298aa69af8d5bec2d35671d71c4dff5a
+```
+
+Satu koreksi terhadap cara README versi sebelumnya menulis ini: reproduksinya **bukan** lewat
+`memory_export.py` atas "DB baru". Alat ekspor **sengaja menolak membuat DB** dan berhenti dengan
+`MemoryExportError: DB memori tidak ditemukan … (alat ini sengaja TIDAK membuat DB baru)`, jadi tidak ada
+"DB baru" yang bisa Anda arahkan padanya. Jalur yang benar adalah fungsi di atas — dan nilainya sama
+persis, seperti yang sudah diukur ADR-026 keputusan (e). Justru karena itu, root ini **tidak membuktikan
+apa-apa tentang isi memori** — ia hanya membuktikan memorinya kosong.
+
+**Kenapa #6 dan #7 nilainya sama, dan kenapa itu penting.** Job 420 adalah **gerbang-rejection**: ia
+ditolak saat `Funded` karena budget melebihi cap, jadi ia tidak pernah menghasilkan `evaluation` dan
+karena itu **tidak menulis apa pun ke memori**. Root yang diumumkan job 421 karena itu masih keadaan yang
+sama persis dengan job 420. Baru sesudah job 421 selesai dan menulis memorinya, job 422 mengumumkan nilai
+yang berbeda (`0x999a9570…9b7d`). Urutan "tulis **sesudah** post" itulah yang membuat setiap root on-chain
+selalu **satu langkah tulis di belakang** file memori.
+
+Jadi klaim yang benar bukan "hanya root terakhir yang bisa diaudit", melainkan: **satu-satunya root vault
+yang bisa dihitung ulang hari ini adalah 418, dan itu justru karena memorinya masih kosong saat itu.**
+Root 419, 420/421, dan 422 semuanya **keadaan antara yang hilang permanen**. DB Sibyl menyimpan keadaan
+**sekarang** — tidak ada tabel versi, tidak ada snapshot per job — sehingga keadaan antara tidak bisa
+dibangun ulang begitu memori maju. Kesimpulannya tetap yang paling penting: **jangkar ini kedaluwarsa
+setiap kali memori berubah.** Log root per job untuk audit mundur adalah v2 (ADR-023 keputusan 5).
+
+Yang **masih** bisa Anda verifikasi sendiri hari ini, dan ini yang kami minta Anda periksa, adalah
+**ikatan antara root on-chain dan bundel bukti** — lihat butir 22.
 
 ### 8. Cap awal adalah PARAMETER TIM, bukan hasil belajar
 
@@ -228,7 +259,7 @@ Yang berlaku di rantai demo, apa adanya: cap **250.000** yang menolak job C **ti
 Bundel bukti job 420 mencatat sendiri `"cap": {"basis": "baseline-constant", "sample_size": 0, "usdc":
 250000}` — `sample_size: 0` berarti **nol** budget lolos yang ikut dihitung, sehingga angkanya adalah
 `ceil(BASELINE_CAP_USDC / 4)` = `ceil(1.000.000 / 4)` dari konstanta tim
-(`agent/agent/memory_policy.py:1645-1654`, cabang `basis = "baseline-constant"`). Yang **memang** datang
+(`agent/agent/memory_policy.py:1666`, cabang `basis = "baseline-constant"`). Yang **memang** datang
 dari memori adalah **tingkat risikonya** (risk = 2, hasil promosi pola di job A dan B) — dan risk itulah
 yang memilih pembagi 4. Baca kolom "Yang berubah di memori" di bawah dengan batas itu.
 
@@ -277,7 +308,7 @@ Jangan menilai dari `docs/spec.md` saja — berikut yang belum berjalan hari ini
 | Belum hidup | Bukti |
 |---|---|
 | `make demo` | `Makefile:43-44` mencetak `Belum tersedia.` — rantai demo dijalankan lewat perintah eksplisit (lihat "Reproduksi") |
-| x402 fee di muka (ADR-004) | `agent/x402_server.py` tidak ada di repo |
+| x402 fee di muka (ADR-004) | gerbang 402-nya ADA (`agent/agent/payment_402.py`), tetapi **belum dikonsumsi jalur job** — butir 23 |
 | `MemoryGateHook` | tidak ada di `contracts/src/` (hanya `EvaluatorVault.sol`, `IACP.sol`); hook butuh whitelist admin Virtuals (ADR-001) |
 | Rubric LLM | dipotong; hanya cek deterministik yang jalan (`agent/agent/checks/`: `format`, `links`, `chain`) |
 | `checks/sandbox` | tidak diimplementasikan dan tidak diklaim hidup |
@@ -306,15 +337,30 @@ Ini pembalikan terbesar dalam repo ini, jadi ia diulang di sini setelah disebut 
 (`docs/spec.md` §1 baris 19; tabel aliran dana `deployments/pipeline-84532.md:84`). Konsekuensi aritmetiknya
 pada chain hari ini:
 
-- job **417** (satu-satunya `Completed`, dan job yang evaluator **LULUSKAN**) → vault menerima **50.000**
-  unit, dan 50.000 itu **hangus permanen** karena `sweepToken` tidak ada di bytecode (butir 4);
-- job **418, 419, 420** (seluruh rantai demo, tiga-tiganya **REJECT**) → vault menerima **0**.
+- job **417** (`Completed`, dan job yang evaluator **LULUSKAN**) → vault menerima **50.000** unit;
+- job **418, 419, 420** (rantai demo A/B/C, tiga-tiganya **REJECT**) → vault menerima **0**;
+- job **421** (`Completed`, demo kedalaman — evaluator **LULUSKAN**) → vault menerima **12.500** unit
+  (5% dari budget 250.000);
+- job **422** (**REJECT**, deliverable yang sama persis dengan 421 — butir 25) → vault menerima **0**.
+
+Totalnya bisa Anda baca sendiri, dan angkanya **naik** justru pada job yang diluluskan:
+
+```
+$ cast call 0xECc22a8F6fD62388498fBa19813E214605a2BDb3 "balanceOf(address)(uint256)" \
+    0x5c6EE4586ACABcb6326069c229E58091B21ef384 --rpc-url https://sepolia.base.org
+62500
+```
+
+**62.500 = 50.000 (job 417) + 12.500 (job 421), dan dua-duanya berasal dari job yang DILULUSKAN.** Empat
+job yang ditolak menyumbang nol rupiah. Seluruh 62.500 itu **hangus permanen** karena `sweepToken` tidak ada
+di bytecode terdeploy (butir 4).
 
 Jadi pada submission ini fee memang mengalir persis mengikuti bias yang dikritik ERC-8183: bayaran datang
 hanya bersama kelulusan. Perbaikannya — client membayar di muka lewat x402 dengan tarif identik untuk
-`complete` maupun `reject` — dirancang di ADR-004 dan **tidak berjalan**: `agent/x402_server.py` tidak ada
-di repo (butir 11). Yang mencegah bias itu berlaku hari ini bukan struktur insentif, melainkan hal yang
-jauh lebih lemah: fee-nya terkunci di vault sehingga tidak ada pihak yang bisa menikmatinya.
+`complete` maupun `reject` — dirancang di ADR-004, dan gerbang 402-nya **ada** hari ini
+(`agent/agent/payment_402.py`) tetapi **belum dikonsumsi jalur job** (butir 23). Yang mencegah bias itu
+berlaku hari ini bukan struktur insentif, melainkan hal yang jauh lebih lemah: fee-nya terkunci di vault
+sehingga tidak ada pihak yang bisa menikmatinya.
 
 ### 15. Kontrak submission BELUM terverifikasi di Sourcify/BaseScan
 
@@ -336,7 +382,7 @@ broadcast-nya, atau oleh orang yang mem-build ulang commit `8d3e596` sendiri.
 Dua fakta yang harus dibaca berdampingan:
 
 - **Off-chain:** `_require_derived_root` membandingkan root di calldata dengan root yang **baru saja
-  dihitung agen dari file yang ia baca sendiri** (`agent/agent/vault_client.py:1292-1302`).
+  dihitung agen dari file yang ia baca sendiri** (`agent/agent/vault_client.py:1339`, `_require_derived_root`).
 - **On-chain:** `postVerdict` hanya menolak root **nol** (`if (memoryRoot == bytes32(0)) revert
   ZeroMemoryRoot();`, `contracts/src/EvaluatorVault.sol:303`). Root **apa pun** yang bukan nol diterima.
 
@@ -399,6 +445,154 @@ dilakukan memori **sesudah** sebuah cek deterministik gagal.
 
 ---
 
+### 22. `lastMemoryRoot()` vault SENGAJA tidak sama dengan `memory_export` atas DB hari ini
+
+Ini pembalikan dari cara README versi sebelumnya menjual proyek ini, dan kami tulis eksplisit supaya Anda
+tidak menemukannya sendiri di meja penilaian. Dua perintah di bawah **tidak** memberi nilai yang sama, dan
+memang tidak seharusnya:
+
+```
+$ cd agent && uv run python -m agent.memory_export --db ./data/chain-abc/memory.db --out /tmp/mem.json
+memory_root: 0x50750074c376526f2d86d7bc85234c10cabda21bcc31c9cabe69e50aeac90c3c
+
+$ cast call 0x5c6EE4586ACABcb6326069c229E58091B21ef384 "lastMemoryRoot()(bytes32)" \
+    --rpc-url https://sepolia.base.org
+0x999a957070e0740b81f1142cd6a5173ff53f446ad1ea3e6e240a20abd2789b7d
+```
+
+Sebabnya **struktural, bukan angka basi**: `docs/spec.md` §5 langkah 5 menulis memori **sesudah**
+`postVerdict`. Root `0x999a9570…9b7d` adalah keadaan memori **sebelum** job 422 menulis hasilnya; DB hari
+ini sudah memuat tulisan itu, sehingga ia **satu langkah tulis di depan** chain. Nilai
+`0x50750074…0c3c` belum pernah diumumkan on-chain — ia akan menjadi root yang diumumkan pada `postVerdict`
+**berikutnya**. Vault dibekukan (ADR-022), jadi `postVerdict` berikutnya tidak akan pernah terjadi pada
+vault ini, dan selisih satu langkah itu **permanen**.
+
+**Pasangan yang benar-benar cocok hari ini** adalah root on-chain dengan **bundel bukti** job yang
+mengumumkannya — dan ikatan itu lewat hash, bukan lewat kepercayaan:
+
+```
+# root yang diumumkan job 422 (topic1 MemoryRootUpdated, dan argumen memoryRoot VerdictPosted)
+0x999a957070e0740b81f1142cd6a5173ff53f446ad1ea3e6e240a20abd2789b7d
+
+# field memory_root di dalam bundel bukti job 422
+$ cd agent && uv run python -c "import json;print(json.load(open('data/chain-abc/verdicts/422-0x2b0ca5747abea9c81c5f85741e8cdc92dab3b44f92bbbcbc03aec59ddcbc0704.json'))['memory_root'])"
+0x999a957070e0740b81f1142cd6a5173ff53f446ad1ea3e6e240a20abd2789b7d
+
+# dan bundel itu sendiri terikat ke reasonHash on-chain: keccak256(byte file) == nama file == reasonHash
+0x2b0ca5747abea9c81c5f85741e8cdc92dab3b44f92bbbcbc03aec59ddcbc0704
+```
+
+Kelima bundel (418, 419, 420, 421, 422) memenuhi kecocokan `keccak256(isi file) == nama file` itu. Yang
+dibuktikan pasangan ini: **root, verdict, dan alasan terikat dalam satu hash yang sudah diumumkan on-chain
+sebelum eksekusi.** Yang **tidak** dibuktikannya: bahwa isi memori pada saat itu sah — untuk itu Anda butuh
+file DB pada keadaan tersebut, dan keadaan itu sudah hilang (butir 7 dan 16). Batasan publikasi file
+memori: butir 12.
+
+### 23. Gerbang 402 ADA, tetapi registrasinya BELUM dikonsumsi jalur job
+
+Versi README sebelumnya menulis bahwa gerbang pembayaran ini "tidak ada di repo". Itu **salah, dan salah ke
+arah yang meremehkan**: berkasnya ada di `agent/agent/payment_402.py` (dengan tesnya di
+`agent/tests/test_payment_402.py`). Yang benar adalah batasan yang lebih tepat:
+
+- **Yang berjalan:** `POST /jobs/register` menjawab **402** beserta skema pembayarannya bila tidak ada
+  header pembayaran, dan menjawab **200** hanya setelah server **membaca sendiri** kuitansinya on-chain —
+  transfer harus berasal dari token escrow, mendarat di penerima yang benar, menutup jumlahnya, dan membawa
+  hash transaksi yang belum pernah dipakai. Dalam `DEMO_MODE` header dummy diterima, tetapi jawabannya
+  **menyatakan** itu sehingga 200 tidak pernah bisa disalahbaca sebagai pembayaran terverifikasi.
+- **Yang BELUM:** registrasi yang dihasilkannya **tidak dikonsumsi oleh jalur job mana pun.** Tidak ada
+  satu pun keputusan evaluasi hari ini yang berubah karena sebuah job "terdaftar". Jadi ini **demo mekanisme
+  pembayaran**, bukan fitur produksi yang menghidupi antrean job.
+- **Pembayarannya adalah kredensial bearer, dan itu bukan kiasan.** Yang diperiksa hanyalah **isi** transfer,
+  bukan siapa yang menuntutnya: `nonce` di tantangan tidak pernah disimpan dan tidak pernah dibandingkan
+  saat klaim (transfer ERC-20 polos tidak membawa memo), dan pengirimnya tidak pernah dibaca. Jadi siapa pun
+  yang melihat transaksi itu di mempool/explorer bisa **mendahului** klien yang benar-benar membayar dengan
+  mengutip hash yang sama lebih dulu. Ini ditulis di modulnya sendiri, bukan ditemukan auditor.
+- **Ia TIDAK memperbaiki insentif fee.** Fee di muka ADR-004 yang membuat wasit dibayar sama besar entah ia
+  meluluskan atau menolak (butir 14) **belum berlaku**: `evaluatorFeeBP` tetap hanya cair saat `Completed`.
+- **Ini BUKAN protokol x402, dan menyebutnya begitu dilarang** oleh **ADR-010 keputusan 4**. Paket x402
+  resmi memang ada (PyPI `x402` 2.22.0) dan **sengaja tidak dipakai**: skema `exact` EVM-nya berjalan di atas
+  EIP-3009 `transferWithAuthorization`, sedangkan token escrow ACP tidak punya fungsi itu — pada bytecode
+  terdeploy, selector `0xe3ee160e` muncul **nol** kali dengan kontrol positif `transfer` (`0xa9059cbb`) = 1.
+  Angka `402` di sini adalah status HTTP yang benar-benar dikembalikan (RFC 9110 §15.5.3), bukan merek
+  protokol; nama skema di `WWW-Authenticate` adalah `OnchainPayment`, dan larangan memakai nama `x402`
+  di situ dijaga tes.
+
+### 24. Wallet simulator TIDAK terdaftar di Service Registry Virtuals — dan itu menentukan multiplier
+
+Fakta ini sebelumnya hanya hidup di komentar kode, padahal ia menentukan salah satu kriteria penilaian
+hackathon. Kami naikkan ke permukaan:
+
+```
+POST https://api.acp.virtuals.io/auth/agent
+→ 404  Agent not found with wallet address 0xbe2c447e577F95ed2D5cD20C75cF7633FA0602C2
+```
+
+Sumber: `sim/src/client_min.ts:510-512` (komentar hasil verifikasi 2026-09-04). Baris kode itu sendiri
+menulis placeholder `<client>`, bukan alamatnya; alamat literalnya dikreditkan ke ADR-019
+(`docs/decisions.md:385`), dan ia memang `jobs(417..422).client` on-chain. Artinya wallet
+client simulator kami **belum pernah didaftarkan** sebagai agen di Service Registry Virtuals. Konsekuensinya
+jujur-jujuran ada tiga:
+
+1. **`session.submit()` SDK tidak bisa menaruh teks deliverable** ke API off-chain Virtuals — itu sebabnya
+   teks dibaca dari artefak lokal `demo/deliverables/<jobId>.json` (butir 6), bukan dari API resmi.
+2. **Multiplier "agen terdaftar di Virtuals" tidak boleh kami klaim.** Yang bisa kami klaim adalah bahwa
+   seluruh transaksi ACP berjalan lewat SDK Virtuals sungguhan
+   (`@virtuals-protocol/acp-node-v2@0.1.12`) dan bahwa `evaluatorAddress` diisi alamat vault kami — itu
+   terlihat di jejak transaksi. Pendaftaran registry adalah hal yang **berbeda**, dan kami belum punya.
+3. Pendaftaran itu butuh aksi manusia di sisi Virtuals; ia **tidak** diblokir oleh kode kami, dan kami
+   tidak menyajikannya seolah sudah selesai.
+
+### 25. Demo kedalaman (job 421 vs 422): teks IDENTIK, verdict BERBEDA — dan apa yang TIDAK dibuktikannya
+
+Ini bukti terkuat yang kami punya untuk klaim "memori mengubah keputusan", jadi batasannya wajib ikut
+tertulis. Dua job dijalankan dengan **teks deliverable yang sama byte demi byte**
+(`keccak256(text)` = `0x246071b30c435f192b9ffcb064a11178bc2bd25a02819a1ad7c3b8ee24bf0a51` pada
+`demo/deliverables/421.json` dan `422.json`), budget sama (250.000), evaluator sama (vault), tetapi dari
+**provider yang berbeda**:
+
+| job | provider | riwayat di memori | depth | hasil cek | verdict on-chain |
+|---|---|---|---|---|---|
+| **421** | `0xc3c6Bf20…aeff` (bersih) | nol insiden | `sampling` — hanya **2 bagian pertama** yang dibaca | `format.no-placeholder` **pass** ("tanpa penanda pekerjaan pada 2 bagian yang dibaca") | `VerdictPosted(kind=1)` → `Finalized` → **status 3 (Completed)** |
+| **422** | `0x20212E4D…b321` (2 insiden: job 418, 419) | risk 2 | `full` | `format.no-placeholder` **fail** — `TODO` pada **bagian KETIGA** (bundel menulis `section: 2`, indeks 0-basis) | `VerdictPosted(kind=2)` → `Finalized` → **status 4 (Rejected)** |
+
+Empat transaksi yang bisa Anda buka sendiri:
+
+```
+job 421  postVerdict  0x02356b079fa3bfcd32e62d7e2bb61d3f4eb8b66d29fac578cd6318b2028a1467  (blok 46455461)
+job 421  finalize     0x371a4db2ed4c7975f3806f64392f92ecba2132feb9a1df78889c31af9bcaf020  (blok 46455526)
+job 422  postVerdict  0xe95910d28ac4b5182220b9ea7c31519fb006b99b2edb0ed453f18556fa295830  (blok 46455552)
+job 422  finalize     0x502c8d944106914b15d95a38b2815187fa7b3d63965d95414ccd7f15835b5f08  (blok 46455616)
+```
+
+Yang dibuktikan: **kedalaman pemeriksaan diturunkan dari memori, dan kedalaman itu benar-benar mengubah
+verdict** — cacatnya nyata (`TODO` di bagian ketiga) dan hanya terlihat pada `depth=full`. Rantai A/B/C
+membuktikan gerbang cap; pasangan 421/422 membuktikan gerbang kedalaman, dan keduanya jalur kode yang
+berbeda.
+
+Yang **tidak** dibuktikannya, dan ini wajib dibaca bersamanya:
+
+- **Kedua provider adalah simulator kami sendiri** (butir 21). Yang membedakan keduanya hanyalah riwayat
+  yang kami tanam lewat job 418/419, bukan perilaku pihak ketiga yang independen.
+- **Cacatnya satu kata.** `TODO` dikenali regex penanda pekerjaan (`agent/agent/checks/format.py:47-50`);
+  ini bukan deteksi kecurangan yang canggih (butir 10).
+- **`sampling` vs `full` hanya berbeda kalau dokumennya lebih panjang dari batas sampling.** Deliverable
+  421/422 sengaja dibuat **TIGA bagian** (`# Summary`, `## Cara kerja`, `## Catatan lanjutan`) dengan
+  `TODO` ditaruh di bagian **ketiga**, sementara `SAMPLING_SECTION_LIMIT = 2`
+  (`agent/agent/checks/base.py:78`) — jadi `sampling` membaca dua bagian pertama dan **tidak pernah sampai**
+  ke cacatnya, `full` membaca ketiganya dan menemukannya. Pada artefak demo lama (418/419) yang hanya satu
+  bagian, `sampling` dan `full` membaca **persis** jumlah bagian yang sama sehingga kedalaman tidak bisa
+  mengubah apa pun. Perhatikan dua konvensi indeks yang berbeda di tabel di atas: bundel bukti memakai
+  indeks **0-basis** (`section: 2` = bagian ketiga), sedangkan prosa cek memakai **hitungan** bagian
+  ("2 bagian yang dibaca").
+- **Bundel `kind:"evaluation"` TIDAK memuat blok `gate`.** Hanya bentuk `gate-rejection` (job 420) yang
+  punya. Akibatnya bundel 421/422 — justru dua artefak yang kami tawarkan sebagai bukti terkuat —
+  **tidak bisa membuktikan sendiri** kepada auditor bahwa yang menolak job 422 adalah gerbang kedalaman
+  dan bukan gerbang cap. Yang menutup celah itu hari ini hanyalah pembacaan kode (`criteria.py` hanya
+  menerima `depth`, tidak pernah `risk`), bukan artefaknya. Ini utang yang diketahui, bukan yang baru
+  ketahuan.
+- **Job 421 yang lulus itulah yang membayar evaluator** 12.500 unit (butir 14) — bias insentif yang kami
+  kritik tetap berlaku pada demo ini sendiri.
+
 ## Masalah → solusi
 
 ERC-8183 menaruh seluruh kepercayaan pada evaluator dan tidak memberinya alasan untuk jujur: evaluator
@@ -415,6 +609,49 @@ waktu, dan jangkar memori (ADR-003).
 Dari tiga cacat spek di atas, submission ini menyerang **satu**: kelupaan (stateless). Cacat insentif fee
 tetap berlaku pada wasit ini sendiri (butir 14), dan "tidak ada pembayaran parsial" tidak kami sentuh sama
 sekali — Rejected tetap berarti refund 100% ke client, bukan pembayaran sebagian ke provider.
+
+### Siapa yang memakainya di hari pertama, dan kenapa ia mau membayar
+
+Pertanyaan yang wajar: kalau saya sudah bisa menaruh alamat saya sendiri di `evaluatorAddress`, kenapa saya
+butuh ini? Jawaban kami menunjuk satu konsumen konkret, bukan "agen pada umumnya":
+
+**Konsumennya: operator yang menjalankan banyak job ACP ke provider yang sama berulang kali** — dalam repo
+ini diperankan oleh `sim/` sebagai client, dan di luar repo ini bentuk nyatanya adalah tim yang mem-borong
+pekerjaan berulang (riset, ringkasan, pengumpulan data) ke sekumpulan provider yang itu-itu juga. Ciri yang
+membuatnya jadi konsumen hari pertama: **ia bertemu provider yang sama lebih dari sekali**, jadi kelupaan
+evaluator langsung berubah jadi kerugian berulang.
+
+**Kenapa `evaluatorAddress` = EOA sendiri TIDAK cukup untuk orang itu:**
+
+1. **EOA tidak punya ingatan yang bisa ditunjukkan.** Ia bisa saja menolak job, tetapi ia tidak bisa
+   membuktikan kepada provider (atau kepada siapa pun) **atas dasar riwayat apa** ia menolak. Di sini
+   alasan penolakan terikat hash ke bundel bukti yang memuat `incident_jobs` dan cap, dan hash itu
+   diumumkan on-chain sebelum eksekusi (butir 22).
+2. **EOA adalah hakim yang menilai perkaranya sendiri.** Client yang menjadi evaluator atas job-nya sendiri
+   punya insentif menolak supaya dapat refund 100%. Memindahkannya ke evaluator pihak ketiga yang
+   ingatannya bisa diaudit memisahkan dua peran itu — dan bila ingatan itu **hilang**, agen berhenti
+   bertransaksi alih-alih menebak (butir 22, "Tes destruktif").
+3. **Kalibrasi tidak bisa disalin ke job berikutnya.** Yang membuat job 422 ditolak bukan aturan baru,
+   melainkan kedalaman pemeriksaan yang **diturunkan dari dua job sebelumnya** — pada teks yang identik
+   dengan job yang diluluskan (butir 25). EOA tanpa memori akan meluluskan keduanya.
+
+**Berapa yang ia bayar, dan berapa yang ia hemat.** Angka yang bisa kami tunjukkan hari ini datang dari
+demo, bukan dari riset pasar, jadi kami sebut apa adanya sebagai **ilustrasi bertanda**, bukan harga yang
+tervalidasi. Tarif kontrak `evaluatorFeeBP` = **500** (5% dari budget). Pada job 422 (budget 250.000 unit
+testnet) itu berarti **12.500 unit** — dan yang dihindarinya adalah membayar **250.000 unit penuh** untuk
+deliverable yang memuat `TODO` yang belum selesai, karena Rejected berarti refund 100% ke client (tidak ada
+pembayaran parsial di ERC-8183). **Rasionya 1:20**: bayar 5% untuk menghindari kehilangan 100% pada job yang
+seharusnya tidak lulus. Ambang impasnya karena itu rendah — evaluator ini "membayar dirinya sendiri" bila ia
+menangkap lebih dari satu job cacat dari setiap dua puluh.
+
+Dua hal yang membuat angka itu belum boleh dibaca sebagai bukti permintaan: (1) 5% adalah tarif yang sudah
+ada di kontrak ACP, **bukan** harga yang kami tetapkan atau uji; (2) hari ini fee itu hanya cair saat
+`Completed`, jadi justru pada job 422 yang ditolak evaluator menerima **0** (butir 14) — struktur yang
+membuat rasio 1:20 di atas menjadi argumen untuk fee di muka (ADR-004), bukan gambaran arus kas hari ini.
+
+**Kejujuran yang menyertainya:** hari ini konsumen itu adalah simulator kami sendiri (butir 21), belum ada
+pengguna pihak ketiga, gerbang pembayaran 402 yang akan menagihnya belum tersambung ke jalur job
+(butir 23), dan wallet simulatornya belum terdaftar di Service Registry Virtuals (butir 24). Yang sudah nyata adalah mekanismenya di chain; yang belum adalah permintaannya.
 
 ## Alur
 
@@ -475,8 +712,9 @@ data:            0x1618e7653959fcdbd11565a41e7688ce12e1a6abca3a12f1746ed5348262b
 BaseScan](https://sepolia.basescan.org/tx/0x78a3a65db3160f199bddf8eb6e703c000ab322e7fa49dea2058fd93ea794989e).
 Dua jebakan yang sudah kami tabrak, supaya Anda tidak: `rejector` adalah alamat **vault**, bukan EOA agen —
 bukti yang mencari alamat agen akan gagal palsu; dan `cast logs "<signature>" <jobId>` **tidak** memfilter
-(cast 1.7.1 mengabaikan argumen sesudah signature secara diam-diam), jadi pakai topic literal ter-pad seperti
-di atas. Kontrol negatif dengan jobId `999999` pada rentang yang sama mengembalikan hasil KOSONG, jadi
+(cast 1.7.1 mengabaikan argumen sesudah signature secara diam-diam). Yang memperbaikinya **bukan** sekadar
+mem-pad topic-nya: selama signature masih ikut dikirim, topic-nya tetap diabaikan. Yang bekerja adalah
+membuang signature-nya dan mengirim topic0 + topic1 bersama `--address`, persis bentuk blok di atas. Kontrol negatif dengan jobId `999999` pada rentang yang sama mengembalikan hasil KOSONG, jadi
 filternya memang menggigit.
 
 **Cap-nya DITERBITKAN di kontrak dan bisa dibaca siapa pun — yang MENOLAK job C adalah agen off-chain:**
@@ -492,19 +730,25 @@ $ cast call 0x5c6EE4586ACABcb6326069c229E58091B21ef384 \
 Solidity: `EvaluatorVault.sol` menulis `providerCap` (baris 289) dan **tidak pernah membacanya**
 (butir 17). Nilai di atas adalah angka yang diumumkan agen sebelum menolak, bukan penegak penolakannya.
 
-**Root memori yang berlaku sekarang bisa dihitung ulang dari file memori** (klaim headline proyek ini —
-"sekarang", karena DB Sibyl hanya menyimpan keadaan terkini: butir 7):
+**Root memori yang diumumkan bisa dihitung ulang dari file memori — tetapi hanya pada keadaan yang
+melahirkannya.** Root yang diumumkan job 420 adalah `0xcfdab1b0…5b26`:
 
 ```
-$ cd agent && uv run python -m agent.memory_export --db ./data/chain-abc/memory.db --out /tmp/mem.json
-memory_root: 0xcfdab1b06d6cb9e8349d1171da197b998945f6e6433abe3d4bd5e7a26a3c5b26
-
-$ cast call 0x5c6EE4586ACABcb6326069c229E58091B21ef384 "lastMemoryRoot()(bytes32)" \
-    --rpc-url https://sepolia.base.org
-0xcfdab1b06d6cb9e8349d1171da197b998945f6e6433abe3d4bd5e7a26a3c5b26
+$ cast logs --address 0x5c6EE4586ACABcb6326069c229E58091B21ef384 \
+    0xc6028d32061c1f0b8f4f1370b6f1ab5105a96bfc6631a3840371ebbcb27c7923 \
+    --from-block 46436434 --to-block 46436434 --rpc-url https://sepolia.base.org
+blok 46436434  jobId 420  root(topic1) 0xcfdab1b0…5b26
 ```
 
-Nilai yang sama juga muncul sebagai `memory_root` di bundel bukti job 420. Ekspor dan `postVerdict` memakai
+**Peringatan yang wajib dibaca bersamanya, supaya Anda tidak menyalin blok ini dan mendapat MISMATCH:**
+`memory_export.py` atas DB hari ini **tidak** mencetak nilai itu, dan `lastMemoryRoot()` vault juga tidak —
+keduanya sudah maju melewati job 420 (job 421 dan 422 mendarat sesudahnya). Memori ditulis **sesudah**
+`postVerdict` (`docs/spec.md` §5 langkah 5), jadi setiap root on-chain adalah keadaan **sebelum** job itu
+menulis hasilnya, dan DB selalu **satu langkah tulis di depan** chain. Nilai kedua perintah itu hari ini,
+beserta pasangan yang benar-benar cocok, ada di **butir 22**.
+
+Nilai yang sama juga muncul sebagai `memory_root` di bundel bukti job 420 — dan **ikatan bundel↔chain itulah
+yang bisa Anda verifikasi hari ini** (butir 22). Ekspor dan `postVerdict` memakai
 **satu implementasi** yang sama, bukan salinan (`agent/agent/memory_policy.py` → `memory_root_for_onchain`),
 dan encoding-nya dikunci vektor beku di `agent/tests/fixtures/memory_root_vector.json`. Perhitungan ulang
 lintas bahasa ada di `agent/tools/memory_root_check.mjs`.
@@ -536,8 +780,23 @@ cd agent && uv run python -m agent.vault_client --job-id <job C> --kind reject
 
 | Kondisi | Hasil |
 |---|---|
-| **Tanpa file memori** | agen melapor `mode=naive … cap=TANPA CAP gate=lolos`, **nol `postVerdict`**, `cast logs JobRejected` KOSONG |
+| **Tanpa file memori, invokasi PERTAMA** | gerbang start membaca `mode=naive`, lalu `plan_job` **MEMBUAT** `memory.db` saat membuka `MemoryClient.local()`; gerbang yang dibaca ulang sebelum tx kini melihat file itu ADA → `mode=normal`, sementara `plan.mode` masih `naive` → penjaga **`MODE_DRIFT`** menolak. Hasil: **`EXIT_REFUSED` (exit code 4)**, `sent_transactions == []`, **nol `postVerdict`**, `cast logs JobRejected` KOSONG |
+| **Tanpa file memori, invokasi KEDUA** (job yang sama) | berjalan sampai selesai: `mode=normal`, `depth=sampling`, `cap=TANPA CAP gate=lolos`, `postVerdict` + `finalize` mendarat, **exit 0** |
 | **File memori dikembalikan** (chain yang sama, perintah yang sama) | `cap=250000 gate=DITOLAK` → `postVerdict(REJECT)` → `Finalized(kind=2)`, `JobRejected` MUNCUL, job jadi status 4, client refund penuh |
+
+**Baris pertama adalah PENOLAKAN, bukan penerimaan — dan README versi sebelumnya menuliskannya seperti
+penerimaan.** Yang terjadi bukan "agen lolos-kan job karena memorinya hilang"; yang terjadi adalah agen
+**menolak bertransaksi sama sekali** karena mode yang ia rencanakan tidak lagi sama dengan mode yang ia
+baca sesaat sebelum menandatangani. Perilakunya fail-closed dan sembuh sendiri pada invokasi berikutnya.
+Ini dicatat dan diterima apa adanya di **ADR-026**, termasuk konsekuensinya: **pada vault segar, hari
+pertama menuntut DUA invokasi `--job-id`, dan yang pertama keluar dengan exit code 4.** Operator yang tidak
+diberi tahu akan membaca exit 4 itu sebagai kerusakan. ADR-026 keputusan (e) juga mengukur bahwa selisih ini
+**nol byte on-chain**: `empty_memory_root()` dan root atas DB kosong yang baru dibuat adalah nilai yang sama
+persis (`0x4e2a1ca1…ff5a`), dan depth serta cap-nya identik.
+
+Konsekuensi yang harus ikut dibaca: **`MODE NAIF` tidak pernah menjadi mode yang melahirkan verdict lewat
+CLI.** Ia hanya muncul sebagai baris log invokasi pertama (ADR-026 keputusan 4 dan konsekuensi). README,
+video, dan post build-in-public **dilarang** menyajikannya seolah ia jalur produksi.
 
 Kosongnya hasil pada baris pertama bukan lulus palsu: kontrol positif `JobFunded` pada rentang dan bentuk
 filter yang IDENTIK tetap mengembalikan log. Dan bundel bukti pada baris kedua menyebut `cap.usdc 250000` +
@@ -562,7 +821,7 @@ otomasinya lewat `make demo` belum ada (Batasan butir 11).
 | Tambahan | Alasan | ADR |
 |---|---|---|
 | **EvaluatorVault** sebagai alamat evaluator (bukan EOA) | spek tidak punya bond/challenge/timeout evaluator; spek mengizinkan evaluator berupa kontrak | ADR-003 |
-| **Jangkar memori on-chain** (`MemoryRootUpdated`, `knownRoots`) | tiap eksekusi ke ACP terikat root yang sudah diumumkan SEBELUM eksekusi; batasnya: dari enam root vault hanya 420 dan 418 yang bisa dihitung ulang, 419 hilang permanen (butir 7), dan jangkarnya melingkar (butir 16) | ADR-011 |
+| **Jangkar memori on-chain** (`MemoryRootUpdated`, `knownRoots`) | tiap eksekusi ke ACP terikat root yang sudah diumumkan SEBELUM eksekusi; batasnya: dari **delapan** root vault hanya **418** yang bisa dihitung ulang hari ini, sisanya keadaan antara yang hilang permanen (butir 7), dan jangkarnya melingkar (butir 16) | ADR-011 |
 | **Gating cap lewat `reject()` saat `Funded`** | hook kustom butuh whitelist admin Virtuals yang tidak kami punya; hak reject saat Funded sudah ada di spek. Penegakannya off-chain; kontrak hanya menerbitkan cap (butir 17) | ADR-001 |
 | **Karantina sebagai entity `suspicion`** | Sibyl hanya punya HOT/WARM/COLD/REFERENCE/ARCHIVE — tidak ada tier FLAGGED, jadi karantina dibangun sebagai konvensi, dan pengambil keputusan dilarang membacanya | ADR-002 |
 | **Bond + jendela sengketa** | dirancang, tetapi hari ini `MIN_BOND` = 0 dan `challenge`/`resolve` stub — lihat Batasan butir 1-2 | ADR-013 |
@@ -587,7 +846,7 @@ optimizer runs 200), memakai 816.969 gas — semua angka itu ada di `deployments
 source yang tercocokkan (Batasan butir 15).
 
 **SDK Virtuals dipakai sungguhan, bukan dekorasi.** Seluruh transaksi ACP di simulator lewat
-`@virtuals-protocol/acp-node-v2@0.1.12` (`sim/package.json:10`); `sim/src/client_min.ts:11-14` menyatakan
+`@virtuals-protocol/acp-node-v2@0.1.12` (`sim/package.json:12`); `sim/src/client_min.ts:11-14` menyatakan
 dan menepati bahwa file itu tidak meng-encode satu pun calldata ACP sendiri — kalender panggilan, ABI, dan
 urutan approve+fund datang dari SDK, dan yang kami sediakan hanya adapter penanda tangan viem
 (`IEvmProviderAdapter`). `evaluatorAddress` diisi eksplisit dengan alamat vault: default SDK adalah alamat
@@ -627,8 +886,40 @@ cd agent && uv run python -m agent.vault_client --job-id <jobId> --kind reject
 cd agent && uv run python -m agent.memory_export --check /tmp/mem.json
 ```
 
+**Pada vault SEGAR, langkah 3 butuh DUA invokasi, dan yang pertama keluar dengan exit code 4.** Itu bukan
+kerusakan: invokasi pertama melahirkan `memory.db` di tengah jalan, sehingga mode yang direncanakan
+(`naive`) tidak lagi sama dengan mode yang dibaca sesaat sebelum menandatangani (`normal`), dan penjaga
+`MODE_DRIFT` menolak bertransaksi — **nol tx, fail-closed**. Invokasi kedua atas job yang sama berjalan
+sampai selesai dan keluar 0. Anda bisa melewati exit 4 itu dengan melahirkan DB-nya lebih dulu:
+
+```
+cd agent && uv run python -m agent.memory_export --db ./data/<chain>/memory.db --out /tmp/mem.json
+```
+
+Ini diputuskan dan diukur di **ADR-026** (keputusan 6 mewajibkan README menyebutkannya), dan konsekuensinya
+nol byte on-chain: root, depth, dan cap yang diumumkan sama saja pada kedua jalur.
+
 Verdict tidak bisa dikalahkan flag: bila cek deterministik gagal (`Evaluation.passed == False`) atau gerbang
 cap menolak, hasilnya REJECT apa pun isi `--kind`.
+
+**Mereproduksi demo kedalaman (butir 25)** menuntut DUA provider, karena yang membedakan job 421 dan 422
+hanyalah riwayat providernya. Pemilihnya `PROVIDER_SLOT` (`sim/src/client_min.ts:102,160-162`), dengan dua
+nilai sah: `alpha` (default, kunci `PROVIDER_PRIVATE_KEY` — provider yang di rantai kami sudah punya dua
+insiden) dan `beta` (`PROVIDER2_PRIVATE_KEY` — provider bersih):
+
+```
+# provider BERSIH → depth sampling → dua bagian pertama saja → LULUS
+PROVIDER_SLOT=beta  BUDGET_RAW=250000 DELIVERABLE_FILE=demo/deliverables/421.json \
+  pnpm --filter sim run job:min
+
+# provider BERISIKO (2 insiden) → depth full → bagian ketiga terbaca → DITOLAK
+PROVIDER_SLOT=alpha BUDGET_RAW=250000 DELIVERABLE_FILE=demo/deliverables/422.json \
+  pnpm --filter sim run job:min
+```
+
+Sama seperti rantai A/B/C, ini menjalankan job **baru** pada vault Anda sendiri dan **tidak** mereproduksi
+job 421/422 pada vault submission (Batasan butir 20). Yang menentukan hasilnya bukan flag mana pun,
+melainkan apakah memori provider itu sudah memuat dua insiden — jadi urutan menjalankannya penting.
 
 ## Struktur repo
 
@@ -650,27 +941,33 @@ docs/        spec.md, decisions.md (ADR), api-facts.md (fakta API terverifikasi)
 | `CHALLENGE_WINDOW` = 120 detik | `deployments/84532.json` → `constants.CHALLENGE_WINDOW` |
 | `MIN_ACP_GAS` = 300.000 | `deployments/84532.json` → `constants.MIN_ACP_GAS`; diturunkan dari pengukuran di ADR-015 keputusan 3 |
 | `EVALUATOR_GRACE_PERIOD` = 900 detik | `docs/api-facts.md` §A KOREKSI 2026-09-03; ADR-014 |
-| saldo vault = 50.000 unit (0,05 USDC testnet); `evaluatorFeeBP` 500 = 5% | `cast call paymentToken "balanceOf(address)" <vault>` → `50000` (butir 4); `deployments/pipeline-84532.md:84` (tabel aliran dana); ADR-018 keputusan 2 |
+| saldo vault = 62.500 unit (0,0625 USDC testnet) = 50.000 (job 417) + 12.500 (job 421); `evaluatorFeeBP` 500 = 5% | `cast call paymentToken "balanceOf(address)" <vault>` → `62500` (butir 4); `deployments/pipeline-84532.md:84` (tabel aliran dana); ADR-018 keputusan 2 |
 | fee hanya cair saat `Completed` → fee evaluator untuk 418/419/420 = 0 | `docs/spec.md` §1 baris 19 (fakta ERC-8183) + status akhir 4 pada ketiga job, "Bukti on-chain" di atas |
 | `BASELINE_CAP_USDC` 1.000.000; `MIN_CAP_USDC` 250.000 | ADR-020 keputusan 3 dan 5; ADR-021 keputusan 1 |
-| cap job 420: `basis` "baseline-constant", `sample_size` 0, `usdc` 250.000 = ceil(1.000.000 / 4) | bundel bukti job 420; `agent/agent/memory_policy.py:1645-1654,1669` |
+| cap job 420: `basis` "baseline-constant", `sample_size` 0, `usdc` 250.000 = ceil(1.000.000 / 4) | bundel bukti job 420; `agent/agent/memory_policy.py:1666` |
 | `providerCap` ditulis di baris 289, dideklarasikan di baris 142, nol pembacaan | `contracts/src/EvaluatorVault.sol` (butir 17) |
 | `postVerdict` hanya menolak root nol | `contracts/src/EvaluatorVault.sol:303` (`ZeroMemoryRoot`) |
-| penjaga root off-chain membandingkan calldata dengan file yang dibaca agen sendiri | `agent/agent/vault_client.py:1292-1302` (butir 16) |
+| penjaga root off-chain membandingkan calldata dengan file yang dibaca agen sendiri | `agent/agent/vault_client.py:1339` (`_require_derived_root`, dipanggil :1473) (butir 16) |
 | `agent`/`arbiter`/`MIN_BOND` immutable tanpa setter, tanpa pause | `contracts/src/EvaluatorVault.sol:14,106-114` |
 | tiga pemicu mode aman; file hilang butuh root on-chain ≠ 0 | `agent/agent/memory_policy.py:1461-1500` |
-| riwayat `MemoryRootUpdated` = **enam** event; keenam root + jobId-nya | `cast logs` topic0 `0xc6028d32…7923`, blok 46350667→46436600 dalam sembilan jendela ≤ 9.999 blok (batas RPC publik, `docs/api-facts.md` §E); tabel lengkap di butir 7 |
-| root job 418 `0x4e2a1ca1…ff5a` = root DB kosong (bisa direproduksi); root job 419 `0x3f506e52…eecc2` hilang permanen | `memory_export.py` atas DB alas rantai vs `cast logs` di butir 7; `docs/spec.md` §5 langkah 5 (memori ditulis SESUDAH `postVerdict`) |
+| riwayat `MemoryRootUpdated` = **delapan** event; kedelapan root + jobId-nya | `cast logs` topic0 `0xc6028d32…7923`, blok 46350667→46455552 dalam jendela ≤ 9.999 blok (batas RPC publik, `docs/api-facts.md` §E); tabel lengkap di butir 7 |
+| root job 418 `0x4e2a1ca1…ff5a` = root DB kosong (bisa direproduksi lewat `empty_memory_root()`, BUKAN lewat `memory_export.py` — alat itu menolak membuat DB); root 419/420/421/422 hilang permanen | `empty_memory_root()` di butir 7 vs `cast logs` di butir 7; `docs/spec.md` §5 langkah 5 (memori ditulis SESUDAH `postVerdict`) |
 | Sourcify 84532/`0x5c6EE45…` → `{"match":null,...}`; broadcast ter-gitignore | kueri Sourcify v2; `.gitignore:6`; `deployments/84532.json` → `notes` (butir 15) |
 | `sim` tanpa script `test`; workspace = `sim`, `web` | `sim/package.json:5-8`; `pnpm-workspace.yaml` |
 | regex penanda pekerjaan (satu kata memicu `format.placeholder-text`) | `agent/agent/checks/format.py:47-50`; `demo/deliverables/418.json`, `419.json` |
 | job 418 / 419 / 420, budget 1.000.000 dan 2.000.000, status akhir 4 | keluaran `cast` di bagian "Bukti on-chain" |
+| job 421 status 3 (Completed) / job 422 status 4 (Rejected), budget 250.000 keduanya | `cast call <ACP> "jobs(uint256)"` — ABI terverifikasi `docs/api-facts.md` §A, dipakai `agent/agent/vault_client.py:389-405` (butir 25) |
+| `keccak256(text)` deliverable 421 == 422 == `0x246071b3…0a51` | `demo/deliverables/421.json`, `422.json` field `sha_keccak` (butir 25) |
+| provider bersih job 421 = `0xc3c6Bf20…aeff`; provider berisiko job 422 = `0x20212E4D…b321` | `cast call <ACP> "jobs(uint256)"` (butir 25) |
+| empat tx demo kedalaman (2× `postVerdict`, 2× `finalize`), blok 46455461-46455616 | daftar hash di butir 25 |
+| gerbang 402 ada di `agent/agent/payment_402.py` (BUKAN `agent/x402_server.py`) | commit `a213cdd`, `3c5cafa`; tes `agent/tests/test_payment_402.py`; ADR-010 (butir 23) |
+| wallet client simulator `0xbe2c447e…02C2` → 404 `/auth/agent` | `sim/src/client_min.ts:510-512` (komentar memakai placeholder `<client>`); alamat literal di ADR-019 `docs/decisions.md:385` + `jobs(417..422).client` on-chain (butir 24) |
 | `providerCap` = 250.000 | `cast call providerCap(address)` di atas |
 | blok 46436498, tx `0x78a3a65d…989e`, `reason` `0x1618e765…b5ed` | `cast logs JobRejected` di atas |
-| `lastMemoryRoot` = `0xcfdab1b0…5b26` | `cast call lastMemoryRoot()` + `memory_export.py` di atas |
+| `lastMemoryRoot()` = `0x999a9570…9b7d` (root job 422), sedangkan `memory_export` atas DB hari ini = `0x50750074…0c3c` — **sengaja berbeda satu langkah tulis** | `cast call lastMemoryRoot()` dan `memory_export.py` di butir 22; sebabnya `docs/spec.md` §5 langkah 5 |
 | root warisan `0x1fa62c3d…7bf0` = `keccak("the-evaluator/live/memory-root/v1")` | `cast keccak` di Batasan butir 7; ADR-023 konteks |
 | root selftest `0x5ff921fd…a19e` = `keccak("the-evaluator/selftest/memory-root/v1")` | `cast keccak` di Batasan butir 7; commit `26f11d6` (dicabut `190cb44`) |
-| blok 46355036 / 46355080, jobId sintetis 8999488 / 8999489 | `cast logs MemoryRootUpdated` di Batasan butir 7 |
+| blok 46355036 / 46355080, jobId sintetis 9000000 / 9000001 (`0x895440` / `0x895441`) | `cast logs MemoryRootUpdated` di Batasan butir 7 |
 | blok deploy 46350667, gas 816.969, solc 0.8.36, optimizer 200 | `deployments/84532.json` |
 | chainId 84532 | `deployments/84532.json` |
 
