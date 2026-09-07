@@ -135,25 +135,31 @@ contract AgenticCommerce {
     mapping(uint256 => Job) public jobs;
     /// @dev Job pertama ber-id 1.
     ///
-    ///      `jobCounter()` SENGAJA TIDAK DIIMPLEMENTASIKAN di mock ini, dan itu bukan kelalaian —
-    ///      jangan "melengkapi"nya tanpa membaca dua alasan di bawah. Kontrak asli mengekspos
-    ///      `jobCounter()` (`docs/api-facts.md` §A, nilai 408 pada 3 Sep 2026); mock hanya punya
-    ///      `nextJobId`, dan NAMANYA memang dibuat berbeda supaya tidak ada yang mengira
-    ///      semantiknya identik:
-    ///      1. SEMANTIK BERBEDA. `jobCounter()` = id job TERAKHIR yang dibuat; `nextJobId` = id
-    ///         BERIKUTNYA yang akan dipakai (lihat `createJob`: `jobId = nextJobId++`).
-    ///      2. `nextJobId - 1` ADALAH TEBAKAN, BUKAN FAKTA. Kesetaraan itu tidak pernah kami
-    ///         verifikasi terhadap bytecode ACP asli; ia hanya kesimpulan dari nama. Dan pada mock
-    ///         yang belum membuat job (`nextJobId == 1`) atau varian yang mulai dari 0, ekspresi itu
-    ///         underflow/merevert. Menaruhnya di harness berarti mock BERBOHONG dengan angka yang
-    ///         terlihat masuk akal — kegagalan yang jauh lebih mahal daripada mock yang absen.
-    ///      KONSEKUENSI yang harus disadari: kode produksi yang memanggil `jobCounter()` HIJAU
-    ///      melawan Base Sepolia tapi REVERT melawan mock ini di Anvil (mock tidak punya fallback),
-    ///      yaitu tepat saat `make demo`. Karena itu larangannya dijaga MEKANIS di luar Foundry —
-    ///      `agent/tests/test_acp_mock_divergence.py` memindai `agent/agent/` dan `sim/src/` dan
-    ///      MERAH saat pemanggil pertama muncul. Kalau getter ini kelak memang dibutuhkan:
-    ///      mintalah api-verifier mencatat semantiknya dari ACP nyata lebih dulu, baru
-    ///      tambahkan ke sini — jangan hapus penjaganya.
+    ///      `jobCounter()` SENGAJA TIDAK DIIMPLEMENTASIKAN di mock ini, dan itu bukan kelalaian.
+    ///      Kontrak asli mengekspos `jobCounter()`; mock hanya punya `nextJobId`, dan namanya memang
+    ///      dibuat berbeda supaya tidak ada yang mengira keduanya bisa saling menggantikan begitu saja:
+    ///      1. SEMANTIK BERBEDA, jadi salah pakai = meleset satu. `jobCounter()` = id job TERAKHIR yang
+    ///         dibuat (= jumlah job yang pernah dibuat), 0 sebelum ada job; `nextJobId` = id BERIKUTNYA
+    ///         yang akan dipakai, 1 sebelum ada job (lihat `createJob`: `jobId = nextJobId++`). Ini
+    ///         TERVERIFIKASI, bukan kesimpulan dari nama: source terverifikasi Sourcify
+    ///         `AgenticCommerceV3.sol` mendeklarasikan `uint256 public jobCounter;` dan satu-satunya
+    ///         penulisnya PRE-increment `uint256 jobId = ++jobCounter;` di `createJob` — kutipan lengkap
+    ///         berikut sha256 dan nomor barisnya ada di `docs/api-facts.md` §A. JANGAN menyalin nilai
+    ///         numeriknya ke sini atau ke tes mana pun: ia chain publik yang naik terus.
+    ///      2. KESETARAANNYA BERLAKU, TAPI TIDAK MENCABUT KEPUTUSANNYA. Kontrak asli dan mock ini
+    ///         sama-sama mulai dari id 1 dan naik satu-satu, jadi `nextJobId - 1 == jobCounter` secara
+    ///         identik, dan karena `nextJobId` minimal 1 ekspresi itu TIDAK underflow (hasilnya 0, sama
+    ///         dengan `jobCounter()` saat belum ada job). Catatan ini menggantikan klaim "tebakan yang
+    ///         underflow" yang pernah berdiri di sini dan sudah dikoreksi di §A. Absennya `jobCounter()`
+    ///         adalah KEPUTUSAN yang diambil sadar, bukan akibat kita belum tahu semantiknya — jadi
+    ///         terbuktinya kesetaraan di atas TIDAK memberi izin menambahkan getter ini ke mock, dan
+    ///         TIDAK memberi izin memanggil `jobCounter()` dari kode produksi. Membukanya kembali butuh
+    ///         putusan product-manager, bukan patch diam-diam.
+    ///      KONSEKUENSI yang harus disadari: kode yang memanggil `jobCounter()` HIJAU melawan Base
+    ///      Sepolia tapi REVERT melawan mock ini di Anvil (mock tidak punya fallback), yaitu tepat saat
+    ///      `make demo`. Karena itu larangannya dijaga MEKANIS di luar Foundry —
+    ///      `agent/tests/test_acp_mock_divergence.py` memindai `agent/agent/` dan `sim/src/` dan MERAH
+    ///      saat pemanggil pertama muncul. Penjaga itu jangan dilemahkan atau dihapus.
     uint256 public nextJobId = 1;
 
     /// @dev Daftar `indexed` PERSIS ABI asli (api-facts §A), dikonfirmasi ke log nyata job #403.
