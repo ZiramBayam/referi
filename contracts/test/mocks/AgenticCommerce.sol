@@ -133,8 +133,27 @@ contract AgenticCommerce {
     ///      (urutan + tipe tiap field). Perhatikan: keluaran getter mapping TIDAK dibungkus offset tuple
     ///      seperti `getJob`, karena ia delapan nilai terpisah, bukan satu struct.
     mapping(uint256 => Job) public jobs;
-    /// @dev Job pertama ber-id 1. Kontrak asli mengekspos `jobCounter()` (= id terakhir); nama berbeda
-    ///      dipakai di sini supaya tidak ada yang mengira semantiknya identik. Kode kita tidak memanggilnya.
+    /// @dev Job pertama ber-id 1.
+    ///
+    ///      `jobCounter()` SENGAJA TIDAK DIIMPLEMENTASIKAN di mock ini, dan itu bukan kelalaian —
+    ///      jangan "melengkapi"nya tanpa membaca dua alasan di bawah. Kontrak asli mengekspos
+    ///      `jobCounter()` (`docs/api-facts.md` §A, nilai 408 pada 3 Sep 2026); mock hanya punya
+    ///      `nextJobId`, dan NAMANYA memang dibuat berbeda supaya tidak ada yang mengira
+    ///      semantiknya identik:
+    ///      1. SEMANTIK BERBEDA. `jobCounter()` = id job TERAKHIR yang dibuat; `nextJobId` = id
+    ///         BERIKUTNYA yang akan dipakai (lihat `createJob`: `jobId = nextJobId++`).
+    ///      2. `nextJobId - 1` ADALAH TEBAKAN, BUKAN FAKTA. Kesetaraan itu tidak pernah kami
+    ///         verifikasi terhadap bytecode ACP asli; ia hanya kesimpulan dari nama. Dan pada mock
+    ///         yang belum membuat job (`nextJobId == 1`) atau varian yang mulai dari 0, ekspresi itu
+    ///         underflow/merevert. Menaruhnya di harness berarti mock BERBOHONG dengan angka yang
+    ///         terlihat masuk akal — kegagalan yang jauh lebih mahal daripada mock yang absen.
+    ///      KONSEKUENSI yang harus disadari: kode produksi yang memanggil `jobCounter()` HIJAU
+    ///      melawan Base Sepolia tapi REVERT melawan mock ini di Anvil (mock tidak punya fallback),
+    ///      yaitu tepat saat `make demo`. Karena itu larangannya dijaga MEKANIS di luar Foundry —
+    ///      `agent/tests/test_acp_mock_divergence.py` memindai `agent/agent/` dan `sim/src/` dan
+    ///      MERAH saat pemanggil pertama muncul. Kalau getter ini kelak memang dibutuhkan:
+    ///      mintalah api-verifier mencatat semantiknya dari ACP nyata lebih dulu, baru
+    ///      tambahkan ke sini — jangan hapus penjaganya.
     uint256 public nextJobId = 1;
 
     /// @dev Daftar `indexed` PERSIS ABI asli (api-facts §A), dikonfirmasi ke log nyata job #403.
