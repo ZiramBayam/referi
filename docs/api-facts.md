@@ -498,6 +498,49 @@ Konsekuensi untuk `agent/vault_client.py` + `EvaluatorVault.sol` (mengoreksi cat
   buatan SDK. Kalau demo butuh alasan yang terbaca on-chain, pakai label ≤32 byte UTF-8; bila tidak, tetap hash + tampilkan
   bundel bukti dari memori.
 
+### B.2 chainId, alamat kontrak, dan token — DIVERIFIKASI 2026-09-07 pada paket TERPASANG
+Sumber: `sim/node_modules/@virtuals-protocol/acp-node-v2` → `realpath` = `node_modules/.pnpm/@virtuals-protocol+acp-node-v2@0.1.12_.../node_modules/@virtuals-protocol/acp-node-v2`,
+`package.json` `"version": "0.1.12"`. Semua kutipan `dist/…:<baris>` di bawah dibaca dari paket itu, dan angka
+`getChainFamily` di bawah adalah output eksekusi nyata (`cd sim && node` atas skrip ESM yang meng-`import` dari nama paket).
+
+**(1) `getChainFamily(chainId)` FAIL-CLOSED — Anvil lokal WAJIB `--chain-id 84532`.**
+`dist/core/constants.js:28-33`: kembalikan `"solana"` bila id ada di `SOLANA_CHAIN_ID_CLUSTERS`, `"evm"` bila ada di
+`ACP_CONTRACT_ADDRESSES`, selain itu `throw new UnknownChainIdError(chainId)`. Komentar SDK sendiri menyebut ini perubahan
+sengaja dari perilaku lama yang "return `evm` untuk apa pun yang bukan Solana". Dieksekusi 2026-09-07:
+```
+84532 -> "evm"
+8453  -> "evm"
+31337 -> THROW UnknownChainIdError : Unknown chain id 31337. Register it in ACP_CONTRACT_ADDRESSES or SOLANA_CHAIN_ID_CLUSTERS before use.
+```
+`Object.keys(ACP_CONTRACT_ADDRESSES)` = `['97','500','501','4663','8453','46630','84532']` — **31337 (default Anvil) tidak ada**.
+Jalur itu dilewati DUA kali di alur kita: `dist/clientFactory.js:14` untuk SETIAP entri `contractAddresses` (jadi mendaftarkan
+31337 sendiri pun tetap melempar, karena entri itu diperiksa dengan `getChainFamily` sebelum dipakai), dan lagi di
+`dist/acpAgent.js:50` `getClient(chainId)` sebelum transaksi apa pun. Konsekuensi operasional: **jalankan Anvil dengan
+`--chain-id 84532`**; dengan chainId default SDK melempar sebelum satu tx pun terkirim.
+
+**(2) Alamat kontrak ACP BISA di-override — bukan hardcode.**
+`dist/clientFactory.d.ts:7`: `CreateAcpClientInput = { contractAddresses?: Record<number, string>; evmProvider?; solanaProvider? }`.
+`dist/clientFactory.js:9`: `const allAddresses = input.contractAddresses ?? ACP_CONTRACT_ADDRESSES` (registri bawaan hanya
+fallback), lalu dipecah per family dan diteruskan ke `EvmAcpClient.create({ contractAddresses, provider })`. Disimpan
+per instans di `dist/clients/baseAcpClient.js:35-44` (`this.contractAddresses`; `getContractAddress(chainId)` melempar
+`No contract address configured for chainId …` bila kosong) dan dipakai sebagai `to:` setiap calldata di
+`dist/clients/evmAcpClient.js:167` (`buildContractCall` → `{ to: this.getContractAddress(chainId), data, value: 0n }`),
+juga `:114`/`:118`. Jadi mock ACP lokal cukup didaftarkan lewat `contractAddresses: { 84532: <alamat mock> }`.
+
+**(3) `AssetToken.create(address, symbol, decimals, amount)` menerima alamat token eksplisit.**
+`dist/core/assetToken.d.ts:10` — static publik, `dist/core/assetToken.js:11-13` hanya `new AssetToken(...)`. Hanya varian
+`usdc(amount, chainId)` / `usdcFromRaw(rawAmount, chainId)` yang terkunci ke registri bawaan `USDC_ADDRESSES`
+(`assetToken.js:15-27`, lewat `getAddressForChain`). Alternatif yang membaca rantai: `fromOnChain` / `fromOnChainRaw`
+(`assetToken.js:29-48`) — keduanya membaca `decimals()`/`symbol()` ERC-20 lewat client, KECUALI bila `address` persis sama
+dengan `USDC_ADDRESSES[chainId]` (lalu balik ke jalur registri).
+
+**(4) JEBAKAN: `job.budget.address` BUKAN token escrow yang sebenarnya.**
+`dist/acpJob.js:42`: `this.budget = AssetToken.usdcFromRaw(data.budget, chainId)` — tanpa cabang, tanpa membaca rantai.
+Karena `usdcFromRaw` mengambil alamat dari `USDC_ADDRESSES` (untuk 84532 → `0xECc22a8F6fD62388498fBa19813E214605a2BDb3`,
+`constants.js:58`), `job.budget.address`/`.symbol` SELALU nilai registri bawaan SDK, **bukan** token yang benar-benar ditarik
+escrow. Membacanya sebagai fakta rantai adalah SALAH. Satu-satunya sumber sah token escrow tetap `paymentToken()` di kontrak
+ACP (§A). Berlaku untuk konsumen mana pun, termasuk `web/`: jangan tampilkan `session.job.budget.address` sebagai alamat token.
+
 ## C. Sibyl Memory — paket `sibyl-memory-client 0.7.0` (satu-satunya paket Sibyl yang dipakai; pin di docs/versions.md)
 ## Diverifikasi 2026-09-02 dengan `inspect.signature` di venv sekali-pakai DI LUAR repo:
 ## `uv run --no-project --with 'sibyl-memory-client==0.7.0' python probe.py` → Python 3.13.15,

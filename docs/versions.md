@@ -48,7 +48,7 @@ ditemukan; hanya `uv` yang selamat (lewat `~/.profile`). Diverifikasi 2026-09-02
 | viem | 2.55.19 | **bukan** 3.0.0-next (prerelease) |
 | wagmi | 3.7.6 | butuh @tanstack/react-query |
 | @tanstack/react-query | 5.102.2 | — |
-| @virtuals-protocol/acp-node-v2 | 0.1.12 | peer deps: viem, @account-kit/infra (4.88.5) |
+| @virtuals-protocol/acp-node-v2 | 0.1.12 | peer deps: viem, @account-kit/infra (4.88.5). Terpasang & dicocokkan 2026-09-07: `realpath sim/node_modules/@virtuals-protocol/acp-node-v2` → `.pnpm/@virtuals-protocol+acp-node-v2@0.1.12_...`, `package.json` `"version": "0.1.12"`. Permukaan chainId/alamat/token: api-facts §B.2 |
 | vitest | 4.1.11 | bukan 5.0.0-rc |
 | tailwindcss | latest 4.x | versi persis tidak diverifikasi → cek `pnpm view tailwindcss version` saat install |
 
