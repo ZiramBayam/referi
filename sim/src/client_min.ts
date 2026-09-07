@@ -274,8 +274,17 @@ export function parseDeliverableText(
   return { text: raw, source: "env" };
 }
 
-/** Nama direktori artefak deliverable (ADR-019 keputusan 2: `DELIVERABLE_DIR`). */
-const DELIVERABLE_DIR_PARTS = ["demo", "deliverables"] as const;
+/**
+ * Direktori artefak deliverable, default `demo/deliverables` relatif AKAR REPO.
+ *
+ * Ditimpa lewat `DELIVERABLE_DIR` — nama, default, dan penjangkaran-ke-akar-repo yang SAMA
+ * dengan yang dibaca `agent/` (ADR-019 keputusan 2, `vault_client.configured_deliverable_dir`).
+ * Penulis dan pembaca artefak yang sama WAJIB memakai satu variabel: kalau hanya pembacanya
+ * yang bisa dipindah, `make demo` yang menulis ke direktori kerja sendiri akan membuat agen
+ * menolak menilai job (REFUSE) karena teksnya "tidak ada".
+ */
+const DELIVERABLE_DIR_ENV = "DELIVERABLE_DIR";
+const DEFAULT_DELIVERABLE_DIR = "demo/deliverables";
 
 /** Batas percobaan baca ulang state setelah sebuah transaksi ter-mining. */
 const READ_RETRIES = 12;
@@ -399,7 +408,8 @@ function log(event: string, fields: Record<string, unknown> = {}): void {
  */
 function writeDeliverableArtifact(jobId: bigint, text: string): { path: string; shaKeccak: Hex } {
   const id = jobId.toString();
-  const dir = join(REPO_ROOT, ...DELIVERABLE_DIR_PARTS);
+  const configured = configValue(DELIVERABLE_DIR_ENV, DEFAULT_DELIVERABLE_DIR);
+  const dir = isAbsolute(configured) ? configured : join(REPO_ROOT, configured);
   mkdirSync(dir, { recursive: true });
   const shaKeccak = keccak256(toHex(text));
   const path = join(dir, `${id}.json`);

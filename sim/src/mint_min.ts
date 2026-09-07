@@ -45,11 +45,22 @@ import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 
 const CHAIN = baseSepolia;
+const CHAIN_ID = baseSepolia.id; // 84532
 const DEFAULT_RPC_URL = "https://sepolia.base.org";
-const ACP_ADDRESS = "0x0b93793923CD5De81850aF8604a233f3f24d461e" as Address;
 
-/** Nilai `paymentToken()` yang DIHARAPKAN; tetap diverifikasi ke chain sebelum mint. */
-const ESCROW_TOKEN_ADDRESS = "0xECc22a8F6fD62388498fBa19813E214605a2BDb3" as Address;
+/**
+ * ACP default = Base Sepolia, bisa ditimpa lewat `ACP_ADDRESS` (nama yang sama seperti
+ * `.env.example` dan `client_min.ts`) supaya alur yang sama bisa dijalankan di Anvil lokal
+ * terhadap mock. chainId TIDAK ikut berubah: node lokal WAJIB `--chain-id 84532`.
+ */
+const DEFAULT_ACP_ADDRESS = "0x0b93793923CD5De81850aF8604a233f3f24d461e" as Address;
+
+/**
+ * Nilai `paymentToken()` yang diharapkan SAAT kita memang berbicara dengan ACP Base Sepolia.
+ * Token yang benar-benar di-mint SELALU jawaban `paymentToken()` kontrak ACP — konstanta ini
+ * hanya asersi, tidak pernah menjadi sumber alamat.
+ */
+const DEFAULT_ESCROW_TOKEN_ADDRESS = "0xECc22a8F6fD62388498fBa19813E214605a2BDb3" as Address;
 
 /** 10 USDC (6 desimal) — cukup untuk job A (1) + job B (1) + job C (2) dengan sisa. */
 const DEFAULT_MINT_RAW = 10_000_000n;
@@ -111,6 +122,15 @@ function configValue(name: string, fallback: string): string {
   return fromFile && fromFile.trim() ? fromFile.trim() : fallback;
 }
 
+/** Alamat dari env/.env, bentuknya divalidasi sebelum satu panggilan RPC pun dikirim. */
+function addressConfig(name: string, fallback: Address): Address {
+  const raw = configValue(name, fallback);
+  if (!/^0x[0-9a-fA-F]{40}$/.test(raw)) {
+    throw new Error(`${name}="${raw}" bukan alamat EVM (0x + 40 digit hex)`);
+  }
+  return raw as Address;
+}
+
 const secrets: string[] = [];
 
 function loadPrivateKey(name: string): Hex {
@@ -149,8 +169,18 @@ function parseAmountRaw(raw: string | undefined): bigint {
 async function main(): Promise<void> {
   const amountRaw = parseAmountRaw(process.env.MINT_RAW);
   const rpcUrl = configValue("RPC_URL", DEFAULT_RPC_URL);
+  const acpAddress = addressConfig("ACP_ADDRESS", DEFAULT_ACP_ADDRESS);
 
   const publicClient = createPublicClient({ chain: CHAIN, transport: http(rpcUrl) });
+
+  // RPC yang menunjuk rantai lain = mint ke tempat yang salah. Dicek sebelum kunci dimuat.
+  const nodeChainId = await publicClient.getChainId();
+  if (nodeChainId !== CHAIN_ID) {
+    throw new Error(
+      `RPC ${rpcUrl} melayani chainId ${nodeChainId}, sedangkan skrip ini terikat ${CHAIN_ID}. ` +
+        `Anvil lokal WAJIB dijalankan dengan --chain-id ${CHAIN_ID}.`,
+    );
+  }
 
   // PENANDA TANGAN: wallet agen (satu-satunya yang punya ETH untuk gas dan tidak berperan
   // sebagai client/provider di alur job). `mint` tanpa kontrol akses → siapa pun boleh.
@@ -158,21 +188,26 @@ async function main(): Promise<void> {
   // PENERIMA: wallet yang nanti menandatangani `fund`, diturunkan dari kuncinya sendiri.
   const recipient: Address = privateKeyToAccount(loadPrivateKey("CLIENT_PRIVATE_KEY")).address;
 
+  // Token yang di-mint = jawaban kontrak, selalu. Asersi terhadap konstanta hanya berlaku bila
+  // ACP-nya memang ACP Base Sepolia; pada ACP yang DITIMPA (mock di Anvil) tidak ada konstanta
+  // yang bisa dibandingkan, dan mengarang salah satu justru yang berbahaya.
   const paymentToken = (await publicClient.readContract({
-    address: ACP_ADDRESS,
+    address: acpAddress,
     abi: ACP_ABI,
     functionName: "paymentToken",
   })) as Address;
-  if (paymentToken.toLowerCase() !== ESCROW_TOKEN_ADDRESS.toLowerCase()) {
+  const onDefaultAcp = acpAddress.toLowerCase() === DEFAULT_ACP_ADDRESS.toLowerCase();
+  if (onDefaultAcp && paymentToken.toLowerCase() !== DEFAULT_ESCROW_TOKEN_ADDRESS.toLowerCase()) {
     throw new Error(
-      `paymentToken() ACP = ${paymentToken}, bukan ${ESCROW_TOKEN_ADDRESS} — token escrow berubah; ` +
+      `paymentToken() ACP = ${paymentToken}, bukan ${DEFAULT_ESCROW_TOKEN_ADDRESS} — token escrow berubah; ` +
         "dihentikan sebelum mint apa pun",
     );
   }
 
   log("config", {
-    chainId: CHAIN.id,
+    chainId: CHAIN_ID,
     rpc: rpcUrl,
+    acp: acpAddress,
     token: paymentToken,
     minter: minter.address,
     recipient,
