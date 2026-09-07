@@ -40,7 +40,28 @@ Alamat:
   ACP hanya menarik token ini di `fund`; saldo USDC Circle TIDAK bisa dipakai. Token ini punya
   `mint(address,uint256)` TANPA kontrol akses (selector `0x40c10f19` ada di bytecode; dibuktikan di fork: pemanggil
   acak berhasil mint 100 USDC) → tidak butuh faucet Circle. Sama untuk bscTestnet; Base mainnet = USDC Circle asli.
-- `platformTreasury()` Base Sepolia = `0xb3bdEdda2050a3615B73bB9a2684946eC38B5375`. `jobCounter()` = 408 (3 Sep 2026).
+- `platformTreasury()` Base Sepolia = `0xb3bdEdda2050a3615B73bB9a2684946eC38B5375`. `jobCounter()` = 408 (3 Sep 2026); dibaca ulang **422** pada 2026-09-07
+  (`cast call 0x0b93793923CD5De81850aF8604a233f3f24d461e "jobCounter()(uint256)" --rpc-url https://sepolia.base.org`).
+  Angka ini SNAPSHOT yang naik terus (chain publik, bukan hanya kita yang memakainya) — jangan pernah dijadikan konstanta,
+  ekspektasi tes, atau "bukti" apa pun; yang stabil hanya semantiknya di butir berikut.
+- **Semantik `jobCounter()` — TERVERIFIKASI 2026-09-07 dari sumber TERVERIFIKASI, bukan dari nama.** `AgenticCommerceV3.sol`
+  hasil `curl` Sourcify (perintah di kepala §A; sha256 file dicek ulang = `3b47cdbc…a508cddb`, 632 baris → cocok dengan
+  yang tercatat di atas): deklarasi `uint256 public jobCounter;` (`:85`, komentar aslinya "Monotonically increasing job ID
+  counter") dan satu-satunya penulisnya `uint256 jobId = ++jobCounter;` di `createJob` (`:345`) — **pre-increment**, jadi
+  `jobCounter()` = id job **TERAKHIR** yang dibuat (= jumlah job yang pernah dibuat), job pertama ber-id **1**, dan nilainya
+  **0** sebelum ada job. Tidak ada jalur yang menurunkannya. Konsisten dengan penjaga validitas di 8 tempat:
+  `if (jobId == 0 || jobId > jobCounter) revert InvalidJob();`.
+- **Divergensi harness SENGAJA: `contracts/test/mocks/AgenticCommerce.sol` TIDAK mengimplementasikan `jobCounter()`.**
+  Mock hanya punya `uint256 public nextJobId = 1` (`:157`) dengan `jobId = nextJobId++` (`:255`). Akibat yang harus disadari:
+  kode yang memanggil `jobCounter()` HIJAU di Base Sepolia tapi **REVERT di Anvil** (mock tidak punya fallback) — persis saat
+  `make demo`. Dijaga `agent/tests/test_acp_mock_divergence.py`, yang MERAH pada pemanggil pertama di `agent/agent/` atau `sim/src/`.
+  KOREKSI atas alasan yang ditulis di NatSpec mock (`:143-149`), supaya dokumen fakta ini tidak mengunci tebakan: butir
+  "SEMANTIK BERBEDA" benar, tetapi butir "`nextJobId - 1` ADALAH TEBAKAN, BUKAN FAKTA … underflow/merevert" sudah TIDAK
+  berlaku sejak butir di atas diverifikasi. Pada kontrak asli DAN mock hari ini keduanya mulai dari id 1 dan naik satu-satu,
+  jadi `nextJobId - 1 == jobCounter` secara identik, dan `nextJobId` minimal 1 sehingga `nextJobId - 1` = 0 (bukan underflow) —
+  sama dengan `jobCounter()` = 0 saat belum ada job. Yang MASIH menopang keputusan absen hanyalah fakta polos bahwa mock tidak
+  mengekspos fungsi itu, plus penjaga di atas; bukan lagi "semantiknya belum diketahui". Kesetaraan ini TIDAK memberi izin
+  memanggil `jobCounter()` dari kode produksi — penjaga tetap berlaku sampai ada keputusan lain.
 
 Fungsi (ABI paket + dikonfirmasi ke chain — PERHATIKAN `fund` punya `expectedBudget`, berbeda dari teks EIP):
 ```
