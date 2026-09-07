@@ -307,7 +307,7 @@ Jangan menilai dari `docs/spec.md` saja — berikut yang belum berjalan hari ini
 
 | Belum hidup | Bukti |
 |---|---|
-| `make demo` | `Makefile:43-44` mencetak `Belum tersedia.` — rantai demo dijalankan lewat perintah eksplisit (lihat "Reproduksi") |
+| ~~`make demo`~~ | **SUDAH HIDUP** sejak commit `a03e294` — menjalankan §7 langkah 1-4 dari nol di Anvil lokal. Yang masih belum: varian destruktif KEDUA (mode aman) — butir 19 |
 | x402 fee di muka (ADR-004) | gerbang 402-nya ADA (`agent/agent/payment_402.py`), tetapi **belum dikonsumsi jalur job** — butir 23 |
 | `MemoryGateHook` | tidak ada di `contracts/src/` (hanya `EvaluatorVault.sol`, `IACP.sol`); hook butuh whitelist admin Virtuals (ADR-001) |
 | Rubric LLM | dipotong; hanya cek deterministik yang jalan (`agent/agent/checks/`: `format`, `links`, `chain`) |
@@ -407,13 +407,18 @@ cap. Kontrak berfungsi sebagai **papan pengumuman yang bisa dibaca siapa pun**, 
 `mint:client` — **nol tes**. Jadi satu-satunya kode yang menyentuh SDK Virtuals punya **nol tes otomatis**;
 yang menjaganya hanyalah rantai on-chain yang dijalankan tangan. `forge test` dan `uv run pytest` nyata.
 
-### 19. Tes destruktif belum punya artefak di repo
+### 19. Tes destruktif: SATU varian kini beroteomasi, varian kedua belum
 
-Tabel tes destruktif di bawah adalah bagian yang paling menentukan penilaian, dan **buktinya belum ada di
-repo publik**: tidak ada skrip yang menjalankannya (`make demo` mencetak `Belum tersedia.`,
-`Makefile:43-44`), tidak ada direktori `logs/`, tidak ada fixture, dan klaim "md5 identik sebelum/sesudah"
-tidak disertai berkas pendamping. Yang belum ada bukan sekadar otomasinya — **bukti tertulisnya juga belum
-ada**. Yang bisa diperiksa pihak ketiga hari ini adalah bagian on-chain-nya (butir 20), bukan varian Anvil.
+Sebagian batasan ini sudah dicabut sejak commit `a03e294`. Yang **sudah** ada: `make demo` menjalankan §7
+langkah 1-4 dari nol di Anvil lokal dan langkah 4-nya adalah varian destruktif pertama — vault segar +
+memori kosong, sehingga job C yang DITOLAK saat memori ada menjadi **lolos** saat memori tidak ada, pada
+budget yang IDENTIK. Dua eksekusi berturut-turut memberi ringkasan identik.
+
+Yang **masih belum** ada, dan ini yang menahan butir ini tetap berdiri: varian destruktif **kedua** (root
+on-chain non-nol + `memory.db` dihapus → **mode aman**, nol `postVerdict`, job menggantung sampai
+`expiredAt`) belum diotomasi. Juga belum ada: direktori `logs/`, fixture, dan berkas pendamping untuk klaim
+"md5 identik sebelum/sesudah" pada tabel di bawah. Jadi tabel tes destruktif itu **masih** laporan untuk
+baris mode amannya, sementara baris degradasinya kini bisa Anda jalankan sendiri dengan satu perintah.
 
 ### 20. Pihak ketiga tidak bisa mengulang rantai A/B/C pada vault ini
 
@@ -862,7 +867,7 @@ JobCompleted`) beserta enam hash transaksinya terdokumentasi di `deployments/pip
 ```
 make doctor    # cetak versi toolchain, exit 1 bila tidak cocok docs/versions.md
 make test      # forge test + uv run pytest + pnpm -r test (yang ketiga kosong — Batasan butir 18)
-make demo      # BELUM TERSEDIA (Makefile:43-44)
+make demo      # rantai §7 langkah 1-4 dari NOL di Anvil lokal (~2m20s), ringkasan deterministik
 ```
 
 `make doctor` membaca `node`/`forge` dari PATH yang hanya dimuat shell interaktif — jalankan dari terminal
@@ -890,11 +895,21 @@ cd agent && uv run python -m agent.memory_export --check /tmp/mem.json
 kerusakan: invokasi pertama melahirkan `memory.db` di tengah jalan, sehingga mode yang direncanakan
 (`naive`) tidak lagi sama dengan mode yang dibaca sesaat sebelum menandatangani (`normal`), dan penjaga
 `MODE_DRIFT` menolak bertransaksi — **nol tx, fail-closed**. Invokasi kedua atas job yang sama berjalan
-sampai selesai dan keluar 0. Anda bisa melewati exit 4 itu dengan melahirkan DB-nya lebih dulu:
+sampai selesai dan keluar 0.
+
+**Exit 4 itu TIDAK bisa dilewati dengan melahirkan DB lebih dulu.** README versi sebelumnya menyarankan
+`memory_export --db … --out …` untuk itu; resep tersebut **tidak bisa dijalankan**, karena alat ekspor
+sengaja menolak membuat DB baru (lihat butir 7):
 
 ```
-cd agent && uv run python -m agent.memory_export --db ./data/<chain>/memory.db --out /tmp/mem.json
+$ cd agent && uv run python -m agent.memory_export --db ./data/baru/memory.db --out /tmp/mem.json
+GAGAL: MemoryExportError: DB memori tidak ditemukan: ./data/baru/memory.db — jalankan agen dulu, atau
+tunjuk file yang ada dengan --db (alat ini sengaja TIDAK membuat DB baru)
 ```
+
+Jadi jalannya memang **menjalankan agen dua kali**: invokasi pertama melahirkan DB-nya dan keluar 4 dengan
+nol transaksi, invokasi kedua menghasilkan verdict. `make demo` melakukan persis itu dan mencetaknya apa
+adanya (`agent.retry … firstExit=4`), bukan menyembunyikannya.
 
 Ini diputuskan dan diukur di **ADR-026** (keputusan 6 mewajibkan README menyebutkannya), dan konsekuensinya
 nol byte on-chain: root, depth, dan cap yang diumumkan sama saja pada kedua jalur.
@@ -909,11 +924,11 @@ insiden) dan `beta` (`PROVIDER2_PRIVATE_KEY` — provider bersih):
 
 ```
 # provider BERSIH → depth sampling → dua bagian pertama saja → LULUS
-PROVIDER_SLOT=beta  BUDGET_RAW=250000 DELIVERABLE_FILE=demo/deliverables/421.json \
+PROVIDER_SLOT=beta  BUDGET_RAW=250000 DELIVERABLE_FILE=sim/scenarios/depth-demo.md \
   pnpm --filter sim run job:min
 
 # provider BERISIKO (2 insiden) → depth full → bagian ketiga terbaca → DITOLAK
-PROVIDER_SLOT=alpha BUDGET_RAW=250000 DELIVERABLE_FILE=demo/deliverables/422.json \
+PROVIDER_SLOT=alpha BUDGET_RAW=250000 DELIVERABLE_FILE=sim/scenarios/depth-demo.md \
   pnpm --filter sim run job:min
 ```
 
