@@ -1,11 +1,7 @@
 import { loadDeliverable } from "../../lib/data.js";
 import PanelForm from "./PanelForm.jsx";
 import MemoryControl from "./MemoryControl.jsx";
-
-// DEMO_MODE dibaca DI SERVER. Tombol hapus memori tidak pernah dikirim ke browser bila
-// nilainya bukan "1": komponennya tidak dirender sama sekali, jadi tidak ada penanda apa
-// pun di HTML yang bisa dibalik dari sisi klien.
-const DEMO_MODE = process.env.DEMO_MODE === "1";
+import { demoModeEnabled } from "../../lib/demoMode.js";
 
 // Alamat server hapus memori milik `agent/` (proses terpisah, port 8010 — BUKAN port
 // gerbang 402). Dibaca di server pada setiap permintaan bersama gerbang DEMO_MODE,
@@ -19,6 +15,12 @@ const RESET_API = process.env.NEXT_PUBLIC_AGENT_RESET_API || "http://127.0.0.1:8
 export const dynamic = "force-dynamic";
 
 export default async function PanelPage() {
+  // DEMO_MODE dibaca DI SERVER, per permintaan (bukan di lingkup modul: di sana nilainya
+  // ikut beku pada `next build` meski ada `force-dynamic`). Tombol hapus memori tidak
+  // pernah dikirim ke browser bila gerbangnya mati — komponennya tidak dirender sama
+  // sekali, jadi tidak ada penanda apa pun di HTML yang bisa dibalik dari sisi klien.
+  const demoMode = demoModeEnabled();
+
   const samples = [];
   for (const jobId of ["418", "421", "422"]) {
     const d = await loadDeliverable(jobId);
@@ -47,7 +49,7 @@ export default async function PanelPage() {
 
       <PanelForm samples={samples} />
 
-      <MemoryControl enabled={DEMO_MODE} resetApi={RESET_API} />
+      <MemoryControl enabled={demoMode} resetApi={RESET_API} />
     </div>
   );
 }

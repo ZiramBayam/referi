@@ -27,6 +27,8 @@
 // Rute ini TIDAK menghapus apa pun sendiri. Ia tidak menyentuh disk, tidak menyentuh
 // chain, dan tidak menyimpan apa pun.
 
+import { demoModeEnabled } from "../../../../../lib/demoMode.js";
+
 // Gerbang DEMO_MODE harus dibaca PER PERMINTAAN, bukan saat build (sama seperti
 // `panel/page.jsx`). Tanpa ini nilainya beku pada `next build`.
 export const dynamic = "force-dynamic";
@@ -93,7 +95,7 @@ function crossSiteReason(request) {
 export async function POST(request) {
   // DEMO_MODE mati → 404, kode alasan yang sama dengan sisi agen. Bukan 403: 403
   // mengakui rutenya ada.
-  if (process.env.DEMO_MODE !== "1") {
+  if (!demoModeEnabled()) {
     return Response.json({ ok: false, reason: "not_found" }, { status: 404 });
   }
 
