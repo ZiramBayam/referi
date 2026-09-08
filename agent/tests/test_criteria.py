@@ -549,3 +549,58 @@ def test_depthDemo_defectSitsBeyondTheSamplingLimit(tmp_path):
     assert failed.pattern_id == fmt.PATTERN_PLACEHOLDER
     assert failed.section_index is not None
     assert failed.section_index >= base.SAMPLING_SECTION_LIMIT
+
+
+# ----------------------------------------------------------------------
+# VARIAN A (task 3.3b) — cacat KASAR pada berkas yang benar-benar diserahkan
+#
+# `sim/scenarios/coarse-defect.md` adalah `depth-demo.md` dengan SATU perbedaan:
+# cacatnya dipindah dari bagian ke-3 ke bagian PERTAMA. Itu yang membuat varian A
+# jujur: pada memori yang dihapus + root on-chain nol, agen turun ke `sampling` dan
+# cacat HALUS lolos — tetapi cacat KASAR tetap ditolak, karena ia duduk di dalam
+# jendela yang tetap dibaca. Tanpa berkas kedua ini, `make demo` hanya
+# mementaskan varian yang dijamin menang.
+# ----------------------------------------------------------------------
+
+COARSE_DEFECT_PATH = REPO_ROOT / "sim" / "scenarios" / "coarse-defect.md"
+
+
+def coarse_defect_text() -> str:
+    return COARSE_DEFECT_PATH.read_text(encoding="utf-8")
+
+
+def test_coarseDefect_isDepthDemoWithTheDefectMovedForward():
+    """Kedua berkas WAJIB berbeda hanya pada LETAK cacatnya, bukan pada isinya.
+
+    Kalau mereka berbeda pada hal lain, perbandingan job D vs job E berhenti
+    mengukur kedalaman dan mulai mengukur dua dokumen yang kebetulan berbeda.
+    """
+    coarse = base.parse_document(coarse_defect_text())
+    subtle = base.parse_document(depth_demo_text())
+    assert [s.heading for s in coarse.sections] == [s.heading for s in subtle.sections]
+    assert len(coarse.sections) >= 3
+    assert "TODO" in coarse.sections[0].body
+    assert "TODO" not in coarse.sections[-1].body
+    assert "TODO" not in subtle.sections[0].body
+    assert "TODO" in subtle.sections[-1].body
+
+
+def test_coarseDefect_rejectedAtBothDepths_soVarianAIsNotAGuaranteedWin(tmp_path):
+    description = sim_job_description()
+    text = coarse_defect_text()
+    for job_id, depth in ((811, DEPTH_SAMPLING), (812, DEPTH_FULL)):
+        result = evaluate(tmp_path, job_id, text, depth=depth, description=description)
+        assert result.passed is False, depth
+        assert result.verdict_kind == C.VERDICT_REJECT, depth
+        assert result.failed_checks == ("format",), depth
+
+
+def test_coarseDefect_sitsInsideTheSamplingWindow(tmp_path):
+    result = evaluate(
+        tmp_path, 813, coarse_defect_text(), depth=DEPTH_SAMPLING, description=sim_job_description()
+    )
+    failed = result.failed_results[0]
+    assert failed.check_id == base.CHECK_FORMAT
+    assert failed.criterion_id == C.CRITERION_PLACEHOLDER
+    assert failed.section_index is not None
+    assert failed.section_index < base.SAMPLING_SECTION_LIMIT
