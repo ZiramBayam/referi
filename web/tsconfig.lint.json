@@ -34,5 +34,8 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true
   },
+  // `test/` sengaja DI LUAR cakupan: berkasnya mengimpor `node:test`/`node:assert`/`node:fs`,
+  // yang tanpa `@types/node` (paket di luar docs/versions.md) hanya menghasilkan TS2591.
+  // Berkas itu tetap dieksekusi sungguhan oleh `pnpm --filter web test`.
   "include": ["src"]
 }
