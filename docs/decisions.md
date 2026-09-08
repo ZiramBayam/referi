@@ -919,3 +919,42 @@ Konsekuensi:
 (!) Bytecode vault yang dipakai demo lokal dibangun dari sumber HEAD, sedangkan vault Sepolia beku
     dibangun dari commit 8d3e596 dan sejak itu `sweepToken` masuk ke sumber. Keduanya SENGAJA tidak
     identik; `deployments/84532.json` sudah memuat catatan bytecode yang menjelaskannya.
+
+
+## ADR-030 Penutupan task warisan watcher & pembekuan kode H-1
+Tanggal: 2026-09-08. Status: diterima. Aditif; TIDAK mengubah ADR-016/022/028 dan tidak mengurangi scope §7.
+CATATAN NOMOR: usulan @agent-product-manager menyebut ini "ADR-029"; nomor itu sudah terpakai beberapa jam
+sebelumnya untuk batas entrypoint deploy, jadi putusan ini menjadi ADR-030.
+
+Pemicu: 8 Sep sore, H-1 dari hard stop rekam video (ADR-028 kep. 2), video belum ada sama sekali. Tiga task
+terbuka (2.4, 3.3c, dan SEDANG-2 review keamanan 4.1) ternyata menunjuk SATU lubang yang sama — agen tidak
+punya anggaran waktu terhadap `expiredAt + EVALUATOR_GRACE_PERIOD` — dan 2.4 (b)(c)(d) menunjuk
+`agent/agent/watcher.py` yang ADR-022 kep. 3 batalkan.
+
+Fakta yang diverifikasi 8 Sep sebelum putusan diambil: `grep -c EVALUATOR_GRACE_PERIOD
+agent/agent/vault_client.py` -> 0; `grep -rn GRACE agent/agent/ agent/tests/` -> nol hasil;
+`agent/agent/watcher.py` tidak ada. Jadi AC 2.4 (b)(c)(d) menuntut bukti atas kode yang memang tidak
+pernah ditulis, bukan atas kode yang gagal.
+
+Keputusan:
+1. **2.4 ditutup DIGANTI** oleh 2.4-min/2.4a-fix/2.4b/2.5; AC (b)(c)(d) dicabut sebagai warisan desain
+   yang sudah mati. AC (a) sudah terbukti di chain lewat rantai 418-422.
+2. Lubang anggaran waktu diakui sebagai SATU cacat SEDANG dengan SATU tempat tinggal: **README butir 32**.
+   **3.3c ditunda pasca-submission** — menyentuh `vault_client.py` di H-1 menuntut ronde review keamanan
+   baru dan mempertaruhkan `make demo` yang sudah deterministik, demi nol langkah §7.
+3. **3.2 induk ditutup DIGANTI** oleh 3.2-min; **2.5d (a)(b)(d) ditutup DITERIMA** (mengeraskan harness
+   mock terhadap regresi masa depan, sementara `contracts/` beku sampai submission).
+4. **3.9 diserap 4.2** — satu sesi juri, satu laporan. Dua sesi berarti menjalankan naskah yang sama dua
+   kali untuk dua berkas.
+5. **Pembekuan kode** sesudah 4.1b tertutup: nol perubahan di `agent/`, `contracts/`, `web/`, `sim/`
+   kecuali menutup temuan KRITIS/TINGGI.
+6. **Take-1 video direkam SEBELUM gerbang juri**, memakai state beku. Submission tanpa video bernilai NOL,
+   bukan 82 (ADR-028 kep. 3).
+
+Konsekuensi:
+(+) Sisa waktu mengalir ke video dan laporan juri — dua artefak yang benar-benar dinilai.
+(-) Agen tetap bisa menggantung pada RPC yang berhenti memproduksi blok. Ini DIAKUI di README, tidak
+    diperbaiki, dan tidak boleh diklaim sudah beres di video maupun di post.
+(=) Nol scope bertambah; lima task ditutup tanpa satu pun dari lima langkah §7 hilang.
+(!) Seluruh penutupan di atas adalah putusan PRIORITAS, BUKAN bukti bahwa pekerjaannya selesai. Bedanya
+    ditulis eksplisit di tiap baris TASKS.md supaya tidak terbaca sebagai penyusutan scope diam-diam.
