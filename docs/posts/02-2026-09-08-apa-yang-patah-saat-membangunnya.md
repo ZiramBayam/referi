@@ -136,7 +136,7 @@ string melainkan fd direktori akar. Review ulang: nol KRITIS, nol TINGGI.
 Yang **tetap** kami sebut sebagai risiko, karena "lulus review" bukan "tidak ada sisa": proksi Next
 membatasi **host** target ke loopback tetapi **tidak portnya**, dan docstring penghapusnya mengakui sendiri
 sisa balapan antara `open` dan `unlink` — dampaknya terbatas pada kejujuran laporan, karena namanya tidak
-bisa keluar dari direktori yang dipegang fd. Riwayat penuhnya ada di butir 36 README, ditulis sebagai
+bisa keluar dari direktori yang dipegang fd. Riwayat penuhnya ada di butir 36 `docs/limitations.md`, ditulis sebagai
 "gagal → apa yang gagal → apa yang menutupnya → apa yang masih diterima", bukan sebagai fitur yang selalu
 aman.
 
@@ -146,8 +146,8 @@ atas memori **demo** (`agent/data/demo/`). Ia tidak pernah bisa menyentuh `agent
 
 ## Yang MASIH belum beres
 
-Ini bagian yang paling ingin kami tulis lebih pendek, dan justru karena itu ia ditulis penuh di README
-pada bagian "Batasan & asumsi kepercayaan", di atas pitch mana pun:
+Ini bagian yang paling ingin kami tulis lebih pendek, dan justru karena itu ia ditulis penuh di
+`docs/limitations.md`, dan diringkas di bagian "Batasan & asumsi kepercayaan" README:
 
 - **Insentifnya belum diperbaiki.** Fee hanya cair saat `Completed`; wasit ini masih dibayar hanya kalau
   ia meluluskan. Fee di muka (ADR-004) adalah rancangan, dan gerbang 402 yang ada belum dikonsumsi jalur

@@ -94,8 +94,8 @@ hijaunya bukan hijau palsu.
 Insentifnya belum diperbaiki: `evaluatorFeeBP` = 5% dan fee hanya cair saat `Completed`, jadi wasit ini
 masih dibayar hanya kalau ia meluluskan — persis bias yang kami kritik. Evaluator tidak mempertaruhkan
 apa pun (`MIN_BOND` = 0), dan `challenge`/`resolve` adalah stub, sehingga jendela 120 detik itu murni
-latensi: verdict salah tidak bisa dibatalkan siapa pun. Semuanya tertulis lengkap di bagian "Batasan &
-asumsi kepercayaan" di README, di atas pitch mana pun.
+latensi: verdict salah tidak bisa dibatalkan siapa pun. Semuanya tertulis lengkap di
+`docs/limitations.md`, dan diringkas di bagian "Batasan & asumsi kepercayaan" README.
 
 Repo, kontrak, dan seluruh tx-nya publik — dan sejak 8 Sep kontraknya **terverifikasi di Sourcify dengan
 `exact_match`** (creation dan runtime), diverifikasi dari sumber commit `8d3e596`, bukan dari HEAD yang

@@ -43,7 +43,7 @@ gate at all, run A5 without `DEMO_MODE=1` — the entire script still works.
 
 > Scope note, not a safety note: that surface once carried a **BLOCK** verdict from the security review.
 > The block has since been **lifted** — the re-review returned zero CRITICAL and zero HIGH, and the last
-> MEDIUM (TOCTOU on ancestor path components) was closed via the `dir_fd` path. README limitation 36 now
+> MEDIUM (TOCTOU on ancestor path components) was closed via the `dir_fd` path. `docs/limitations.md` limitation 36 now
 > records the full history, including the LOW risk still accepted. It is left out of TAKE-1 because the
 > script is full at 4:35 and the control was never rehearsed, not because it is unsafe. On camera: do not
 > comment on it in either direction.
@@ -95,7 +95,7 @@ gate at all, run A5 without `DEMO_MODE=1` — the entire script still works.
 | 1:45 | Point the cursor at `sample_size 0` | same field | "One piece of honesty we wrote into the bundle ourselves: `sample_size` is zero. The **number** two hundred and fifty thousand is a team constant divided by four — what is learned from memory is the **risk level**, and the risk level is what picks the divisor. Memory here can only **tighten** the cap, never loosen it." |
 | 1:57 | Point at the `memory_root` field and the `tx VerdictPosted` link in the top card | `memory_root 0xcfdab1b0…`, tx link | "And this reasoning is hash-bound: everything on this page is the bundle that gets keccak-hashed into the `reasonHash` in that transaction." |
 
-> On-screen evidence: bundle `web/public/verdicts/420.json`; README item 8 (`basis: baseline-constant`,
+> On-screen evidence: bundle `web/public/verdicts/420.json`; `docs/limitations.md` item 8 (`basis: baseline-constant`,
 > `sample_size: 0`), item 17 (enforcement lives in the agent; the contract only publishes the cap).
 
 ### Section 4 — Identical text, different verdict + on-chain trace (2:05 – 2:45, 40 s)
@@ -107,14 +107,14 @@ gate at all, run A5 without `DEMO_MODE=1` — the entire script still works.
 | 2:30 | Scroll slightly to the yellow "Kriteria yang TIDAK dinilai" (criteria that were NOT scored) card | `qualitative.0` + `unscored_reason` | "I should say this plainly: there is no qualitative scoring and no LLM anywhere in the path. Qualitative criteria are recorded as `unscored`, as-is." |
 | 2:37 | Switch to tab 4 (Blockscout, the vault's **Logs** page); point at the top entry: `MemoryRootUpdated` with root `0x999a9570…9b7d` (tx `0xe95910d2…5830`) | the vault log list with **decoded event names**: `MemoryRootUpdated`, `VerdictPosted`, `Finalized`, `ProviderCapSet` | "And here is the on-chain trail. The event name is readable — `MemoryRootUpdated` — because the contract is verified on Sourcify, `exact_match`, from commit `8d3e596`. This is the root that was announced **before** execution." |
 
-> On-screen evidence: README item 25 (the 421 vs 422 table plus four tx hashes), item 33 (`unscored`),
+> On-screen evidence: `docs/limitations.md` item 25 (the 421 vs 422 table plus four tx hashes), item 33 (`unscored`),
 > item 7 (the `MemoryRootUpdated` history), item 15 (Sourcify `exact_match` from commit `8d3e596`).
 >
 > **Why Blockscout and not BaseScan:** Blockscout imported the Sourcify verification, so the event names
 > actually render on camera; Etherscan/BaseScan does not import from Sourcify and verifying there needs an
 > API key this repo does not have — so we claim **nothing in either direction** about BaseScan's status
 > (`deployments/84532.json:32`). Valid alternative if you trust a terminal more than an explorer: run
-> `cast logs` over the blocks listed in README item 7 — but its output is raw topics, so the event name
+> `cast logs` over the blocks listed in `docs/limitations.md` item 7 — but its output is raw topics, so the event name
 > will not be visible on screen.
 
 ### Section 5 — Judge panel: try it yourself (2:45 – 3:15, 30 s)
@@ -139,16 +139,16 @@ gate at all, run A5 without `DEMO_MODE=1` — the entire script still works.
 | 4:00 | Highlight the `VARIAN B:` line | `MODE AMAN, 0 tx baru, nonce 89 -> 89, job menggantung sampai expiredAt, pulih dengan memory.db dari backup` — gloss: *safe mode, 0 new transactions, nonce unchanged 89 to 89, the job hangs until expiredAt, recovery by restoring memory.db from backup* | "That was on a fresh vault. On a vault that is already live, missing memory triggers **safe mode**: zero transactions — measured from the agent wallet's nonce, not just asserted — the job hangs until it expires, and the client gets a full refund." |
 
 > On-screen evidence: `make demo` output lines (`sim/src/demo.ts:902-949`); the safe-mode run is aborted if
-> its evidence does not appear (`sim/src/demo.ts:672-687`); the agent is invoked per job (README item 9).
+> its evidence does not appear (`sim/src/demo.ts:672-687`); the agent is invoked per job (`docs/limitations.md` item 9).
 > **Never** call variant A "naive mode": the mode label is `normal`; what shows the degradation is
-> `depth=sampling` and `cap=TANPA CAP` (ADR-026, README item 34).
+> `depth=sampling` and `cap=TANPA CAP` (ADR-026, `docs/limitations.md` item 34).
 
 ### Section 7 — Honesty + closing (4:10 – 4:35, 25 s)
 
 | Time | Action | Screen | Spoken |
 |---|---|---|---|
-| 4:10 | Open `README.md` in the editor or on GitHub, scroll to **"Batasan & asumsi kepercayaan"** (limitations & trust assumptions) | the numbered list is visible on screen | "Last, and this sits deliberately at the **very top** of the README, not in a footnote: this project lists its own limitations — a wrong verdict cannot be undone by anyone, the evaluator's bond today is zero, and funds that enter the vault are stuck permanently." |
-| 4:25 | Scroll to the "Reproduksi" (reproduction) section | the `make doctor` / `make test` / `make demo` block | "You can run all of it yourself: `make doctor`, `make test`, `make demo`. Public repo, MIT licence. Thank you." |
+| 4:10 | Open `README.md` in the editor or on GitHub, scroll to **"Batasan & asumsi kepercayaan"** (limitations & trust assumptions) | the numbered list is visible on screen (full 36-item list: `docs/limitations.md`) | "Last, and this is not a footnote: this project lists its own limitations — a summary in the README, the full thirty-six items in `docs/limitations.md` — a wrong verdict cannot be undone by anyone, the evaluator's bond today is zero, and funds that enter the vault are stuck permanently." |
+| 4:25 | Scroll to the "Cara menjalankan" (how to run) section | the `make doctor` / `make test` / `make demo` block | "You can run all of it yourself: `make doctor`, `make test`, `make demo`. Public repo, MIT licence. Thank you." |
 
 ---
 
@@ -156,14 +156,14 @@ gate at all, run A5 without `DEMO_MODE=1` — the entire script still works.
 
 | Do not say | Why | Say instead |
 |---|---|---|
-| "naive mode" for variant A | the mode label is `normal`; "naive" is only the first invocation log line, which ends in zero transactions (ADR-026, README item 34) | "`depth=sampling`, `cap=TANPA CAP`" |
-| "scores quality", "an LLM judges it", "AI rubric" | the LLM rubric was cut; qualitative criteria are recorded `unscored` (README item 33) | "deterministic `format`, `links`, and `chain` checks" |
-| "the evaluator stakes a bond" | `MIN_BOND` is 0 on the deployed contract (README items 1, 28) | "what is at stake today is zero — that is on the limitations list" |
-| "the challenge window protects you" | `challenge`/`resolve` are stubs; the 120-second window is pure latency, and a wrong verdict cannot be undone by anyone (README items 2, 26) | do not mention the window at all, except as a limitation |
-| "autonomous agent", "a watcher monitors the chain" | the agent is invoked per job with `--job-id` (ADR-022, README item 9) | "the agent runs per job, as a fresh process" |
+| "naive mode" for variant A | the mode label is `normal`; "naive" is only the first invocation log line, which ends in zero transactions (ADR-026, `docs/limitations.md` item 34) | "`depth=sampling`, `cap=TANPA CAP`" |
+| "scores quality", "an LLM judges it", "AI rubric" | the LLM rubric was cut; qualitative criteria are recorded `unscored` (`docs/limitations.md` item 33) | "deterministic `format`, `links`, and `chain` checks" |
+| "the evaluator stakes a bond" | `MIN_BOND` is 0 on the deployed contract (`docs/limitations.md` items 1, 28) | "what is at stake today is zero — that is on the limitations list" |
+| "the challenge window protects you" | `challenge`/`resolve` are stubs; the 120-second window is pure latency, and a wrong verdict cannot be undone by anyone (`docs/limitations.md` items 2, 26) | do not mention the window at all, except as a limitation |
+| "autonomous agent", "a watcher monitors the chain" | the agent is invoked per job with `--job-id` (ADR-022, `docs/limitations.md` item 9) | "the agent runs per job, as a fresh process" |
 | "audited", "production-ready", "100% coverage", any performance number | no report produces them | — |
-| "paid the same whether it passes or rejects" | the up-front fee via x402 is an ADR-004 **design**, not a shipped feature (README items 14, 23; ADR-025 decision 3) | "we have not fixed the fee incentive yet, and that is the first item on the limitations list" |
-| "providers build trust through a good history" | the cap is one-way; it can only tighten (README item 8) | "memory can only tighten the cap" |
+| "paid the same whether it passes or rejects" | the up-front fee via x402 is an ADR-004 **design**, not a shipped feature (`docs/limitations.md` items 14, 23; ADR-025 decision 3) | "we have not fixed the fee incentive yet, and it is on our limitations list" |
+| "providers build trust through a good history" | the cap is one-way; it can only tighten (`docs/limitations.md` item 8) | "memory can only tighten the cap" |
 
 ## E. Must be said at least once
 
@@ -203,16 +203,16 @@ run other than the one named on screen.
 
 | Claim in the video | Evidence |
 |---|---|
-| five real jobs on Base Sepolia, 418–422 | `web/public/jobs.json`; tx links in the "tx VerdictPosted" column; README item 25 |
-| job 420 rejected while `Funded` because budget > cap | `/verdict/420` gate card; `JobRejected` tx `0x78a3a65d…989e` (README "Bukti on-chain") |
-| cap 250,000, `sample_size` 0, incidents 418 & 419 | bundle `web/public/verdicts/420.json`; README item 8 |
-| deliverable 421 == 422 byte for byte, different verdicts | `sha_keccak` `0x246071b3…0a51` in `demo/deliverables/421.json` & `422.json`; README item 25 |
-| `MemoryRootUpdated` for job 422, root `0x999a9570…9b7d` | tx `0xe95910d2…5830`; topic0 `0xc6028d32…7923` (README items 7 & 22) |
+| five real jobs on Base Sepolia, 418–422 | `web/public/jobs.json`; tx links in the "tx VerdictPosted" column; `docs/limitations.md` item 25 |
+| job 420 rejected while `Funded` because budget > cap | `/verdict/420` gate card; `JobRejected` tx `0x78a3a65d…989e` (`docs/evidence.md` "Rantai A → B → C") |
+| cap 250,000, `sample_size` 0, incidents 418 & 419 | bundle `web/public/verdicts/420.json`; `docs/limitations.md` item 8 |
+| deliverable 421 == 422 byte for byte, different verdicts | `sha_keccak` `0x246071b3…0a51` in `demo/deliverables/421.json` & `422.json`; `docs/limitations.md` item 25 |
+| `MemoryRootUpdated` for job 422, root `0x999a9570…9b7d` | tx `0xe95910d2…5830`; topic0 `0xc6028d32…7923` (`docs/limitations.md` items 7 & 22) |
 | the panel runs genuinely deterministic checks | `web/src/lib/checks.js`, `POST /api/evaluate`; parity guarded by `web/test/checks-parity.test.js` |
-| qualitative criteria `unscored`, zero LLM | `agent/agent/criteria.py:121-124`, locked by `agent/tests/test_criteria.py:336-337`; README item 33 |
+| qualitative criteria `unscored`, zero LLM | `agent/agent/criteria.py:121-124`, locked by `agent/tests/test_criteria.py:336-337`; `docs/limitations.md` item 33 |
 | identical budget, only the memory differs | line `[demo] claim step=C-vs-D` (`sim/src/demo.ts:902-908`) |
 | without memory: `depth=sampling`, `cap=TANPA CAP`, blatant defect still rejected | line `VARIAN A:` (`sim/src/demo.ts:929-935`) |
 | memory lost on a live vault → safe mode, zero tx | line `VARIAN B:` (`sim/src/demo.ts:946-949`); guard aborts at `sim/src/demo.ts:672-687` |
 | `make demo` only reads Sepolia, no funds/tx | `Makefile:50-54`; `sim/src/demo.ts:610-611`; before/after nonce in the `VARIAN B` line |
-| limitations are self-declared | `README.md` section "Batasan & asumsi kepercayaan" items 1, 4, 26 |
+| limitations are self-declared | `README.md` section "Batasan & asumsi kepercayaan" (summary); `docs/limitations.md` items 1, 4, 26 |
 | MIT licence | `LICENSE` |

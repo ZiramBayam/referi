@@ -37,7 +37,7 @@ butuh gerbangnya, jalankan A5 tanpa `DEMO_MODE=1` — seluruh naskah tetap berja
 > Ini catatan LINGKUP, bukan catatan keselamatan. Permukaan itu sempat diberi verdict **BLOKIR** oleh review
 > keamanan; **blokir itu sudah DICABUT** — review ulang mengembalikan nol KRITIS dan nol TINGGI, dan temuan
 > SEDANG terakhir (TOCTOU pada komponen leluhur path) ditutup lewat jalur `dir_fd`. Riwayat lengkapnya,
-> termasuk risiko RENDAH yang masih diterima, ada di README Batasan **butir 36**. Ia tetap ditinggalkan dari
+> termasuk risiko RENDAH yang masih diterima, ada di `docs/limitations.md` **butir 36**. Ia tetap ditinggalkan dari
 > TAKE-1 karena naskahnya sudah penuh di 4:35 dan tombolnya belum pernah dilatih — bukan karena ia tidak
 > aman. Di depan kamera: jangan mengomentarinya ke arah mana pun.
 
@@ -88,7 +88,7 @@ butuh gerbangnya, jalankan A5 tanpa `DEMO_MODE=1` — seluruh naskah tetap berja
 | 1:45 | Tunjuk `sample_size 0` dengan kursor | field yang sama | "Satu kejujuran yang kami tulis sendiri di bundelnya: `sample_size` nol. **Angka** dua ratus lima puluh ribu itu konstanta tim dibagi empat — yang dipelajari dari memori adalah **tingkat risikonya**, dan risk itulah yang memilih pembaginya. Memori di sini hanya bisa **mengetatkan** cap, tidak pernah melonggarkannya." |
 | 1:57 | Tunjuk field `memory_root` dan `tx VerdictPosted` di kartu atas | `memory_root 0xcfdab1b0…`, tautan tx | "Dan alasan ini terikat hash: seluruh isi halaman ini adalah bundel yang di-keccak menjadi `reasonHash` di transaksinya." |
 
-> Bukti di layar: bundel `web/public/verdicts/420.json`; README butir 8 (`basis: baseline-constant`,
+> Bukti di layar: bundel `web/public/verdicts/420.json`; `docs/limitations.md` butir 8 (`basis: baseline-constant`,
 > `sample_size: 0`), butir 17 (penegakan ada di agen, kontrak hanya menerbitkan cap).
 
 ### Bagian 4 — Teks identik, verdict berbeda + jejak on-chain (2:05 – 2:45, 40 dtk)
@@ -100,14 +100,14 @@ butuh gerbangnya, jalankan A5 tanpa `DEMO_MODE=1` — seluruh naskah tetap berja
 | 2:30 | Gulir sedikit ke kartu kuning "Kriteria yang TIDAK dinilai" | `qualitative.0` + `unscored_reason` | "Perlu saya sebut: tidak ada penilaian kualitatif dan tidak ada LLM di jalur mana pun. Kriteria kualitatif dicatat `unscored` apa adanya." |
 | 2:37 | Pindah ke tab 4 (Blockscout, halaman **Logs** vault), tunjuk entri paling atas: `MemoryRootUpdated` dengan root `0x999a9570…9b7d` (tx `0xe95910d2…5830`) | daftar log vault dengan **nama event terdekode**: `MemoryRootUpdated`, `VerdictPosted`, `Finalized`, `ProviderCapSet` | "Dan ini jejaknya di chain. Nama eventnya terbaca — `MemoryRootUpdated` — karena kontraknya terverifikasi di Sourcify, `exact_match`, dari commit `8d3e596`. Root inilah yang diumumkan **sebelum** eksekusi." |
 
-> Bukti di layar: README butir 25 (tabel 421 vs 422 + empat hash tx), butir 33 (`unscored`),
+> Bukti di layar: `docs/limitations.md` butir 25 (tabel 421 vs 422 + empat hash tx), butir 33 (`unscored`),
 > butir 7 (riwayat `MemoryRootUpdated`), butir 15 (Sourcify `exact_match` dari commit `8d3e596`).
 >
 > **Kenapa Blockscout, bukan BaseScan:** verifikasi Sourcify ditarik Blockscout sehingga nama event
 > benar-benar terlihat di kamera; Etherscan/BaseScan tidak mengimpor dari Sourcify dan verifikasi di sana
 > menuntut API key yang tidak ada di repo ini, jadi status di BaseScan **tidak kita klaim ke arah mana
 > pun** (`deployments/84532.json:32`). Alternatif yang sah bila Anda lebih percaya terminal daripada
-> explorer: jalankan `cast logs` sesuai blok yang README butir 7 sebutkan — tetapi keluarannya topic
+> explorer: jalankan `cast logs` sesuai blok yang `docs/limitations.md` butir 7 sebutkan — tetapi keluarannya topic
 > mentah, jadi nama eventnya tidak terlihat di layar.
 
 ### Bagian 5 — Panel juri: coba sendiri (2:45 – 3:15, 30 dtk)
@@ -132,16 +132,16 @@ butuh gerbangnya, jalankan A5 tanpa `DEMO_MODE=1` — seluruh naskah tetap berja
 | 4:00 | Sorot baris `VARIAN B:` | `MODE AMAN, 0 tx baru, nonce 89 -> 89, job menggantung sampai expiredAt, pulih dengan memory.db dari backup` | "Itu di vault segar. Di vault yang sudah hidup, memori yang hilang memicu **mode aman**: nol transaksi — diukur dari nonce wallet agen, bukan diucapkan — job menggantung sampai kedaluwarsa, client dapat refund penuh." |
 
 > Bukti di layar: baris keluaran `make demo` (`sim/src/demo.ts:902-949`); mode aman digugurkan run-nya
-> bila buktinya tidak muncul (`sim/src/demo.ts:672-687`); agen dipanggil per job (README butir 9).
+> bila buktinya tidak muncul (`sim/src/demo.ts:672-687`); agen dipanggil per job (`docs/limitations.md` butir 9).
 > **Jangan** menyebut varian A "mode naif": label modenya `normal`; yang menunjukkan degradasi adalah
-> `depth=sampling` dan `cap=TANPA CAP` (ADR-026, README butir 34).
+> `depth=sampling` dan `cap=TANPA CAP` (ADR-026, `docs/limitations.md` butir 34).
 
 ### Bagian 7 — Kejujuran + penutup (4:10 – 4:35, 25 dtk)
 
 | Waktu | Aksi | Layar | Ucapan |
 |---|---|---|---|
-| 4:10 | Buka `README.md` di editor/GitHub, gulir ke bagian **"Batasan & asumsi kepercayaan"** | daftar butir bernomor terlihat di layar | "Terakhir, dan ini sengaja ada di **paling atas** README, bukan di catatan kaki: proyek ini mendaftarkan batasannya sendiri — verdict yang salah tidak bisa dibatalkan siapa pun, bond evaluator hari ini nol, dan dana yang masuk vault terjebak permanen." |
-| 4:25 | Gulir ke bagian "Reproduksi" | blok `make doctor` / `make test` / `make demo` | "Semuanya bisa Anda jalankan sendiri: `make doctor`, `make test`, `make demo`. Repo publik, lisensi MIT. Terima kasih." |
+| 4:10 | Buka `README.md` di editor/GitHub, gulir ke bagian **"Batasan & asumsi kepercayaan"** | daftar butir bernomor terlihat di layar (daftar lengkap 36 butir: `docs/limitations.md`) | "Terakhir, dan ini bukan catatan kaki: proyek ini mendaftarkan batasannya sendiri — ringkasannya di README, daftar penuh tiga puluh enam butirnya di `docs/limitations.md` — verdict yang salah tidak bisa dibatalkan siapa pun, bond evaluator hari ini nol, dan dana yang masuk vault terjebak permanen." |
+| 4:25 | Gulir ke bagian "Cara menjalankan" | blok `make doctor` / `make test` / `make demo` | "Semuanya bisa Anda jalankan sendiri: `make doctor`, `make test`, `make demo`. Repo publik, lisensi MIT. Terima kasih." |
 
 ---
 
@@ -149,14 +149,14 @@ butuh gerbangnya, jalankan A5 tanpa `DEMO_MODE=1` — seluruh naskah tetap berja
 
 | Jangan ucapkan | Kenapa | Ganti dengan |
 |---|---|---|
-| "mode naif" untuk varian A | label modenya `normal`; naif hanya baris log invokasi pertama yang berakhir nol transaksi (ADR-026, README butir 34) | "`depth=sampling`, `cap=TANPA CAP`" |
-| "menilai kualitas", "LLM menilai", "rubric AI" | rubric LLM dipotong; kriteria kualitatif dicatat `unscored` (README butir 33) | "cek deterministik `format`, `links`, `chain`" |
-| "evaluator mempertaruhkan bond" | `MIN_BOND` = 0 pada kontrak terdeploy (README butir 1, 28) | "yang dipertaruhkan hari ini nol — itu ada di daftar batasan" |
-| "jendela challenge melindungi" | `challenge`/`resolve` stub; jendela 120 detik murni latensi, verdict salah tidak bisa dibatalkan siapa pun (README butir 2, 26) | jangan sebut jendelanya sama sekali, kecuali sebagai batasan |
-| "agen otonom", "watcher memantau chain" | agen dipanggil per job dengan `--job-id` (ADR-022, README butir 9) | "agen dijalankan per job, sebagai proses baru" |
+| "mode naif" untuk varian A | label modenya `normal`; naif hanya baris log invokasi pertama yang berakhir nol transaksi (ADR-026, `docs/limitations.md` butir 34) | "`depth=sampling`, `cap=TANPA CAP`" |
+| "menilai kualitas", "LLM menilai", "rubric AI" | rubric LLM dipotong; kriteria kualitatif dicatat `unscored` (`docs/limitations.md` butir 33) | "cek deterministik `format`, `links`, `chain`" |
+| "evaluator mempertaruhkan bond" | `MIN_BOND` = 0 pada kontrak terdeploy (`docs/limitations.md` butir 1, 28) | "yang dipertaruhkan hari ini nol — itu ada di daftar batasan" |
+| "jendela challenge melindungi" | `challenge`/`resolve` stub; jendela 120 detik murni latensi, verdict salah tidak bisa dibatalkan siapa pun (`docs/limitations.md` butir 2, 26) | jangan sebut jendelanya sama sekali, kecuali sebagai batasan |
+| "agen otonom", "watcher memantau chain" | agen dipanggil per job dengan `--job-id` (ADR-022, `docs/limitations.md` butir 9) | "agen dijalankan per job, sebagai proses baru" |
 | "audited", "production-ready", "100% coverage", angka performa | tidak ada laporan yang menghasilkannya | — |
-| "dibayar sama besar entah meluluskan atau menolak" | fee di muka via x402 adalah **rancangan** ADR-004, bukan fitur (README butir 14, 23; ADR-025 kep. 3) | "insentif fee-nya belum kami perbaiki, dan itu butir pertama daftar batasan" |
-| "provider membangun kepercayaan lewat riwayat baik" | cap satu arah, hanya bisa mengetat (README butir 8) | "memori hanya bisa mengetatkan cap" |
+| "dibayar sama besar entah meluluskan atau menolak" | fee di muka via x402 adalah **rancangan** ADR-004, bukan fitur (`docs/limitations.md` butir 14, 23; ADR-025 kep. 3) | "insentif fee-nya belum kami perbaiki, dan itu ada di daftar batasan kami" |
+| "provider membangun kepercayaan lewat riwayat baik" | cap satu arah, hanya bisa mengetat (`docs/limitations.md` butir 8) | "memori hanya bisa mengetatkan cap" |
 
 ## E. Yang WAJIB terucap minimal sekali
 
@@ -196,16 +196,16 @@ keluaran dari run yang berbeda dengan yang disebut di layar.
 
 | Klaim di video | Bukti |
 |---|---|
-| lima job nyata di Base Sepolia, 418–422 | `web/public/jobs.json`; tautan tx di kolom "tx VerdictPosted"; README butir 25 |
-| job 420 ditolak saat `Funded` karena budget > cap | `/verdict/420` kartu gerbang; tx `JobRejected` `0x78a3a65d…989e` (README "Bukti on-chain") |
-| cap 250.000, `sample_size` 0, insiden 418 & 419 | bundel `web/public/verdicts/420.json`; README butir 8 |
-| deliverable 421 == 422 byte demi byte, verdict berbeda | `sha_keccak` `0x246071b3…0a51` di `demo/deliverables/421.json` & `422.json`; README butir 25 |
-| `MemoryRootUpdated` job 422, root `0x999a9570…9b7d` | tx `0xe95910d2…5830`; topic0 `0xc6028d32…7923` (README butir 7 & 22) |
+| lima job nyata di Base Sepolia, 418–422 | `web/public/jobs.json`; tautan tx di kolom "tx VerdictPosted"; `docs/limitations.md` butir 25 |
+| job 420 ditolak saat `Funded` karena budget > cap | `/verdict/420` kartu gerbang; tx `JobRejected` `0x78a3a65d…989e` (`docs/evidence.md` "Rantai A → B → C") |
+| cap 250.000, `sample_size` 0, insiden 418 & 419 | bundel `web/public/verdicts/420.json`; `docs/limitations.md` butir 8 |
+| deliverable 421 == 422 byte demi byte, verdict berbeda | `sha_keccak` `0x246071b3…0a51` di `demo/deliverables/421.json` & `422.json`; `docs/limitations.md` butir 25 |
+| `MemoryRootUpdated` job 422, root `0x999a9570…9b7d` | tx `0xe95910d2…5830`; topic0 `0xc6028d32…7923` (`docs/limitations.md` butir 7 & 22) |
 | panel menjalankan cek deterministik sungguhan | `web/src/lib/checks.js`, `POST /api/evaluate`; paritas dijaga `web/test/checks-parity.test.js` |
-| kriteria kualitatif `unscored`, nol LLM | `agent/agent/criteria.py:121-124`, dikunci `agent/tests/test_criteria.py:336-337`; README butir 33 |
+| kriteria kualitatif `unscored`, nol LLM | `agent/agent/criteria.py:121-124`, dikunci `agent/tests/test_criteria.py:336-337`; `docs/limitations.md` butir 33 |
 | budget identik, hanya memori yang berbeda | baris `[demo] claim step=C-vs-D` (`sim/src/demo.ts:902-908`) |
 | tanpa memori: `depth=sampling`, `cap=TANPA CAP`, cacat kasar tetap ditolak | baris `VARIAN A:` (`sim/src/demo.ts:929-935`) |
 | memori hilang di vault hidup → mode aman, nol tx | baris `VARIAN B:` (`sim/src/demo.ts:946-949`); penjaga gugur `sim/src/demo.ts:672-687` |
 | `make demo` hanya membaca Sepolia, nol dana/tx | `Makefile:50-54`; `sim/src/demo.ts:610-611`; nonce sebelum/sesudah di baris `VARIAN B` |
-| batasan didaftarkan sendiri | `README.md` bagian "Batasan & asumsi kepercayaan" butir 1, 4, 26 |
+| batasan didaftarkan sendiri | `README.md` bagian "Batasan & asumsi kepercayaan" (ringkasan); `docs/limitations.md` butir 1, 4, 26 |
 | lisensi MIT | `LICENSE` |

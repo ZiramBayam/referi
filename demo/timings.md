@@ -1,8 +1,8 @@
 # Runtime `make demo` — pengukuran nyata
 
 Angka ini ada supaya klaim durasi di README dan di naskah rekaman bisa ditelusuri,
-bukan diingat. `make demo` sengaja TIDAK menulis berkas log apa pun (lihat README
-"Batasan"), jadi berkas inilah satu-satunya jejak waktunya.
+bukan diingat. `make demo` sengaja TIDAK menulis berkas log apa pun (lihat
+`docs/limitations.md` butir 19), jadi berkas inilah satu-satunya jejak waktunya.
 
 Semua pengukuran di mesin yang sama, 8 September 2026, dengan jaringan aktif
 (preflight menghubungi `https://sepolia.base.org` — dua pembacaan view, nol dana,
