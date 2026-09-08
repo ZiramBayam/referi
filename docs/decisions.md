@@ -682,6 +682,7 @@ Tabel divergensi yang DIKETAHUI (tiap baris diverifikasi ulang @agent-api-verifi
 | (ii)  | §3 baris 116 | "root onchain ada tapi memori lokal **hilang/tidak cocok** → mode aman" | Pemicu mode aman = **memori lokal tidak terbaca**, BUKAN perbandingan root. Presedensi PERSIS ada di **ADR-024 keputusan 2**: (1) kunci single-instance gagal ATAU `load_snapshot`/`memory_root` melempar → AMAN; (2) `memory.db`/`-wal`/`-shm` hilang: `lastMemoryRoot() == 0` → NAIF, selain itu → AMAN; (3) selebihnya → NORMAL, termasuk memori kosong nol job outcome. | ADR-023 (mencabut perbandingan root; `lastMemoryRoot`/`knownRoots` KELUAR dari jalur keputusan tx) + ADR-024 (mencabut aturan (b) ADR-023; `proves_origin` → `local_memory_readable`). Frasa "tidak cocok" tidak punya penegak mana pun hari ini. |
 | (iii) | §4 baris 138 (dan baris 134 yang memberinya konteks) | "revert jika `verdict.memoryRoot != lastMemoryRoot`" | **ADR-011**: `postVerdict` menandai `knownRoots[memoryRoot] = true` (revert bila `memoryRoot == 0`); `finalize` mensyaratkan `knownRoots[v.memoryRoot] == true`. Varian **`lastMemoryRoot`-sebagai-syarat DILARANG** — ia mengunci verdict yang tumpang tindih selamanya. `lastMemoryRoot` tetap disimpan & di-emit untuk auditor/UI saja. | ADR-011 (temuan @agent-hackathon-judge F1) + ADR-023 keputusan 1. Baris §4 ini harus dibaca menurut ADR-011, bukan apa adanya. |
 | (iv)  | §2 baris 46 & 50 | `m.set_entity(kind, name, body)` ; `m.search_entities(query)  # FTS5 lintas tier` | Parameter pertama bernama **`category`** (`kind=…` → `TypeError`). `search_entities(query, *, limit=20, prefix=False, category=None)` **hanya tier WARM**; lintas tier adalah **`search(query, *, limit=20, prefix=False, tiers=None)`** dengan tier sah `("entity","state","reference","journal")`. | `docs/api-facts.md` §C:523, §C:545, §C:549 dan §C.1. Diverifikasi ulang 2026-09-06 dengan `inspect.signature` pada paket TERPASANG di `agent/.venv` (`sibyl-memory-client` 0.7.0). §2 baris 52 ("TIDAK ADA tier FLAGGED") tetap **BENAR**: `schema.sql` 0.7.0 memuat tabel `flagged_actors`, tetapi `client.py`/`storage.py` nol kemunculan → tidak diekspos SDK; karantina tetap entity `category="suspicion"` (ADR-002). |
+| (v)   | §7 langkah 4 | Naskah mengasumsikan job yang berhenti di `fund` bisa dipakai untuk varian memori-dihapus | Job yang berhenti di `fund` TIDAK BISA dipakai: dengan memori kosong gerbang MELOLOSKAN budget 2 USDC, dan agen menolak dengan BENAR — "BELUM ADA YANG BISA DIUMUMKAN … provider belum submit(), jadi belum ada hasil cek maupun penolakan cap yang bisa di-hash jadi reasonHash" (exit 4, nol tx). Yang benar-benar bisa dijalankan: job dibawa sampai `submit`. | `make demo` (`sim/src/demo.ts`) menjalankan job D sampai `submit`; dijalankan ulang 8 Sep dua kali, EXIT=0 keduanya, bagian deterministik IDENTIK. Task 3.3e. Spec TIDAK disunting: larangan loop.md poin 5 masih berlaku dan §7 berstatus historis (ADR ini). |
 
 Bukti chain untuk baris (i), diukur ulang 2026-09-06 (`cast call … --rpc-url https://sepolia.base.org`):
 - `evaluatorFeeBP()` pada ACP `0x0b93793923CD5De81850aF8604a233f3f24d461e` → **500** (5%), dan fee itu
@@ -890,3 +891,31 @@ Konsekuensi:
     (`docs/judge-reports/fase-2.md`, proyeksi ~91/110) tetap dikejar sampai tenggat, tapi tidak menyandera 4.3.
 (!) Checklist submission di hack.sibyllabs.org TIDAK diverifikasi di sesi ini; klaim "video 2-5 mnt"
     bersumber pada `PRD.md:30` yang terverifikasi, bukan pada situs itu.
+
+
+## ADR-029 ADR-016 hanya mengikat deploy ke jaringan PERSISTEN
+Tanggal: 2026-09-08. Status: diterima. Aditif; menyempitkan pembacaan ADR-016 tanpa mencabutnya.
+Pemicu: task 3.3d. `make demo` men-deploy vault + mock ACP + MockUSDC lewat `forge create` di Anvil
+sekali-pakai, sedangkan ADR-016 menyebut `contracts/script/Deploy.s.sol` sebagai "satu-satunya
+entrypoint deploy yang sah". Dibaca harfiah, 3.3 (`[x]`, commit a03e294 + 0200558) melanggar ADR.
+
+Konteks: yang dijaga ADR-016 adalah alamat yang DIRUJUK artefak juri — vault submission Base Sepolia
+`0x5c6EE4586ACABcb6326069c229E58091B21ef384`, yang dibekukan ADR-022 keputusan 1. Rantai lokal
+sekali-pakai tidak punya alamat yang perlu dijaga: ia lahir dan mati di dalam satu `make demo`, dan
+`Deploy.s.sol` hari ini hanya tahu vault — bukan mock ACP maupun MockUSDC yang dibutuhkan demo.
+
+Keputusan:
+1. ADR-016 berlaku untuk jaringan PERSISTEN (Base Sepolia dan seterusnya). Deploy ke rantai lokal
+   ephemeral yang alamatnya tidak pernah dirujuk artefak juri DIKECUALIKAN.
+2. TIDAK ada skrip deploy baru di `contracts/` sebelum submission. Menulisnya di hari ke-8 berarti
+   mengubah folder yang wajib direview keamanan — biaya tinggi, nilai rubric nol.
+3. Pengecualian ini dicatat DI SINI, bukan dengan menyunting ADR-016, supaya jejak alasannya utuh.
+
+Konsekuensi:
+(+) Nol perubahan di `contracts/` pada hari ke-8, nol review keamanan tambahan, dan 3.3 tidak lagi
+    terbaca sebagai pelanggaran ADR oleh juri yang membaca ADR-016 apa adanya.
+(-) Dua jalur deploy hidup berdampingan. Bila proyek berlanjut sesudah hackathon, satukan di v2.
+(=) Nol scope bertambah maupun berkurang.
+(!) Bytecode vault yang dipakai demo lokal dibangun dari sumber HEAD, sedangkan vault Sepolia beku
+    dibangun dari commit 8d3e596 dan sejak itu `sweepToken` masuk ke sumber. Keduanya SENGAJA tidak
+    identik; `deployments/84532.json` sudah memuat catatan bytecode yang menjelaskannya.
