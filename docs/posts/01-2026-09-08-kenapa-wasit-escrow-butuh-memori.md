@@ -97,4 +97,10 @@ apa pun (`MIN_BOND` = 0), dan `challenge`/`resolve` adalah stub, sehingga jendel
 latensi: verdict salah tidak bisa dibatalkan siapa pun. Semuanya tertulis lengkap di bagian "Batasan &
 asumsi kepercayaan" di README, di atas pitch mana pun.
 
-Repo, kontrak, dan seluruh tx-nya publik. Post berikutnya: apa yang patah saat membangunnya.
+Repo, kontrak, dan seluruh tx-nya publik — dan sejak 8 Sep kontraknya **terverifikasi di Sourcify dengan
+`exact_match`** (creation dan runtime), diverifikasi dari sumber commit `8d3e596`, bukan dari HEAD yang
+sudah berbeda dari bytecode on-chain. Akibat praktisnya untuk Anda: di Blockscout Base Sepolia, event
+vault muncul dengan namanya sendiri — `MemoryRootUpdated`, `VerdictPosted`, `Finalized` — bukan sebagai
+topic mentah.
+
+Post berikutnya: apa yang patah saat membangunnya.

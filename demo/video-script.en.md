@@ -31,7 +31,7 @@ line aloud, and do not paraphrase the Indonesian line into something the screen 
 | A3 | **Dry run**: `make demo 2>&1 \| tee /tmp/dryrun-demo.log`, wait for it to finish | exit 0; the lines `VARIAN A:` and `VARIAN B:` are printed | if not, fix the environment first — never record a failure and narrate it as a success |
 | A4 | `pnpm --filter web build` | build finishes without errors | — |
 | A5 | Terminal B: `DEMO_MODE=1 pnpm --filter web start` | server on `http://127.0.0.1:3000` (`-H 127.0.0.1` is pinned in `web/package.json:9`) | — |
-| A6 | Open 4 browser tabs, ordered left→right: (1) `http://127.0.0.1:3000/`, (2) `http://127.0.0.1:3000/verdict/420`, (3) `http://127.0.0.1:3000/verdict/422`, (4) `https://sepolia.basescan.org/tx/0xe95910d28ac4b5182220b9ea7c31519fb006b99b2edb0ed453f18556fa295830#eventlog` | all four fully loaded before recording starts | a tab still loading eats seconds you do not have |
+| A6 | Open 4 browser tabs, ordered left→right: (1) `http://127.0.0.1:3000/`, (2) `http://127.0.0.1:3000/verdict/420`, (3) `http://127.0.0.1:3000/verdict/422`, (4) `https://base-sepolia.blockscout.com/address/0x5c6EE4586ACABcb6326069c229E58091B21ef384?tab=logs` | all four fully loaded before recording starts; **Blockscout**, not BaseScan — that is where event names are decoded (see the Section 4 note) | a tab still loading eats seconds you do not have |
 | A7 | Terminal A: `cd /home/zirambayam/referi && clear`, large font (≥ 16pt), width ≥ 120 columns | clean prompt | — |
 | A8 | Close notifications, personal tabs, and wallet extensions | clean screen | — |
 | A9 | **Rehearse section 5 first**: `/panel` → button "deliverable job 422" → run `sampling`, then `full` | `sampling` → `format.no-placeholder` **pass**; `full` → **fail** | if that is not the result, cut section 5 from the script and move its 30 seconds into section 6 — do not narrate a result that does not appear |
@@ -41,12 +41,12 @@ line aloud, and do not paraphrase the Indonesian line into something the screen 
 click it and do not scroll down to it** (this script stops at the "Hasil" card). If you do not need the
 gate at all, run A5 without `DEMO_MODE=1` — the entire script still works.
 
-> Scope note, not a safety note: README limitation 36 still records the earlier **BLOCK** verdict on that
-> surface. That block has since been **lifted** — the re-review returned zero CRITICAL and zero HIGH, and
-> the last MEDIUM (TOCTOU on ancestor path components) was closed via the `dir_fd` path in commit
-> `7aedf88`. It is left out of TAKE-1 because the script is full at 4:35 and the control was never
-> rehearsed, not because it is unsafe. README limitation 36 needs a separate rewrite; until that lands,
-> do not say anything about this control on camera in either direction.
+> Scope note, not a safety note: that surface once carried a **BLOCK** verdict from the security review.
+> The block has since been **lifted** — the re-review returned zero CRITICAL and zero HIGH, and the last
+> MEDIUM (TOCTOU on ancestor path components) was closed via the `dir_fd` path. README limitation 36 now
+> records the full history, including the LOW risk still accepted. It is left out of TAKE-1 because the
+> script is full at 4:35 and the control was never rehearsed, not because it is unsafe. On camera: do not
+> comment on it in either direction.
 
 ---
 
@@ -101,10 +101,17 @@ gate at all, run A5 without `DEMO_MODE=1` — the entire script still works.
 | 2:05 | Switch to tab 3 (`/verdict/422`) | heading "Verdict job 422 — reject", `kedalaman cek: full` (check depth: full), `hash deliverable 0x246071b3…0a51` | "Jobs 421 and 422 use the **byte-for-byte same** deliverable — identical keccak hash, same budget. Job 421 passed. Job 422 was rejected." |
 | 2:18 | Scroll to "Bukti per-kriteria" (per-criterion evidence) | check `format.no-placeholder` **fail**, `section 2`, `depth full` | "The only difference is the provider: one is clean, the other has two incidents. That history raised the check depth from `sampling` to `full`, and the defect — a `TODO` in the third section — is only visible at `full`." |
 | 2:30 | Scroll slightly to the yellow "Kriteria yang TIDAK dinilai" (criteria that were NOT scored) card | `qualitative.0` + `unscored_reason` | "I should say this plainly: there is no qualitative scoring and no LLM anywhere in the path. Qualitative criteria are recorded as `unscored`, as-is." |
-| 2:37 | Switch to tab 4 (BaseScan, tx `0xe95910d2…5830`, **Logs** tab) | the tx log list; a log with `topic0 = 0xc6028d32…7923` and `topic1 = 0x999a9570…9b7d` | "And here is that transaction on BaseScan. The log with this topic is `MemoryRootUpdated` — the explorer does not decode the name because the contract is not verified; what you see is the raw topic, and that is the memory root announced **before** execution." |
+| 2:37 | Switch to tab 4 (Blockscout, the vault's **Logs** page); point at the top entry: `MemoryRootUpdated` with root `0x999a9570…9b7d` (tx `0xe95910d2…5830`) | the vault log list with **decoded event names**: `MemoryRootUpdated`, `VerdictPosted`, `Finalized`, `ProviderCapSet` | "And here is the on-chain trail. The event name is readable — `MemoryRootUpdated` — because the contract is verified on Sourcify, `exact_match`, from commit `8d3e596`. This is the root that was announced **before** execution." |
 
 > On-screen evidence: README item 25 (the 421 vs 422 table plus four tx hashes), item 33 (`unscored`),
-> item 7 (topic0 `MemoryRootUpdated` = `0xc6028d32…7923`), item 15 (contract not verified).
+> item 7 (the `MemoryRootUpdated` history), item 15 (Sourcify `exact_match` from commit `8d3e596`).
+>
+> **Why Blockscout and not BaseScan:** Blockscout imported the Sourcify verification, so the event names
+> actually render on camera; Etherscan/BaseScan does not import from Sourcify and verifying there needs an
+> API key this repo does not have — so we claim **nothing in either direction** about BaseScan's status
+> (`deployments/84532.json:32`). Valid alternative if you trust a terminal more than an explorer: run
+> `cast logs` over the blocks listed in README item 7 — but its output is raw topics, so the event name
+> will not be visible on screen.
 
 ### Section 5 — Judge panel: try it yourself (2:45 – 3:15, 30 s)
 

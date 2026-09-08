@@ -115,15 +115,30 @@ memanggil gerbang 402, tidak mengirim transaksi. Tidak ada RPC dari browser; dat
 react 19.2.8, typescript 7.0.2).
 
 Ada juga tombol hapus memori di panel, untuk mempertunjukkan tes destruktif di depan penonton — dan di
-sinilah kami harus berhenti memuji diri sendiri. **Permukaan tombol itu baru saja diberi verdict BLOKIR
-oleh review keamanan, dengan dua temuan TINGGI:** CSRF pada endpoint hapusnya (menghapus adalah efek
-samping, bukan bacaan, jadi CORS tidak pernah menjadi pertahanan), dan proksi Next yang mengekspos
-penghapus loopback ke LAN karena default Next mengikat `0.0.0.0`. **Perbaikannya belum selesai saat post
-ini ditulis.** Sebagian mitigasi sudah mendarat dan bisa dibaca di
-`web/src/app/api/demo/memory/reset/route.js` (gerbang `DEMO_MODE` per permintaan, penolakan
-`Sec-Fetch-Site`/`Origin` yang bukan same-origin, penolakan target di luar loopback, `-H 127.0.0.1`
-dipin di `web/package.json`), tetapi verdict reviewer belum dicabut, dan sampai itu terjadi jangan
-menjalankan `web/` dengan `DEMO_MODE=1` di jaringan yang tidak Anda percayai. Ini butir 36 di README.
+sinilah kami sempat kalah. **Permukaan tombol itu diberi verdict BLOKIR oleh review keamanan, dengan dua
+temuan TINGGI:** CSRF pada endpoint hapusnya, dan proksi Next yang mengekspos penghapus loopback ke LAN
+karena default Next mengikat `0.0.0.0`.
+
+Yang pertama pantas dikutip karena pelajarannya lebih besar dari repo ini: **"loopback saja" bukan
+pertahanan terhadap browser, karena browser juri juga ada di loopback.** Satu tab jahat cukup mengirim
+`<form method=POST action="http://127.0.0.1:8010/demo/memory/reset">`; form itu mengirim `text/plain` yang
+termasuk daftar aman CORS, jadi tidak ada preflight yang menahannya — dan penyerang tidak perlu bisa
+membaca jawabannya, karena menghapus adalah **efek samping**, bukan bacaan. CORS tidak pernah menjadi
+pertahanan di sini.
+
+**Blokirnya kini sudah dicabut**, dan cara pembuktiannya yang kami anggap benar: reviewer **mengulang
+persis serangan yang dulu berhasil**. Form lintas-asal yang dulu menjawab `200 {"deleted": [3 berkas]}`
+sekarang menjawab **403 `cross_origin_request`** dengan ketiga berkas utuh; `curl` dari IP LAN tertahan
+dua lapis — sisi agen menolak peer non-loopback, dan Next kini terikat `-H 127.0.0.1`. Satu temuan SEDANG
+(TOCTOU pada komponen leluhur path) ditutup lewat jalur `dir_fd`: penghapusan tidak lagi memakai path
+string melainkan fd direktori akar. Review ulang: nol KRITIS, nol TINGGI.
+
+Yang **tetap** kami sebut sebagai risiko, karena "lulus review" bukan "tidak ada sisa": proksi Next
+membatasi **host** target ke loopback tetapi **tidak portnya**, dan docstring penghapusnya mengakui sendiri
+sisa balapan antara `open` dan `unlink` — dampaknya terbatas pada kejujuran laporan, karena namanya tidak
+bisa keluar dari direktori yang dipegang fd. Riwayat penuhnya ada di butir 36 README, ditulis sebagai
+"gagal → apa yang gagal → apa yang menutupnya → apa yang masih diterima", bukan sebagai fitur yang selalu
+aman.
 
 Satu batas yang sengaja kami pasang sejak awal dan tidak digeser saat panik: tombol itu hanya berkuasa
 atas memori **demo** (`agent/data/demo/`). Ia tidak pernah bisa menyentuh `agent/data/chain-abc/memory.db`
@@ -145,9 +160,9 @@ pada bagian "Batasan & asumsi kepercayaan", di atas pitch mana pun:
 - **Tes destruktif belum berartefak**: `make demo` menjalankan keduanya tetapi tidak meninggalkan log
   atau fixture di repo, jadi yang bisa Anda cocokkan hari ini adalah run Anda sendiri.
 - **`sim/` tidak punya satu pun tes otomatis** — satu-satunya kode yang menyentuh SDK Virtuals dijaga
-  hanya oleh rantai on-chain yang dijalankan tangan (`web/` sudah punya, poin 5) — dan kontraknya belum
-  terverifikasi di Sourcify/BaseScan.
-- **Permukaan hapus-memori di panel juri masih di bawah verdict BLOKIR** review keamanan (poin 5 di atas).
+  hanya oleh rantai on-chain yang dijalankan tangan (`web/` sudah punya, poin 5).
+- **Sisa risiko di permukaan hapus-memori** yang diterima apa adanya: host target dibatasi, port tidak;
+  dan sisa balapan `open`/`unlink` yang diakui docstringnya sendiri (poin 5 di atas).
 
 Video demonya direkam besok. Yang akan Anda lihat di sana adalah perintah yang sama persis dengan yang
 ada di README — termasuk exit code 4 itu.

@@ -38,7 +38,9 @@ dari README ini, baca butir 22 lebih dulu supaya Anda tahu nilai mana yang sehar
 
 Dan bila dari kelompok 26-36 Anda hanya membaca satu: **butir 26** — verdict yang salah tidak bisa
 dibatalkan siapa pun, sehingga `CHALLENGE_WINDOW` hari ini adalah latensi dengan nol perlindungan. Bila
-Anda berniat **menjalankan** `web/` sendiri, baca **butir 36** lebih dulu.
+Anda berniat **menjalankan** `web/` sendiri, baca **butir 36** lebih dulu — ia memuat riwayat penuh
+permukaan hapus-memori: verdict BLOKIR, apa yang gagal, apa yang menutupnya, dan risiko RENDAH yang
+masih kami terima.
 
 ### 1. Yang dipertaruhkan evaluator hari ini = nol
 
@@ -319,7 +321,7 @@ Jangan menilai dari `docs/spec.md` saja — berikut yang belum berjalan hari ini
 | `MemoryGateHook` | tidak ada di `contracts/src/` (hanya `EvaluatorVault.sol`, `IACP.sol`); hook butuh whitelist admin Virtuals (ADR-001) |
 | Rubric LLM | dipotong; hanya cek deterministik yang jalan (`agent/agent/checks/`: `format`, `links`, `chain`) |
 | `checks/sandbox` | tidak diimplementasikan dan tidak diklaim hidup |
-| ~~UI web / panel juri~~ | **SUDAH HIDUP** — `web/` punya tiga rute (`web/src/app/page.jsx` timeline job 418-422 dengan tautan tx `VerdictPosted`; `web/src/app/verdict/[jobId]/page.jsx`; `web/src/app/panel/page.jsx`), dan panel juri menjalankan cek deterministik **sungguhan** di browser lewat `POST /api/evaluate` atas port `format`+`links` di `web/src/lib/checks.js`. Paritas port itu **dijaga tes** (`web/test/checks-parity.test.js`, 5 tes lewat `pnpm -r test` — butir 18). Yang BELUM: panel tidak menjalankan gerbang cap, tidak membaca memori, tidak mengirim tx (dinyatakan di halamannya sendiri), dan permukaan hapus-memori `DEMO_MODE` sedang ditutup setelah gagal review keamanan — butir 36 |
+| ~~UI web / panel juri~~ | **SUDAH HIDUP** — `web/` punya tiga rute (`web/src/app/page.jsx` timeline job 418-422 dengan tautan tx `VerdictPosted`; `web/src/app/verdict/[jobId]/page.jsx`; `web/src/app/panel/page.jsx`), dan panel juri menjalankan cek deterministik **sungguhan** di browser lewat `POST /api/evaluate` atas port `format`+`links` di `web/src/lib/checks.js`. Paritas port itu **dijaga tes** (`web/test/checks-parity.test.js`, 5 tes lewat `pnpm -r test` — butir 18). Yang BELUM: panel tidak menjalankan gerbang cap, tidak membaca memori, tidak mengirim tx (dinyatakan di halamannya sendiri), dan permukaan hapus-memori `DEMO_MODE` sempat gagal review keamanan sebelum ditutup — riwayat lengkap + risiko RENDAH yang masih diterima ada di butir 36 |
 | Watcher event | butir 9 |
 
 ### 12. Batasan artefak: file memori tidak ikut di-commit
@@ -369,20 +371,43 @@ hanya bersama kelulusan. Perbaikannya — client membayar di muka lewat x402 den
 berlaku hari ini bukan struktur insentif, melainkan hal yang jauh lebih lemah: fee-nya terkunci di vault
 sehingga tidak ada pihak yang bisa menikmatinya.
 
-### 15. Kontrak submission BELUM terverifikasi di Sourcify/BaseScan
+### 15. Kontrak submission KINI terverifikasi di Sourcify (`exact_match`) — dari commit `8d3e596`, bukan HEAD
 
-README ini mengajak Anda "cek sendiri" ke explorer, jadi batas ajakan itu harus jelas. Kueri Sourcify
-`v2/contract/84532/0x5c6EE45…` mengembalikan `{"match":null,"creationMatch":null,"runtimeMatch":null}`, dan
-tidak ada `forge verify-contract` di `Makefile`, di `contracts/foundry.toml`, maupun di `docs/`. Di BaseScan
-Anda bisa membaca **transaksi, event, dan hasil `cast call`** — itu semua nyata dan itulah yang dijadikan
-bukti di README ini — tetapi **bukan** source yang cocok dengan bytecode.
+Versi README sebelumnya menyatakan kueri Sourcify mengembalikan
+`{"match":null,"creationMatch":null,"runtimeMatch":null}`. Itu **sudah tidak berlaku** sejak 8 Sep 2026:
 
-Lebih jauh: bukti provenance terkuat menurut `deployments/84532.json` → `notes` adalah
-`contracts/broadcast/Deploy.s.sol/84532/run-1788469622537.json`, sedangkan `contracts/broadcast/` dibuang
-oleh `.gitignore:6` — **artefak itu tidak ada di repo publik**. Dan bytecode HEAD ≠ bytecode terdeploy
-(sejak commit `e675234` menambahkan `sweepToken`; catatan yang sama menjelaskan diff-nya). Kesimpulan yang
-jujur: kaitan **sumber ↔ bytecode terdeploy** hari ini hanya bisa dicek oleh orang yang kami serahi artefak
-broadcast-nya, atau oleh orang yang mem-build ulang commit `8d3e596` sendiri.
+```
+$ curl -s https://sourcify.dev/server/v2/contract/84532/0x5c6EE4586ACABcb6326069c229E58091B21ef384
+match: exact_match   creationMatch: exact_match   runtimeMatch: exact_match
+```
+
+Nilainya dicatat di `deployments/84532.json:36-44` (`sourcify`), beserta perintah pengecekan ulangnya dan
+tautan repo Sourcify. **Yang membuat klaim ini bisa ditelusuri adalah dari mana ia diverifikasi**: sumber
+**commit `8d3e596`**, BUKAN HEAD — HEAD sudah memuat `sweepToken` yang tidak ada di bytecode on-chain
+(butir 4). Sebelum diunggah, build dibandingkan dengan `cast code` dan angkanya dicatat apa adanya
+(`deployments/84532.json:31-32`):
+
+- panjang runtime **sama, 3518 byte**;
+- **174 byte berbeda, SELURUHNYA di dalam `immutableReferences`** (`acp`, `agent`, `arbiter`, `MIN_BOND`)
+  — nol byte berbeda di luar span immutable;
+- **hash metadata 32 byte terakhir IDENTIK** (jebakan yang kami tabrak: `lib/` sebagai symlink membuat
+  remapping absolut masuk metadata solc, dan diff palsu naik jadi 206 byte — jadi worktree verifikasinya
+  menyalin `lib/` secara fisik).
+
+**Batas yang tetap berlaku, dan tolong jangan digeneralisasi ke semua explorer.** Blockscout menarik
+verifikasi Sourcify itu dan kini **mendekode event vault dengan nama** — `Finalized`,
+`MemoryRootUpdated`, `VerdictPosted`, `ProviderCapSet`, `FinalizeFailed`
+(`https://base-sepolia.blockscout.com/address/0x5c6EE4586ACABcb6326069c229E58091B21ef384?tab=logs`).
+**BaseScan tidak ikut**, karena Etherscan tidak mengimpor dari Sourcify dan verifikasi di sana menuntut
+API key yang tidak ada di repo ini; status di BaseScan karena itu **tidak kami klaim ke arah mana pun**.
+Di explorer mana pun, transaksi, event, dan hasil `cast call` yang dijadikan bukti di README ini tetap
+nyata dengan atau tanpa verifikasi source.
+
+Satu batas provenance lama yang **tidak** berubah: artefak `contracts/broadcast/Deploy.s.sol/84532/
+run-1788469622537.json` — yang merekam sendiri `"commit": "8d3e596"` dan init code byte-identik dengan
+build revisi itu — dibuang oleh `.gitignore:6`, jadi **ia tidak ada di repo publik**. Sourcify kini
+menutup kebutuhan akan artefak itu untuk pertanyaan "sumber mana yang jadi bytecode ini"; yang masih
+menuntutnya hanyalah pemeriksaan init code + argumen konstruktor secara mandiri.
 
 ### 16. Jangkar root itu melingkar, dan tidak ada konsekuensi bagi root karangan
 
@@ -824,28 +849,58 @@ orkestrator demo (`sim/src/demo.ts`). Karena itu `pnpm sim:run` yang selesai **t
 perilaku yang benar, bukan kegagalan; kolom `expectVerdict` di skenario adalah ekspektasi naskah, bukan
 pengamatan. Batasan yang menyertainya: `sim/` belum punya satu pun tes otomatis (butir 18).
 
-### 36. Permukaan hapus-memori di panel juri GAGAL review keamanan dan belum selesai ditutup
+### 36. Permukaan hapus-memori di panel juri: GAGAL review keamanan, lalu ditutup — riwayatnya ditulis penuh
 
 Panel juri (`/panel`) punya tombol hapus memori untuk mempertunjukkan tes destruktif di depan penonton.
-Permukaan itu **diberi verdict BLOKIR oleh review keamanan** dengan **dua temuan TINGGI**: (a) **CSRF**
-pada endpoint hapusnya — menghapus adalah efek samping, bukan bacaan, sehingga CORS tidak pernah menjadi
-pertahanan (halaman jahat mana pun bisa mengirim POST `text/plain` `no-cors` tanpa preflight); dan (b)
-proksi Next yang **mengekspos penghapus loopback ke LAN**, karena default Next adalah mengikat `0.0.0.0`.
+Permukaan itu **sempat diberi verdict BLOKIR oleh review keamanan**, dengan **dua temuan TINGGI**, dan
+kami menuliskannya di sini apa adanya alih-alih menghapus riwayatnya — bagian ini menceritakan apa yang
+gagal, apa yang diperbaiki, dan apa yang **masih** kami terima sebagai risiko.
 
-Per **8 Sep 2026 perbaikannya BELUM selesai**, dan bagian ini ditulis sebelum ia selesai. Yang **sudah**
-mendarat dan bisa Anda baca sendiri di `web/src/app/api/demo/memory/reset/route.js`: gerbang `DEMO_MODE`
-per permintaan (mati → 404), penolakan `Sec-Fetch-Site` ≠ `same-origin` dan `Origin`/`Host` yang tidak
-cocok (→ 403), penolakan `NEXT_PUBLIC_AGENT_RESET_API` di luar loopback (→ 400), badan permintaan klien
-diabaikan, dan `-H 127.0.0.1` dipin di `web/package.json:7,9`. Yang belum: verdict reviewer belum dicabut.
+**Yang gagal.** (a) **CSRF** pada endpoint hapusnya: menghapus adalah **efek samping**, bukan bacaan,
+sehingga CORS tidak pernah menjadi pertahanan — satu tab jahat cukup mengirim
+`<form method=POST action="http://127.0.0.1:8010/demo/memory/reset">`, yang mengirim `text/plain`
+(daftar aman CORS) sehingga tidak ada preflight yang menahannya, dan penyerang tidak perlu bisa membaca
+jawabannya. (b) Proksi Next **mengekspos penghapus loopback ke LAN**, karena default Next adalah mengikat
+`0.0.0.0`.
 
-Dua hal yang **membatasi kerusakannya**, dan keduanya disengaja: tombol itu hanya dirender bila
-`DEMO_MODE=1` (dibaca **di server**, `web/src/app/panel/page.jsx:8,19`, jadi tidak ada penanda di HTML
-yang bisa dibalik dari klien), dan sasarannya **hanya memori demo** (`agent/data/demo/`) — ia **tidak
-pernah** diberi kuasa atas `agent/data/chain-abc/memory.db`, satu-satunya berkas yang bisa merekonstruksi
-root on-chain (butir 7 dan 12).
+Pelajarannya ditulis di kodenya sendiri dan layak dibawa keluar dari repo ini:
+**"loopback saja" BUKAN pertahanan terhadap browser, karena browser juri juga ada di loopback**
+(`agent/agent/demo_reset.py:32-41`, batas 4 dan 5).
 
-Sampai verdict itu dicabut: **jangan jalankan `web/` dengan `DEMO_MODE=1` pada jaringan yang tidak Anda
-percayai**, dan jangan pernah menjalankannya tanpa `-H 127.0.0.1`.
+**Yang diperbaiki, dan bagaimana ia dibuktikan tertutup.** Reviewer **mengulang persis serangan yang dulu
+berhasil**: form POST lintas-asal `text/plain` yang dulu menjawab `200 {"deleted": [3 berkas]}` kini
+dijawab **403 `cross_origin_request`** dengan ketiga berkas utuh (`agent/agent/demo_reset.py:126`,
+`check_same_origin` :394-417), dan `curl` dari IP LAN tertahan **dua lapis** — `serve()` menolak peer
+non-loopback (`LOOPBACK_HOSTS`, :82) **dan** Next kini terikat `-H 127.0.0.1` (`web/package.json:7,9`).
+POST kini juga menuntut `Content-Type: application/json` **persis** (memaksa preflight) serta `Host` yang
+menyebut loopback + port server ini, sehingga DNS rebinding ikut tertutup (`_check_host` :420-438).
+Satu temuan **SEDANG** — TOCTOU pada komponen leluhur path — ditutup lewat jalur **`dir_fd`**: penghapusan
+tidak lagi memakai path string melainkan fd direktori akar, sehingga leluhur tidak pernah diresolve ulang
+(`_open_root_fd`, `_remove` :301-336). **Review ulang: nol KRITIS, nol TINGGI, verdict LANJUT.**
+
+**Yang MASIH diterima sebagai risiko, disebut supaya tidak perlu Anda temukan sendiri:**
+
+- **RENDAH — `resetUrl()` membatasi HOST, bukan PORT.** Proksi Next menolak `NEXT_PUBLIC_AGENT_RESET_API`
+  yang hostname-nya di luar loopback (`LOOPBACK_HOSTS`, `web/src/app/api/demo/memory/reset/route.js:47,59`)
+  tetapi **tidak** membatasi portnya, jadi env yang salah ketik masih bisa mengarahkan POST ini ke port
+  loopback lain. Diterima apa adanya.
+- **Sisa balapan yang diakui docstringnya sendiri:** entri bernama sama masih bisa ditukar antara `open`
+  dan `unlink`. Dampaknya terbatas pada **kejujuran laporan** — `unlink(dir_fd=…)` tidak mengikuti symlink
+  pada komponen terakhir dan namanya **tidak bisa keluar** dari direktori yang dipegang fd, jadi berkas
+  yang hilang lewat jalur ini selalu entri di dalam akar demo itu sendiri
+  (`agent/agent/demo_reset.py:314-318`).
+
+**Batas kerusakannya, dan ini yang paling penting**: tombol hanya dirender bila `DEMO_MODE=1` — dibaca
+**di server** per permintaan (`web/src/app/panel/page.jsx:8,19`), jadi tidak ada penanda di HTML yang bisa
+dibalik dari klien, dan tanpa env itu endpoint agennya **tidak terdaftar sama sekali** → 404, bukan 403
+(`agent/agent/demo_reset.py:15-20`). Sasarannya **hanya memori demo** (`agent/data/demo/`, diturunkan dari
+`agent_root()` dan **tidak pernah** dari permintaan): ia **tidak pernah** diberi kuasa atas
+`agent/data/chain-abc/memory.db`, satu-satunya berkas yang bisa merekonstruksi root on-chain (butir 7
+dan 12). Ketiga berkas SQLite (`memory.db`, `-wal`, `-shm`) disapu, karena WAL yang tertinggal bisa
+memulihkan isinya dan "memori dihapus" yang menyisakan WAL adalah hijau palsu.
+
+Tetap berlaku sebagai kebiasaan baik: jalankan `web/` lewat script yang sudah memin `-H 127.0.0.1`, dan
+nyalakan `DEMO_MODE=1` hanya saat Anda memang sedang mempertunjukkan tes destruktifnya.
 
 ---
 
@@ -1102,8 +1157,9 @@ ada bukan otomasinya melainkan artefaknya: perintah itu tidak meninggalkan log a
 Sumber: `deployments/84532.json` (jaringan `base-sepolia`, chainId 84532) dan
 `deployments/pipeline-84532.md`. Vault dideploy di blok 46350667 dengan solc 0.8.36 (evm `osaka`,
 optimizer runs 200), memakai 816.969 gas — semua angka itu ada di `deployments/84532.json`. Kontraknya
-**belum terverifikasi** di Sourcify/BaseScan, jadi di explorer Anda melihat transaksi dan event, bukan
-source yang tercocokkan (Batasan butir 15).
+**terverifikasi di Sourcify dengan `exact_match`** (creation dan runtime), dari sumber commit `8d3e596`,
+sehingga **Blockscout** mendekode event vault dengan nama; BaseScan tidak menariknya (Batasan butir 15):
+`https://base-sepolia.blockscout.com/address/0x5c6EE4586ACABcb6326069c229E58091B21ef384?tab=logs`
 
 **SDK Virtuals dipakai sungguhan, bukan dekorasi.** Seluruh transaksi ACP di simulator lewat
 `@virtuals-protocol/acp-node-v2@0.1.12` (`sim/package.json:12`); `sim/src/client_min.ts:11-14` menyatakan
@@ -1228,7 +1284,7 @@ docs/        spec.md, decisions.md (ADR), api-facts.md (fakta API terverifikasi)
 | tiga pemicu mode aman; file hilang butuh root on-chain ≠ 0 | `agent/agent/memory_policy.py:1461-1500` |
 | riwayat `MemoryRootUpdated` = **delapan** event; kedelapan root + jobId-nya | `cast logs` topic0 `0xc6028d32…7923`, blok 46350667→46455552 dalam jendela ≤ 9.999 blok (batas RPC publik, `docs/api-facts.md` §E); tabel lengkap di butir 7 |
 | root job 418 `0x4e2a1ca1…ff5a` = root DB kosong (bisa direproduksi lewat `empty_memory_root()`, BUKAN lewat `memory_export.py` — alat itu menolak membuat DB); root 419/420/421/422 hilang permanen | `empty_memory_root()` di butir 7 vs `cast logs` di butir 7; `docs/spec.md` §5 langkah 5 (memori ditulis SESUDAH `postVerdict`) |
-| Sourcify 84532/`0x5c6EE45…` → `{"match":null,...}`; broadcast ter-gitignore | kueri Sourcify v2; `.gitignore:6`; `deployments/84532.json` → `notes` (butir 15) |
+| Sourcify 84532/`0x5c6EE45…` → `exact_match` (creation + runtime), diverifikasi dari commit `8d3e596`; runtime 3518 byte, 174 byte berbeda seluruhnya di `immutableReferences`, hash metadata identik; broadcast tetap ter-gitignore | `deployments/84532.json:31-32` dan `:36-44` (`sourcify.check` memuat perintah `curl`-nya); `.gitignore:6` (butir 15) |
 | `sim` tanpa script `test`; workspace = `sim`, `web` | `sim/package.json:5-8`; `pnpm-workspace.yaml` |
 | regex penanda pekerjaan (satu kata memicu `format.placeholder-text`) | `agent/agent/checks/format.py:47-50`; `demo/deliverables/418.json`, `419.json` |
 | job 418 / 419 / 420, budget 1.000.000 dan 2.000.000, status akhir 4 | keluaran `cast` di bagian "Bukti on-chain" |

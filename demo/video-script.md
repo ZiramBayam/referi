@@ -24,15 +24,22 @@ Naskah **operasional**: dipakai sambil merekam layar, bukan untuk dibaca saja. S
 | A3 | **Dry-run**: `make demo 2>&1 \| tee /tmp/dryrun-demo.log`, tunggu selesai | exit 0; baris `VARIAN A:` dan `VARIAN B:` tercetak | kalau tidak, perbaiki lingkungan dulu — jangan merekam kegagalan lalu menceritakannya sebagai sukses |
 | A4 | `pnpm --filter web build` | build selesai tanpa galat | — |
 | A5 | Terminal B: `DEMO_MODE=1 pnpm --filter web start` | server di `http://127.0.0.1:3000` (`-H 127.0.0.1` dipin di `web/package.json:9`) | — |
-| A6 | Buka 4 tab browser, urutkan kiri→kanan: (1) `http://127.0.0.1:3000/`, (2) `http://127.0.0.1:3000/verdict/420`, (3) `http://127.0.0.1:3000/verdict/422`, (4) `https://sepolia.basescan.org/tx/0xe95910d28ac4b5182220b9ea7c31519fb006b99b2edb0ed453f18556fa295830#eventlog` | keempatnya sudah termuat sebelum rekaman | tab yang masih loading memakan detik yang tidak Anda punya |
+| A6 | Buka 4 tab browser, urutkan kiri→kanan: (1) `http://127.0.0.1:3000/`, (2) `http://127.0.0.1:3000/verdict/420`, (3) `http://127.0.0.1:3000/verdict/422`, (4) `https://base-sepolia.blockscout.com/address/0x5c6EE4586ACABcb6326069c229E58091B21ef384?tab=logs` | keempatnya sudah termuat sebelum rekaman; **Blockscout**, bukan BaseScan — di sanalah nama event terdekode (lihat catatan Bagian 4) | tab yang masih loading memakan detik yang tidak Anda punya |
 | A7 | Terminal A: `cd /home/zirambayam/referi && clear`, font besar (≥ 16pt), lebar ≥ 120 kolom | prompt bersih | — |
 | A8 | Tutup notifikasi, tab pribadi, dan wallet extension | layar bersih | — |
 | A9 | **Uji bagian 5 lebih dulu**: `/panel` → tombol "deliverable job 422" → jalankan `sampling`, lalu `full` | `sampling` → `format.no-placeholder` **pass**; `full` → **fail** | kalau hasilnya bukan itu, hapus bagian 5 dari naskah dan geser 30 detiknya ke bagian 6 — jangan menceritakan hasil yang tidak muncul |
 
-**Peringatan `DEMO_MODE=1`:** dengan gerbang itu menyala, `/panel` ikut merender **tombol hapus memori**
-yang **belum lulus review keamanan** (README Batasan butir 36). Pada TAKE-1: **jangan klik tombol itu dan
-jangan menggulir sampai ke sana** (naskah ini berhenti di kartu "Hasil"). Bila Anda tidak butuh gerbangnya,
-jalankan A5 tanpa `DEMO_MODE=1` — seluruh naskah tetap berjalan.
+**Catatan `DEMO_MODE=1`:** dengan gerbang itu menyala, `/panel` ikut merender **tombol hapus memori**, dan
+tombol itu **di luar lingkup TAKE-1**: ia tidak ada di naskah ini dan tidak dilatih di A9. Saat merekam:
+**jangan klik dan jangan menggulir sampai ke sana** (naskah ini berhenti di kartu "Hasil"). Bila Anda tidak
+butuh gerbangnya, jalankan A5 tanpa `DEMO_MODE=1` — seluruh naskah tetap berjalan.
+
+> Ini catatan LINGKUP, bukan catatan keselamatan. Permukaan itu sempat diberi verdict **BLOKIR** oleh review
+> keamanan; **blokir itu sudah DICABUT** — review ulang mengembalikan nol KRITIS dan nol TINGGI, dan temuan
+> SEDANG terakhir (TOCTOU pada komponen leluhur path) ditutup lewat jalur `dir_fd`. Riwayat lengkapnya,
+> termasuk risiko RENDAH yang masih diterima, ada di README Batasan **butir 36**. Ia tetap ditinggalkan dari
+> TAKE-1 karena naskahnya sudah penuh di 4:35 dan tombolnya belum pernah dilatih — bukan karena ia tidak
+> aman. Di depan kamera: jangan mengomentarinya ke arah mana pun.
 
 ---
 
@@ -88,10 +95,17 @@ jalankan A5 tanpa `DEMO_MODE=1` — seluruh naskah tetap berjalan.
 | 2:05 | Pindah ke tab 3 (`/verdict/422`) | judul "Verdict job 422 — reject", `kedalaman cek: full`, `hash deliverable 0x246071b3…0a51` | "Job 421 dan 422 memakai deliverable yang **sama byte demi byte** — hash keccak-nya identik, budgetnya sama. Job 421 lulus. Job 422 ditolak." |
 | 2:18 | Gulir ke "Bukti per-kriteria" | cek `format.no-placeholder` **fail**, `section 2`, `depth full` | "Bedanya hanya providernya: yang satu bersih, yang satu punya dua insiden. Riwayat itu menaikkan kedalaman pemeriksaan dari `sampling` ke `full`, dan cacatnya — sebuah `TODO` di bagian ketiga — hanya terlihat pada `full`." |
 | 2:30 | Gulir sedikit ke kartu kuning "Kriteria yang TIDAK dinilai" | `qualitative.0` + `unscored_reason` | "Perlu saya sebut: tidak ada penilaian kualitatif dan tidak ada LLM di jalur mana pun. Kriteria kualitatif dicatat `unscored` apa adanya." |
-| 2:37 | Pindah ke tab 4 (BaseScan, tx `0xe95910d2…5830`, tab **Logs**) | daftar log tx; log dengan `topic0 = 0xc6028d32…7923` dan `topic1 = 0x999a9570…9b7d` | "Dan ini transaksinya di BaseScan. Log dengan topic ini adalah `MemoryRootUpdated` — namanya tidak diterjemahkan explorer karena kontraknya belum terverifikasi; yang terlihat adalah topic mentahnya, dan itu root memori yang diumumkan **sebelum** eksekusi." |
+| 2:37 | Pindah ke tab 4 (Blockscout, halaman **Logs** vault), tunjuk entri paling atas: `MemoryRootUpdated` dengan root `0x999a9570…9b7d` (tx `0xe95910d2…5830`) | daftar log vault dengan **nama event terdekode**: `MemoryRootUpdated`, `VerdictPosted`, `Finalized`, `ProviderCapSet` | "Dan ini jejaknya di chain. Nama eventnya terbaca — `MemoryRootUpdated` — karena kontraknya terverifikasi di Sourcify, `exact_match`, dari commit `8d3e596`. Root inilah yang diumumkan **sebelum** eksekusi." |
 
 > Bukti di layar: README butir 25 (tabel 421 vs 422 + empat hash tx), butir 33 (`unscored`),
-> butir 7 (topic0 `MemoryRootUpdated` = `0xc6028d32…7923`), butir 15 (kontrak belum terverifikasi).
+> butir 7 (riwayat `MemoryRootUpdated`), butir 15 (Sourcify `exact_match` dari commit `8d3e596`).
+>
+> **Kenapa Blockscout, bukan BaseScan:** verifikasi Sourcify ditarik Blockscout sehingga nama event
+> benar-benar terlihat di kamera; Etherscan/BaseScan tidak mengimpor dari Sourcify dan verifikasi di sana
+> menuntut API key yang tidak ada di repo ini, jadi status di BaseScan **tidak kita klaim ke arah mana
+> pun** (`deployments/84532.json:32`). Alternatif yang sah bila Anda lebih percaya terminal daripada
+> explorer: jalankan `cast logs` sesuai blok yang README butir 7 sebutkan — tetapi keluarannya topic
+> mentah, jadi nama eventnya tidak terlihat di layar.
 
 ### Bagian 5 — Panel juri: coba sendiri (2:45 – 3:15, 30 dtk)
 
