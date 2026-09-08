@@ -93,6 +93,22 @@ teksnya sendiri, memilih kedalaman, lalu menjalankan ceknya. Yang berjalan di sa
 cek deterministik `format` dan `links` **diport** dari `agent/agent/checks/` ke
 `web/src/lib/checks.js` dan dijalankan lewat `POST /api/evaluate`, dan port itu menghasilkan array
 `checks` yang identik dengan bundel bukti 418/419/421/422 — sampai ke string `detail` dan `proof`.
+
+Kalimat itu, sampai kemarin, hanya **pernah diperiksa sekali dengan tangan** — dan klaim yang hanya
+diperiksa dengan tangan akan patah diam-diam pada sentuhan berikutnya. Sekarang ia **dijaga tes**:
+`web/test/checks-parity.test.js` membaca teks dari `web/public/deliverables/<jobId>.json`, harapannya
+dari `web/public/verdicts/<jobId>.json` (bundel yang hash-nya sudah diumumkan on-chain), memeriksa lebih
+dulu bahwa `sha_keccak` teks memang sama dengan `deliverable` yang dicatat bundel, lalu membandingkan
+**seluruh objek cek** field demi field — `check`, `criterion`, `depth`, `detail`, `pattern`, `proof`,
+`section`, `status` — plus `failed_checks`, `unverified`, `category`, `verdict`, dan katalog kriteria
+deterministik. Tidak ada satu pun string harapan yang diketik ulang di dalam tesnya. Runner-nya
+`node:test` bawaan Node 24, **nol dependensi baru**, dan `pnpm -r test` — yang dulu hijau atas nol
+proyek — kini menjalankan 5 tes.
+
+Dan seperti penjaga lain di repo ini, ia harus dibuktikan bisa merah: mengubah satu kata pada string
+`detail` membuat keempat job merah, dan menaikkan `SAMPLING_SECTION_LIMIT` dari 2 ke 3 membuat job 421
+berubah dari lulus menjadi gagal; dipulihkan, 5/5 hijau lagi.
+
 Batasnya ditulis di halamannya sendiri: panel tidak menjalankan gerbang cap, tidak membaca memori, tidak
 memanggil gerbang 402, tidak mengirim transaksi. Tidak ada RPC dari browser; datanya JSON statis di
 `web/public/`. Dependensinya tiga, semuanya sudah dipin di `docs/versions.md` (next 16.3.2,
@@ -128,8 +144,9 @@ pada bagian "Batasan & asumsi kepercayaan", di atas pitch mana pun:
 - **`memory.db` yang ditukar DB lain tidak terdeteksi** — mode aman memeriksa keadaan file, bukan isinya.
 - **Tes destruktif belum berartefak**: `make demo` menjalankan keduanya tetapi tidak meninggalkan log
   atau fixture di repo, jadi yang bisa Anda cocokkan hari ini adalah run Anda sendiri.
-- **`sim/` maupun `web/` tidak punya satu pun tes otomatis** (`pnpm -r test` hijau atas nol proyek), dan
-  kontraknya belum terverifikasi di Sourcify/BaseScan.
+- **`sim/` tidak punya satu pun tes otomatis** — satu-satunya kode yang menyentuh SDK Virtuals dijaga
+  hanya oleh rantai on-chain yang dijalankan tangan (`web/` sudah punya, poin 5) — dan kontraknya belum
+  terverifikasi di Sourcify/BaseScan.
 - **Permukaan hapus-memori di panel juri masih di bawah verdict BLOKIR** review keamanan (poin 5 di atas).
 
 Video demonya direkam besok. Yang akan Anda lihat di sana adalah perintah yang sama persis dengan yang

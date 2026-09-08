@@ -319,7 +319,7 @@ Jangan menilai dari `docs/spec.md` saja — berikut yang belum berjalan hari ini
 | `MemoryGateHook` | tidak ada di `contracts/src/` (hanya `EvaluatorVault.sol`, `IACP.sol`); hook butuh whitelist admin Virtuals (ADR-001) |
 | Rubric LLM | dipotong; hanya cek deterministik yang jalan (`agent/agent/checks/`: `format`, `links`, `chain`) |
 | `checks/sandbox` | tidak diimplementasikan dan tidak diklaim hidup |
-| ~~UI web / panel juri~~ | **SUDAH HIDUP** — `web/` punya tiga rute (`web/src/app/page.jsx` timeline job 418-422 dengan tautan tx `VerdictPosted`; `web/src/app/verdict/[jobId]/page.jsx`; `web/src/app/panel/page.jsx`), dan panel juri menjalankan cek deterministik **sungguhan** di browser lewat `POST /api/evaluate` atas port `format`+`links` di `web/src/lib/checks.js`. Yang BELUM: panel tidak menjalankan gerbang cap, tidak membaca memori, tidak mengirim tx (dinyatakan di halamannya sendiri), `web/` tidak punya tes otomatis (butir 18), dan permukaan hapus-memori `DEMO_MODE` sedang ditutup setelah gagal review keamanan — butir 36 |
+| ~~UI web / panel juri~~ | **SUDAH HIDUP** — `web/` punya tiga rute (`web/src/app/page.jsx` timeline job 418-422 dengan tautan tx `VerdictPosted`; `web/src/app/verdict/[jobId]/page.jsx`; `web/src/app/panel/page.jsx`), dan panel juri menjalankan cek deterministik **sungguhan** di browser lewat `POST /api/evaluate` atas port `format`+`links` di `web/src/lib/checks.js`. Paritas port itu **dijaga tes** (`web/test/checks-parity.test.js`, 5 tes lewat `pnpm -r test` — butir 18). Yang BELUM: panel tidak menjalankan gerbang cap, tidak membaca memori, tidak mengirim tx (dinyatakan di halamannya sendiri), dan permukaan hapus-memori `DEMO_MODE` sedang ditutup setelah gagal review keamanan — butir 36 |
 | Watcher event | butir 9 |
 
 ### 12. Batasan artefak: file memori tidak ikut di-commit
@@ -407,15 +407,32 @@ Yang menolak job C adalah **agen Python off-chain**, bukan kontrak. Di
 cap. Kontrak berfungsi sebagai **papan pengumuman yang bisa dibaca siapa pun**, dan itu tetap berguna
 (angkanya publik, terikat waktu, dan bisa dibandingkan dengan verdict) — tetapi ia bukan penegak.
 
-### 18. `pnpm -r test` tidak cocok dengan proyek mana pun → exit 0
+### 18. `pnpm -r test` kini menjalankan SATU proyek — dan `sim/` tetap nol tes
 
-`make test` menjalankan tiga suite, dan yang ketiga kosong: `pnpm-workspace.yaml` mendaftarkan `sim` dan
-`web` — **keduanya kini ADA** (butir 11 diperbarui: `web/` sudah hidup) — tetapi **tidak satu pun punya
-script `test`**: `sim/package.json:6-10` memuat `job:min`, `sim:run`, `demo`, `mint:client`, `typecheck`,
-dan `web/package.json:6-11` memuat `dev`, `build`, `start`, `lint` (`tsc --noEmit`). Karena itu
-`pnpm -r test` hijau atas **nol proyek**. Jadi satu-satunya kode yang menyentuh SDK Virtuals **dan**
-seluruh kode UI punya **nol tes otomatis**; yang menjaga `sim/` hanyalah rantai on-chain yang dijalankan
-tangan. `forge test` dan `uv run pytest` nyata.
+Versi README sebelumnya menyatakan suite ketiga `make test` hijau atas **nol proyek**. Itu **tidak lagi
+benar**: `web/package.json:11` sekarang punya `"test": "node --test test/checks-parity.test.js"`, jadi
+`pnpm -r test` menjalankan **satu** proyek dengan **lima** tes.
+
+Isinya menutup celah yang dulu kami akui sendiri: klaim "port `web/src/lib/checks.js` menghasilkan array
+`checks` yang identik dengan bundel bukti on-chain" dulu hanya **diperiksa sekali dengan tangan**, kini
+**dijaga tes** (`web/test/checks-parity.test.js`). Yang dibandingkan bukan keluaran port dengan keluaran
+port: teks dibaca dari `web/public/deliverables/<jobId>.json` dan harapannya dari
+`web/public/verdicts/<jobId>.json`, dengan ikatan `sha_keccak` teks == `evaluation.deliverable` bundel
+diperiksa lebih dulu (`:65-71`), lalu **seluruh objek cek** dibandingkan field demi field — `check`,
+`criterion`, `depth`, `detail`, `pattern`, `proof`, `section`, `status` (`:77-93`) — plus `failed_checks`,
+`unverified`, `category`, `depth`, `verdict` (`:95-99`) dan katalog kriteria deterministik (`:103-110`),
+untuk job **418, 419, 421, 422**. Runner-nya `node:test` bawaan Node major line 24 (`docs/versions.md:9`,
+aktual `v24.15.0`) — **nol dependensi baru**. `web/test/` sengaja di luar `tsconfig.lint.json` karena
+impor `node:test`/`node:fs` menuntut `@types/node` yang tidak dipin.
+
+**Yang TIDAK dijaganya** dan tidak boleh salah dibaca: paritas **port cek deterministik**, bukan bahwa
+panel menjalankan gerbang cap atau membaca memori — panel memang tidak melakukan keduanya (butir 36),
+dan kriteria kualitatif (`qualitative.0`) sengaja tidak diport karena rubric LLM dipotong (butir 33).
+
+**Yang masih benar dari batasan lama:** `sim/` **tetap tanpa satu pun tes otomatis** —
+`sim/package.json:6-10` memuat `job:min`, `sim:run`, `demo`, `mint:client`, `typecheck`, dan tidak satu
+pun `test`. Jadi satu-satunya kode yang menyentuh SDK Virtuals masih dijaga hanya oleh rantai on-chain
+yang dijalankan tangan. `forge test` dan `uv run pytest` nyata.
 
 ### 19. Tes destruktif: kedua varian kini diotomasi — yang belum adalah ARTEFAKNYA
 
@@ -1104,7 +1121,8 @@ JobCompleted`) beserta enam hash transaksinya terdokumentasi di `deployments/pip
 
 ```
 make doctor    # cetak versi toolchain, exit 1 bila tidak cocok docs/versions.md
-make test      # forge test + uv run pytest + pnpm -r test (yang ketiga kosong — Batasan butir 18)
+make test      # forge test + uv run pytest + pnpm -r test (yang ketiga = 5 tes paritas di web/;
+               # sim/ masih tanpa tes — Batasan butir 18)
 make demo      # rantai §7 langkah 1-4 dari NOL di Anvil lokal (~2m20s), ringkasan deterministik,
                # lalu varian destruktif B yang MEMBACA vault Sepolia beku — butuh internet
                # (hanya baca: nol dana, nol transaksi — Batasan butir 34)
@@ -1184,7 +1202,8 @@ agent/       Python: memory_policy.py (skema memori, derive_cap, promosi), vault
              memory_export.py (audit root), checks/{format,links,chain}.py, tools/memory_root_check.mjs
 sim/         client simulator TypeScript di atas @virtuals-protocol/acp-node-v2 (tanpa tes — butir 18)
 web/         Next.js: timeline job, halaman verdict+bukti, panel juri (port cek deterministik di
-             src/lib/checks.js); data dari JSON statis di web/public/, nol RPC dari browser (butir 36)
+             src/lib/checks.js, paritasnya dijaga test/checks-parity.test.js); data dari JSON statis
+             di web/public/, nol RPC dari browser (butir 18 dan 36)
 demo/        deliverables/<jobId>.json (teks deliverable dari simulator, ADR-019 — butir 21)
 deployments/ 84532.json (alamat + konstanta), pipeline-84532.md (pipa hidup job 417)
 docs/        spec.md, decisions.md (ADR), api-facts.md (fakta API terverifikasi), versions.md
