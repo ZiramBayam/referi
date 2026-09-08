@@ -1595,7 +1595,12 @@ def test_no_agent_module_publishes_a_memory_derived_root_yet():
         if berkas.name == "memory_policy.py":
             continue
         isi = berkas.read_text()
-        if panggilan_root.search(isi) and "memory_root_for_onchain(" not in isi:
+        # Pengecualian se-BERKAS dicabut (temuan 4.1 SEDANG-1): `"memory_root_for_onchain("
+        # not in isi` membebaskan SELURUH berkas begitu satu barisnya memakai gerbang dengan
+        # benar, sehingga baris lain di berkas yang sama bebas menghitung root langsung.
+        # Regexnya sendiri sudah tidak cocok dengan `memory_root_for_onchain(` (batas
+        # identifier), jadi gerbang yang sah tidak perlu dibebaskan sama sekali.
+        if panggilan_root.search(isi):
             pelanggar.append(berkas.name)
     assert pelanggar == [], f"modul menghitung root di luar gerbang: {pelanggar}"
     # Kontrol: pemindainya bukan hijau karena buta.
@@ -2033,6 +2038,44 @@ def _root_gate_violations(source: str) -> list[str]:
             return f"{induk}.{node.attr}" if induk else ""
         return ""
 
+    def teks(node):
+        """Konstanta string, TERMASUK yang dirakit dari potongan (`"memory" + "_root"`).
+
+        `getattr(m, "memory" + "_root")` tidak punya satu pun simpul Constant bernilai
+        `"memory_root"`, jadi pemeriksaan konstanta polos melewatkannya seluruhnya.
+        """
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            kiri, kanan = teks(node.left), teks(node.right)
+            if kiri is not None and kanan is not None:
+                return kiri + kanan
+        if isinstance(node, ast.JoinedStr):
+            bagian = [teks(v) for v in node.values]
+            if all(b is not None for b in bagian):
+                return "".join(bagian)
+        return None
+
+    def modul_dinamis(node):
+        """Modul yang didapat TANPA pernyataan import: importlib, __import__, sys.modules.
+
+        Tanpa ini `importlib.import_module("agent.memory_policy").memory_root(db)` lolos
+        BULAT-BULAT: `modul` tetap kosong, sehingga cabang Attribute maupun cabang
+        konstanta tidak pernah menyala. Dibuktikan reviewer 4.1 (SEDANG-1) dengan enam
+        sumber yang semuanya mengembalikan [].
+        """
+        if isinstance(node, ast.Call):
+            nama = dotted(node.func)
+            if nama in {"importlib.import_module", "import_module", "__import__"} and node.args:
+                arg = teks(node.args[0])
+                if arg and arg.split(".")[-1] == "memory_policy":
+                    return True
+        if isinstance(node, ast.Subscript) and dotted(node.value) in {"sys.modules", "modules"}:
+            arg = teks(node.slice)
+            if arg and arg.split(".")[-1] == "memory_policy":
+                return True
+        return False
+
     tree = ast.parse(source)
     terlarang = {"memory_root", "memory_root_hex", "load_snapshot"}
     # nama LOKAL -> nama ASLI yang diimpor. Yang dilaporkan adalah nama ASLI: kelonggaran
@@ -2058,17 +2101,40 @@ def _root_gate_violations(source: str) -> list[str]:
                 if a.name.endswith("memory_policy"):
                     modul.add(a.asname or a.name)
 
+    # Rantai re-binding: `alt = mp` menyalin modul ke nama lain, dan tanpa perambatan ini
+    # `alt.memory_root(db)` tidak terlihat sama sekali. Titik-tetap, bukan satu lintasan,
+    # karena rantai `a = mp; b = a; c = b` sah dan pengunjungan AST tidak berurutan.
+    berubah = True
+    while berubah:
+        berubah = False
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign):
+                continue
+            sasaran = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            if not sasaran:
+                continue
+            nilai = node.value
+            jadi_modul = modul_dinamis(nilai) or (isinstance(nilai, ast.Name) and nilai.id in modul)
+            for nama in sasaran:
+                if jadi_modul and nama not in modul:
+                    modul.add(nama)
+                    berubah = True
+                if isinstance(nilai, ast.Name) and nilai.id in alias and nama not in alias:
+                    alias[nama] = alias[nilai.id]
+                    berubah = True
+
     pelanggaran: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and node.id in alias:
             pelanggaran.append(f"{alias[node.id]}@{node.lineno}")
         elif isinstance(node, ast.Attribute) and node.attr in terlarang:
             induk = dotted(node.value)
-            if induk in modul or induk.endswith("memory_policy"):
-                pelanggaran.append(f"{induk}.{node.attr}@{node.lineno}")
-        elif isinstance(node, ast.Constant) and node.value in terlarang and (alias or modul):
-            # `getattr(mp, "memory_root")` tidak punya simpul Attribute sama sekali.
-            pelanggaran.append(f"str:{node.value}@{node.lineno}")
+            if induk in modul or induk.endswith("memory_policy") or modul_dinamis(node.value):
+                pelanggaran.append(f"{induk or 'modul-dinamis'}.{node.attr}@{node.lineno}")
+        elif (nama_teks := teks(node)) in terlarang and (alias or modul):
+            # `getattr(mp, "memory_root")` tidak punya simpul Attribute sama sekali, dan
+            # `getattr(mp, "memory" + "_root")` tidak punya simpul Constant yang cocok.
+            pelanggaran.append(f"str:{nama_teks}@{node.lineno}")
     return pelanggaran
 
 
@@ -2104,6 +2170,49 @@ def test_root_gate_scanner_catches_the_two_bypasses_the_reviewer_found():
     assert not _root_gate_violations(
         "from agent.memory_policy import memory_root_for_onchain\nmemory_root_for_onchain(c)\n"
     )
+
+
+def test_root_gate_scanner_catches_the_six_bypasses_from_the_4_1_review():
+    """Enam sumber yang review keamanan 4.1 (SEDANG-1) buktikan LOLOS tanpa terdeteksi.
+
+    Semuanya mengembalikan [] sebelum perbaikan: `modul` hanya diisi dari simpul
+    ast.Import/ast.ImportFrom, sehingga modul yang didapat lewat importlib, `__import__`,
+    atau `sys.modules` tidak pernah dikenali, dan re-binding `alt = mp` memutus jejaknya.
+    """
+    assert _root_gate_violations(
+        'import importlib\nm = importlib.import_module("agent.memory_policy")\nm.memory_root(c)\n'
+    )
+    assert _root_gate_violations(
+        'import agent.memory_policy as mp\nalt = mp\nalt.memory_root(c)\n'
+    )
+    assert _root_gate_violations(
+        'from agent import memory_policy as mp\nzz = mp\nzz.memory_root_hex(c)\n'
+    )
+    assert _root_gate_violations(
+        '__import__("agent.memory_policy", fromlist=["x"]).memory_root(c)\n'
+    )
+    assert _root_gate_violations(
+        'import sys\nsys.modules["agent.memory_policy"].memory_root(c)\n'
+    )
+    assert _root_gate_violations(
+        'import importlib\nimportlib.import_module("agent.memory_policy").load_snapshot(c)\n'
+    )
+    # Rantai re-binding, bukan satu lompatan: perambatannya titik-tetap.
+    assert _root_gate_violations(
+        'from agent import memory_policy as mp\nzz = mp\nqq = zz\nqq.memory_root(c)\n'
+    )
+    # Nama yang DIRAKIT dari potongan konstanta — tidak ada di daftar reviewer, tapi
+    # mekanismenya sama: tanpa pelipatan `"memory" + "_root"`, tidak ada satu pun simpul
+    # Constant yang bernilai "memory_root".
+    assert _root_gate_violations(
+        'import importlib\nm = importlib.import_module("agent.memory_policy")\n'
+        'getattr(m, "memory"+"_root")(c)\n'
+    )
+    # Kontrol negatif: pemindainya tidak menjadi hijau dengan cara menandai segalanya.
+    assert not _root_gate_violations(
+        'import importlib\nm = importlib.import_module("agent.criteria")\nm.build(c)\n'
+    )
+    assert not _root_gate_violations("class V:\n    def onchain_memory_root(self):\n        pass\n")
 
 
 # Satu-satunya modul yang boleh memanggil `load_snapshot` langsung: alat ekspor (task 2.1b).
