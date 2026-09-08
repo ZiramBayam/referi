@@ -1,12 +1,12 @@
 import { txUrl, addressUrl } from "../lib/chain.js";
 
 /**
- * Tautan transaksi. Bila hash BELUM ADA, yang ditampilkan adalah kata "belum ada" —
+ * Tautan transaksi. Bila hash BELUM ADA, yang ditampilkan adalah kata "not available" —
  * bukan hash palsu dan bukan tautan mati.
  * @param {{ hash?: string | null, label?: string }} props
  */
 export function TxLink({ hash, label }) {
-  if (!hash) return <span className="none">belum ada</span>;
+  if (!hash) return <span className="none">not available</span>;
   return (
     <a className="mono" href={txUrl(hash)} target="_blank" rel="noreferrer">
       {label ?? hash}
@@ -16,7 +16,7 @@ export function TxLink({ hash, label }) {
 
 /** @param {{ address?: string | null, label?: string }} props */
 export function AddressLink({ address, label }) {
-  if (!address) return <span className="none">belum ada</span>;
+  if (!address) return <span className="none">not available</span>;
   return (
     <a className="mono" href={addressUrl(address)} target="_blank" rel="noreferrer">
       {label ?? address}
@@ -26,7 +26,7 @@ export function AddressLink({ address, label }) {
 
 /** @param {{ value?: string | null }} props */
 export function Hash({ value }) {
-  if (!value) return <span className="none">belum ada</span>;
+  if (!value) return <span className="none">not available</span>;
   return <span className="mono">{value}</span>;
 }
 

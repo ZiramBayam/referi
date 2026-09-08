@@ -17,8 +17,8 @@ export default function Checks({ checks, criteria }) {
   if (!checks || checks.length === 0) {
     return (
       <p className="none">
-        belum ada — bundel ini tidak memuat blok `evaluation`, jadi tidak ada hasil
-        cek per-kriteria yang bisa ditampilkan.
+        not available — this bundle carries no `evaluation` block, so there are no
+        per-criterion check results to show.
       </p>
     );
   }
@@ -40,23 +40,23 @@ export default function Checks({ checks, criteria }) {
             </p>
           ) : null}
           <dl className="kv" style={{ marginTop: 6 }}>
-            <dt>cek</dt>
+            <dt>check</dt>
             <dd className="mono">{c.check}</dd>
-            <dt>kedalaman</dt>
+            <dt>depth</dt>
             <dd className="mono">{c.depth}</dd>
-            <dt>bagian</dt>
+            <dt>section</dt>
             <dd className="mono">
               {c.section === null || c.section === undefined ? (
-                <span className="none">belum ada</span>
+                <span className="none">not available</span>
               ) : c.section < 0 ? (
-                "-1 (tidak menunjuk satu bagian pun)"
+                "-1 (points at no single section)"
               ) : (
                 String(c.section)
               )}
             </dd>
-            <dt>pola (pattern id)</dt>
-            <dd className="mono">{c.pattern ? c.pattern : <span className="none">tidak ada</span>}</dd>
-            <dt>alasan</dt>
+            <dt>pattern id</dt>
+            <dd className="mono">{c.pattern ? c.pattern : <span className="none">none</span>}</dd>
+            <dt>reason</dt>
             <dd>{c.detail}</dd>
           </dl>
           <h3 style={{ marginBottom: 0 }}>evidence (proof)</h3>
@@ -64,7 +64,8 @@ export default function Checks({ checks, criteria }) {
             <pre className="proof">{c.proof}</pre>
           ) : (
             <p className="none" style={{ marginTop: 4 }}>
-              belum ada — cek ini lolos/tidak diperiksa, jadi agen tidak menyimpan kutipan.
+              not available — this check passed or was not verified, so the agent stored no
+              excerpt.
             </p>
           )}
         </div>

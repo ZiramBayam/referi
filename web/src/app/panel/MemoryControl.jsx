@@ -46,31 +46,30 @@ export default function MemoryControl({ enabled, resetApi }) {
 
   return (
     <div>
-      <h2>Kontrol demo — hapus memori</h2>
+      <h2>Demo control — wipe memory</h2>
 
       <div className="card warn">
         <p style={{ marginTop: 0 }}>
-          <strong>Baca dulu batasnya.</strong> Tombol di bawah menghapus{" "}
-          <strong>memori DEMO</strong>: <code>agent/data/demo/memory.db</code> beserta{" "}
-          <code>-wal</code> dan <code>-shm</code>-nya (menyisakan WAL membuat SQLite bisa
-          memulihkan sebagian isi, jadi ketiganya wajib disapu bersama).
+          <strong>Read the limits first.</strong> The button below deletes the{" "}
+          <strong>DEMO memory</strong>: <code>agent/data/demo/memory.db</code> together with its{" "}
+          <code>-wal</code> and <code>-shm</code> files (leaving the WAL behind would let SQLite
+          recover part of the contents, so all three must go together).
         </p>
         <p>
-          Ia <strong>TIDAK</strong> menghapus <code>agent/data/chain-abc/memory.db</code>,
-          yaitu memori yang menghasilkan verdict job 418-422 yang Anda lihat di halaman
-          Timeline dan halaman verdict. Itu <strong>sengaja</strong>: berkas{" "}
-          <code>chain-abc</code> adalah satu-satunya artefak yang bisa merekonstruksi ulang
-          root memori yang sudah tercatat on-chain. Sebuah tombol di browser tidak diberi
-          kuasa menghapus satu-satunya bukti yang menyambungkan angka on-chain dengan isi
-          memorinya. Jadi: menekan tombol ini <em>tidak</em> mengubah apa pun yang tampil di{" "}
-          <code>/</code> maupun <code>/verdict/[jobId]</code>.
+          It does <strong>NOT</strong> delete <code>agent/data/chain-abc/memory.db</code>, the
+          memory that produced the job 418-422 verdicts you see on the timeline and verdict
+          pages. That is <strong>deliberate</strong>: the <code>chain-abc</code> file is the only
+          artifact that can reconstruct the memory roots already recorded on chain. A button in a
+          browser is not given the power to erase the only evidence tying the on-chain numbers to
+          the memory behind them. So: pressing this button changes <em>nothing</em> shown on{" "}
+          <code>/</code> or <code>/verdict/[jobId]</code>.
         </p>
       </div>
 
       <div className="card">
         <div className="row" style={{ marginTop: 0 }}>
           <button className="danger" onClick={run} disabled={busy}>
-            {busy ? "menghapus…" : "Hapus memori demo sekarang"}
+            {busy ? "deleting…" : "Wipe demo memory now"}
           </button>
           <span className="lead" style={{ margin: 0 }}>
             POST <code>/api/demo/memory/reset</code> → <code className="mono">{resetApi}</code>
@@ -78,13 +77,12 @@ export default function MemoryControl({ enabled, resetApi }) {
           </span>
         </div>
         <p className="lead" style={{ marginBottom: 0 }}>
-          Endpoint penghapusnya dijalankan terpisah dan hanya hidup saat{" "}
-          <code>DEMO_MODE</code> menyala; halaman ini hanya meneruskan permintaan. Yang
-          menahan pemanggil lain bukan CORS (menghapus adalah efek samping, dan efek
-          samping tetap terjadi walau responsnya tak terbaca) melainkan tiga hal: server
-          penghapus menolak peer non-loopback, server halaman ini terikat{" "}
-          <code>127.0.0.1</code>, dan rute proksinya menolak permintaan yang bukan
-          same-origin.
+          The delete endpoint runs as a separate process and is only alive while{" "}
+          <code>DEMO_MODE</code> is on; this page merely forwards the request. What keeps other
+          callers out is not CORS (deleting is a side effect, and the side effect happens even
+          when the response cannot be read) but three things: the delete server refuses
+          non-loopback peers, this page&apos;s server is bound to <code>127.0.0.1</code>, and the
+          proxy route rejects requests that are not same-origin.
         </p>
       </div>
 
@@ -93,10 +91,10 @@ export default function MemoryControl({ enabled, resetApi }) {
 
       <div className="card note">
         <p style={{ marginTop: 0 }}>
-          <strong>Kalau yang ingin Anda uji adalah mode aman</strong> — agen menolak
-          memutus ketika memori yang menopang root on-chain hilang — sasarannya adalah
-          berkas <code>chain-abc</code>, dan itu memang harus Anda lakukan sendiri di
-          terminal, terlihat, bukan lewat tombol:
+          <strong>If what you want to test is safe mode</strong> — the agent refusing to decide
+          once the memory backing the on-chain root is gone — the target is the{" "}
+          <code>chain-abc</code> file, and that is something you must do yourself in a terminal,
+          in the open, not through a button:
         </p>
         <pre className="proof">
           {"rm agent/data/chain-abc/memory.db\n" +
@@ -104,11 +102,10 @@ export default function MemoryControl({ enabled, resetApi }) {
             "rm -f agent/data/chain-abc/memory.db-shm"}
         </pre>
         <p style={{ marginBottom: 0 }}>
-          Yang harus terlihat sesudahnya, pada vault yang root-nya sudah non-nol: agen
-          berhenti di gerbang dengan <strong>mode aman</strong> — nol{" "}
-          <code>postVerdict</code>, nol <code>finalize</code>, nonce wallet agen tidak
-          berubah, job menggantung sampai <code>expiredAt</code>. Pulihkan dengan
-          mengembalikan <code>memory.db</code> dari cadangan.
+          What you should see afterwards, against a vault whose root is already non-zero: the
+          agent stops at the gate in <strong>safe mode</strong> — zero <code>postVerdict</code>,
+          zero <code>finalize</code>, the agent wallet nonce unchanged, the job hanging until{" "}
+          <code>expiredAt</code>. Recover by restoring <code>memory.db</code> from a backup.
         </p>
       </div>
     </div>
@@ -127,32 +124,30 @@ function ResetResult({ data }) {
 
   return (
     <div className="card">
-      <h3 style={{ marginTop: 0 }}>Hasil penghapusan</h3>
+      <h3 style={{ marginTop: 0 }}>Deletion result</h3>
       <p style={{ marginTop: 0 }}>
         {deleted.length === 0 && refused.length === 0 ? (
-          <strong>
-            Tidak ada yang terhapus — memori demo memang sudah kosong.
-          </strong>
+          <strong>Nothing was deleted — the demo memory was already empty.</strong>
         ) : deleted.length === 0 ? (
-          <strong>Tidak ada yang terhapus panggilan ini.</strong>
+          <strong>Nothing was deleted by this call.</strong>
         ) : (
-          <strong>
-            {deleted.length} berkas terhapus panggilan ini.
-          </strong>
+          <strong>{deleted.length} file(s) deleted by this call.</strong>
         )}{" "}
-        Daftar di bawah adalah isi respons agen, tanpa tafsiran.
+        The list below is the agent&apos;s response, uninterpreted.
       </p>
       <dl className="kv">
-        <dt>direktori (root)</dt>
-        <dd className="mono">{data.root ? data.root : <span className="none">belum ada</span>}</dd>
-        <dt>basis data (db)</dt>
-        <dd className="mono">{data.db ? data.db : <span className="none">belum ada</span>}</dd>
+        <dt>directory (root)</dt>
+        <dd className="mono">
+          {data.root ? data.root : <span className="none">not available</span>}
+        </dd>
+        <dt>database (db)</dt>
+        <dd className="mono">{data.db ? data.db : <span className="none">not available</span>}</dd>
         <dt>deleted</dt>
         <dd className="mono">
           {deleted.length ? (
             deleted.join(", ")
           ) : (
-            <span className="none">kosong — tidak ada berkas yang terhapus</span>
+            <span className="none">empty — no file was deleted</span>
           )}
         </dd>
         <dt>missing</dt>
@@ -160,24 +155,24 @@ function ResetResult({ data }) {
           {missing.length ? (
             missing.join(", ")
           ) : (
-            <span className="none">kosong</span>
+            <span className="none">empty</span>
           )}
         </dd>
         <dt>refused</dt>
         <dd className="mono">
-          {refused.length ? refused.join(", ") : <span className="none">kosong</span>}
+          {refused.length ? refused.join(", ") : <span className="none">empty</span>}
         </dd>
       </dl>
       {refused.length ? (
         <p className="lead" style={{ marginBottom: 0 }}>
-          <strong>refused tidak kosong.</strong> Berkas itu ADA tetapi berupa symlink atau
-          direktori, jadi agen menolak menghapusnya — isinya masih utuh. Jangan anggap
-          memori demo bersih.
+          <strong>refused is not empty.</strong> Those files EXIST but are symlinks or
+          directories, so the agent refused to delete them — their contents are intact. Do not
+          treat the demo memory as clean.
         </p>
       ) : (
         <p className="lead" style={{ marginBottom: 0 }}>
-          Memori <code>chain-abc</code> tidak disentuh panggilan ini, dan halaman verdict
-          tidak berubah.
+          The <code>chain-abc</code> memory was not touched by this call, and the verdict pages
+          did not change.
         </p>
       )}
     </div>
@@ -195,23 +190,23 @@ function ResetFailure({ failure, command }) {
 
   return (
     <div className="card warn">
-      <h3 style={{ marginTop: 0 }}>Gagal — tidak ada yang terhapus</h3>
+      <h3 style={{ marginTop: 0 }}>Failed — nothing was deleted</h3>
       <dl className="kv">
-        <dt>status HTTP</dt>
-        <dd className="mono">{failure.status === 0 ? "tidak ada respons" : failure.status}</dd>
+        <dt>HTTP status</dt>
+        <dd className="mono">{failure.status === 0 ? "no response" : failure.status}</dd>
         <dt>reason</dt>
         <dd className="mono">{reason}</dd>
       </dl>
       {unreachable ? (
         <div>
           <p>
-            Server penghapus memori tidak berjalan (atau tidak di port itu). Jalankan ini
-            di terminal, lalu tekan tombolnya lagi:
+            The memory delete server is not running (or not on that port). Run this in a
+            terminal, then press the button again:
           </p>
           <pre className="proof">{command}</pre>
           <p style={{ marginBottom: 0 }}>
-            Tanpa <code>DEMO_MODE=1</code> proses itu keluar dengan kode 1 dan tidak
-            mengikat port sama sekali — itu perilaku yang diinginkan, bukan galat.
+            Without <code>DEMO_MODE=1</code> that process exits with code 1 and binds no port
+            at all — that is the intended behaviour, not an error.
           </p>
         </div>
       ) : reason === "cross_site_request" ||
@@ -220,20 +215,20 @@ function ResetFailure({ failure, command }) {
         reason === "bad_origin" ||
         reason === "origin_host_mismatch" ? (
         <p style={{ marginBottom: 0 }}>
-          Permintaan ditolak oleh rute proksi di halaman ini, sebelum menyentuh server
-          penghapus memori: hanya panel di origin yang sama yang boleh memicunya. Kalau
-          Anda melihat ini saat menekan tombol di halaman ini sendiri, kemungkinan
-          besar panel dibuka lewat host/port yang berbeda dari yang dilayani Next.
+          The request was rejected by this page&apos;s proxy route, before it reached the
+          memory delete server: only the panel on the same origin may trigger it. If you see this
+          while pressing the button on this very page, the panel was most likely opened on a
+          different host/port than the one Next is serving.
         </p>
       ) : reason === "not_found" ? (
         <p style={{ marginBottom: 0 }}>
-          Rutenya tidak terdaftar. Terjadi bila <code>DEMO_MODE</code> mati di proses yang
-          menjawab — di halaman ini, atau di server penghapus memori.
+          The route is not registered. This happens when <code>DEMO_MODE</code> is off in the
+          process that answered — either this page, or the memory delete server.
         </p>
       ) : (
         <p style={{ marginBottom: 0 }}>
-          Kode alasan di atas datang dari endpoint penghapus memori apa adanya. Tidak ada
-          berkas yang disentuh.
+          The reason code above comes from the memory delete endpoint verbatim. No file was
+          touched.
         </p>
       )}
     </div>

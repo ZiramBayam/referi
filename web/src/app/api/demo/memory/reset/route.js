@@ -106,8 +106,8 @@ export async function POST(request) {
         ok: false,
         reason: bad,
         detail:
-          "Hanya panel di origin ini yang boleh memanggil rute ini; " +
-          "permintaan wajib membawa Sec-Fetch-Site: same-origin dan Origin yang cocok dengan Host.",
+          "Only the panel served from this origin may call this route; " +
+          "the request must carry Sec-Fetch-Site: same-origin and an Origin matching Host.",
       },
       { status: 403 },
     );
@@ -120,7 +120,7 @@ export async function POST(request) {
         ok: false,
         reason: "reset_url_not_loopback",
         detail:
-          "NEXT_PUBLIC_AGENT_RESET_API harus menunjuk ke loopback (mis. " +
+          "NEXT_PUBLIC_AGENT_RESET_API must point at loopback (e.g. " +
           DEFAULT_BASE +
           ")",
       },

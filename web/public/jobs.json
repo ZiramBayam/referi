@@ -1,12 +1,12 @@
 {
   "source": {
-    "bundles": "agent/data/chain-abc/verdicts/<jobId>-<keccak256 isi file>.json (disalin apa adanya ke /verdicts/<jobId>.json)",
-    "deliverables": "demo/deliverables/<jobId>.json (disalin apa adanya ke /deliverables/<jobId>.json)",
-    "verdictTxHash": "event VerdictPosted(uint256 indexed jobId,uint8,bytes32,bytes32,uint64) pada EvaluatorVault 0x5c6EE4586ACABcb6326069c229E58091B21ef384, Base Sepolia; topic[1] = jobId",
-    "finalizeTxHash": "README.md butir 25 (hanya job 421 & 422 yang tercatat)",
-    "budgetUsdc6": "README.md bagian \"Bukti on-chain: rantai A -> B -> C\" (418/419/420) dan butir 25 (421/422); satuan 6 desimal",
-    "acpStatus": "status akhir job di ACP menurut README.md; 3 = Completed, 4 = Rejected",
-    "provider": "bundel gate job 420 (Alpha) dan README.md butir 25 (Beta)"
+    "bundles": "agent/data/chain-abc/verdicts/<jobId>-<keccak256 of file contents>.json (copied verbatim to /verdicts/<jobId>.json)",
+    "deliverables": "demo/deliverables/<jobId>.json (copied verbatim to /deliverables/<jobId>.json)",
+    "verdictTxHash": "event VerdictPosted(uint256 indexed jobId,uint8,bytes32,bytes32,uint64) on EvaluatorVault 0x5c6EE4586ACABcb6326069c229E58091B21ef384, Base Sepolia; topic[1] = jobId",
+    "finalizeTxHash": "docs/limitations.md item 25 (only jobs 421 & 422 are recorded)",
+    "budgetUsdc6": "docs/evidence.md section \"Rantai A → B → C\" (418/419/420) and docs/limitations.md item 25 (421/422); 6-decimal units",
+    "acpStatus": "final ACP job status per docs/evidence.md; 3 = Completed, 4 = Rejected",
+    "provider": "gate bundle of job 420 (Alpha) and docs/limitations.md item 25 (Beta)"
   },
   "jobs": [
     {
@@ -24,7 +24,7 @@
       "verdictTxHash": "0xfa266b30c4ee0bfb34b5e3f71e13f59d46e0e837a7d52e26144d47fc3f3c501e",
       "finalizeTxHash": "",
       "bundleFile": "418-0x812efc217ba5b6b6529239b04096970f3afe8c0c1e6dc9fe5d9424f57b354550.json",
-      "note": "job A rantai demo A/B/C"
+      "note": "job A of the A/B/C demo chain"
     },
     {
       "jobId": "419",
@@ -41,7 +41,7 @@
       "verdictTxHash": "0x549482dac5a13e8b064f28b6e20359ced7a88801fbd8a14e45bcce5fbbaaa611",
       "finalizeTxHash": "",
       "bundleFile": "419-0xd2d2bc140bb734f8877843113c6859bd1ae8d0a5fd1287670a9abca747efd34d.json",
-      "note": "job B rantai demo A/B/C"
+      "note": "job B of the A/B/C demo chain"
     },
     {
       "jobId": "420",
@@ -58,7 +58,7 @@
       "verdictTxHash": "0x083d65ff5b08ba0c51b5f6630701765e3f4faadb6e4a74f2bc62fff7433bba68",
       "finalizeTxHash": "",
       "bundleFile": "420-0x1618e7653959fcdbd11565a41e7688ce12e1a6abca3a12f1746ed5348262b5ed.json",
-      "note": "job C rantai demo A/B/C \u2014 ditolak di gerbang cap saat Funded"
+      "note": "job C of the A/B/C demo chain — rejected at the cap gate while Funded"
     },
     {
       "jobId": "421",
@@ -75,7 +75,7 @@
       "verdictTxHash": "0x02356b079fa3bfcd32e62d7e2bb61d3f4eb8b66d29fac578cd6318b2028a1467",
       "finalizeTxHash": "0x371a4db2ed4c7975f3806f64392f92ecba2132feb9a1df78889c31af9bcaf020",
       "bundleFile": "421-0xfd08390faf19a139b4a2556a6b53695c114f9aad9c9402837aa4a719b137bd7d.json",
-      "note": "job D demo kedalaman \u2014 provider bersih, depth sampling"
+      "note": "job D, the depth demo — clean provider, sampling depth"
     },
     {
       "jobId": "422",
@@ -92,7 +92,7 @@
       "verdictTxHash": "0xe95910d28ac4b5182220b9ea7c31519fb006b99b2edb0ed453f18556fa295830",
       "finalizeTxHash": "0x502c8d944106914b15d95a38b2815187fa7b3d63965d95414ccd7f15835b5f08",
       "bundleFile": "422-0x2b0ca5747abea9c81c5f85741e8cdc92dab3b44f92bbbcbc03aec59ddcbc0704.json",
-      "note": "job E demo kedalaman \u2014 teks identik job D, depth full"
+      "note": "job E, the depth demo — text identical to job D, full depth"
     }
   ]
 }

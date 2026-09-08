@@ -25,12 +25,12 @@ export default function PanelForm({ samples }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(typeof data?.error === "string" ? data.error : "permintaan ditolak");
+        setError(typeof data?.error === "string" ? data.error : "request rejected");
       } else {
         setResult(data.evaluation);
       }
     } catch (e) {
-      setError("gagal menghubungi endpoint evaluasi lokal: " + String(e));
+      setError("could not reach the local evaluation endpoint: " + String(e));
     } finally {
       setBusy(false);
     }
@@ -45,14 +45,14 @@ export default function PanelForm({ samples }) {
   return (
     <div>
       <div className="row">
-        <span>Muat contoh:</span>
+        <span>Load a sample:</span>
         {samples.map((s) => (
           <button key={s.jobId} onClick={() => setText(s.text)}>
             deliverable job {s.jobId}
           </button>
         ))}
         <label>
-          atau unggah berkas teks:{" "}
+          or upload a text file:{" "}
           <input
             type="file"
             accept=".txt,.md,text/plain,text/markdown"
@@ -64,29 +64,29 @@ export default function PanelForm({ samples }) {
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="# Summary&#10;… tempel teks deliverable di sini …"
+        placeholder="# Summary&#10;… paste deliverable text here …"
         spellCheck={false}
       />
 
       <div className="row">
         <label>
-          Kedalaman:{" "}
+          Depth:{" "}
           <select value={depth} onChange={(e) => setDepth(e.target.value)}>
-            <option value="sampling">sampling (2 bagian pertama)</option>
-            <option value="full">full (seluruh bagian)</option>
+            <option value="sampling">sampling (first 2 sections)</option>
+            <option value="full">full (all sections)</option>
           </select>
         </label>
         <button className="primary" onClick={run} disabled={busy || text.length === 0}>
-          {busy ? "menjalankan…" : "Jalankan cek"}
+          {busy ? "running…" : "Run checks"}
         </button>
-        <button onClick={() => { setText(""); setResult(null); setError(""); }}>Bersihkan</button>
+        <button onClick={() => { setText(""); setResult(null); setError(""); }}>Clear</button>
       </div>
 
       {error ? <div className="card warn">{error}</div> : null}
 
       {result ? (
         <div>
-          <h2>Hasil</h2>
+          <h2>Result</h2>
           <div className="card">
             <dl className="kv">
               <dt>verdict (kind)</dt>
@@ -99,25 +99,24 @@ export default function PanelForm({ samples }) {
               <dd className="mono">
                 {result.failed_checks.length
                   ? JSON.stringify(result.failed_checks)
-                  : "[] (kosong)"}
+                  : "[] (empty)"}
               </dd>
-              <dt>kedalaman</dt>
+              <dt>depth</dt>
               <dd className="mono">{result.depth}</dd>
-              <dt>bagian dibaca</dt>
+              <dt>sections read</dt>
               <dd className="mono">
-                {result.sections_read} dari {result.sections}
+                {result.sections_read} of {result.sections}
               </dd>
-              <dt>tidak diverifikasi</dt>
+              <dt>unverified</dt>
               <dd className="mono">
                 {result.unverified.length ? result.unverified.join(", ") : "—"}
               </dd>
             </dl>
             <p className="lead" style={{ marginBottom: 0 }}>
-              Tidak ada transaksi yang dikirim dan tidak ada memori yang ditulis oleh
-              percobaan ini.
+              No transaction was sent and no memory was written by this attempt.
             </p>
           </div>
-          <h2>Bukti per-kriteria</h2>
+          <h2>Per-criterion evidence</h2>
           <Checks checks={result.checks} criteria={result.criteria} />
         </div>
       ) : null}

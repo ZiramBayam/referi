@@ -51,12 +51,12 @@ export const ACP_STATUS = /** @type {const} */ ({
 export function verdictKindLabel(kind) {
   if (kind === 1) return "COMPLETE (kind=1)";
   if (kind === 2) return "REJECT (kind=2)";
-  return "belum ada";
+  return "not available";
 }
 
 /** @param {number | null | undefined} status */
 export function acpStatusLabel(status) {
-  if (status === null || status === undefined) return "belum ada";
+  if (status === null || status === undefined) return "not available";
   const name = /** @type {Record<number, string>} */ (ACP_STATUS)[status];
-  return name ? `${status} — ${name}` : `${status} — belum ada nama enum`;
+  return name ? `${status} — ${name}` : `${status} — no enum name`;
 }

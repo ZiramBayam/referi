@@ -10,15 +10,14 @@ export default async function TimelinePage() {
 
   return (
     <div>
-      <h2>Timeline job 418–422 (Base Sepolia)</h2>
+      <h2>Job timeline 418–422 (Base Sepolia)</h2>
       <p className="lead">
-        Lima job yang benar-benar mendarat di chain, urut menurut jobId. Kolom
-        &quot;verdict&quot; adalah <code>kind</code> yang diumumkan{" "}
-        <code>EvaluatorVault.postVerdict</code>; kolom &quot;status ACP&quot; adalah enum status
-        job di ERC-8183. Setiap verdict punya tautan ke transaksi <code>VerdictPosted</code>-nya
-        di {EXPLORER_NAME} — explorer itu yang dipakai karena hanya di sana verifikasi Sourcify
-        kontrak vault terbaca, sehingga nama event tampil terdekode alih-alih sebagai topic
-        mentah.
+        Five jobs that really landed on chain, ordered by jobId. The &quot;verdict&quot; column
+        is the <code>kind</code> announced by <code>EvaluatorVault.postVerdict</code>; the
+        &quot;ACP status&quot; column is the ERC-8183 job status enum. Every verdict links to its
+        own <code>VerdictPosted</code> transaction on {EXPLORER_NAME} — that explorer is used
+        because it is the only one that picks up the vault contract&apos;s Sourcify
+        verification, so event names show up decoded instead of as raw topics.
       </p>
 
       <table>
@@ -27,11 +26,11 @@ export default async function TimelinePage() {
             <th>Job</th>
             <th>Provider</th>
             <th>Budget</th>
-            <th>Status ACP</th>
+            <th>ACP status</th>
             <th>Verdict</th>
-            <th>Bentuk bundel</th>
-            <th>tx VerdictPosted</th>
-            <th>Bukti</th>
+            <th>Bundle shape</th>
+            <th>VerdictPosted tx</th>
+            <th>Evidence</th>
           </tr>
         </thead>
         <tbody>
@@ -45,7 +44,7 @@ export default async function TimelinePage() {
                 <div style={{ color: "var(--muted)", fontSize: 12 }}>{job.providerLabel}</div>
               </td>
               <td className="mono">
-                {formatUsdc6(job.budgetUsdc6) ?? <span className="none">belum ada</span>}
+                {formatUsdc6(job.budgetUsdc6) ?? <span className="none">not available</span>}
               </td>
               <td>{acpStatusLabel(job.acpStatus)}</td>
               <td>
@@ -61,14 +60,14 @@ export default async function TimelinePage() {
                 <TxLink hash={job.verdictTxHash} label={shorten(job.verdictTxHash)} />
               </td>
               <td>
-                <Link href={"/verdict/" + job.jobId}>buka bukti</Link>
+                <Link href={"/verdict/" + job.jobId}>open evidence</Link>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      <h2>Apa yang terjadi, urutannya</h2>
+      <h2>What happened, in order</h2>
       <ul className="lead">
         {jobs.map((/** @type {any} */ job) => (
           <li key={job.jobId}>
@@ -78,7 +77,7 @@ export default async function TimelinePage() {
       </ul>
 
       <div className="card note">
-        <h3 style={{ marginTop: 0 }}>Dari mana angka di halaman ini</h3>
+        <h3 style={{ marginTop: 0 }}>Where the numbers on this page come from</h3>
         <dl className="kv">
           {Object.entries(index.source).map(([key, value]) => (
             <div key={key} style={{ display: "contents" }}>
@@ -88,8 +87,8 @@ export default async function TimelinePage() {
           ))}
         </dl>
         <p className="lead" style={{ marginBottom: 0 }}>
-          Halaman ini tidak memanggil RPC, tidak menyambung wallet, dan tidak menghitung hash
-          apa pun. Ia hanya menampilkan artefak yang sudah ada di repo.
+          This page makes no RPC calls, connects no wallet, and computes no hashes. It only
+          renders artifacts that already exist in the repository.
         </p>
       </div>
     </div>

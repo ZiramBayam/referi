@@ -56,7 +56,8 @@ export function readSectionIndex(value) {
 }
 
 /**
- * Format unit token 6 desimal (token escrow ACP `0xECc2…BDb3`) sebagai teks.
+ * Format unit token 6 desimal (token escrow ACP `0xECc2…BDb3`) sebagai teks, dengan
+ * pemisah gaya Inggris (ribuan `,`, desimal `.`) supaya cocok dengan sisa halaman.
  * Dihitung dari STRING supaya tidak lewat floating point.
  * @param {string | null | undefined} units
  * @returns {string | null}
@@ -64,7 +65,7 @@ export function readSectionIndex(value) {
 export function formatUsdc6(units) {
   if (typeof units !== "string" || !/^[0-9]+$/.test(units)) return null;
   const padded = units.padStart(7, "0");
-  const whole = padded.slice(0, -6).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  const whole = padded.slice(0, -6).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   const frac = padded.slice(-6).replace(/0+$/, "");
-  return frac ? `${whole},${frac}` : whole;
+  return frac ? `${whole}.${frac}` : whole;
 }

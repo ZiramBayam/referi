@@ -3,25 +3,25 @@ import Link from "next/link";
 import { CHAIN_ID, CHAIN_NAME } from "../lib/chain.js";
 
 export const metadata = {
-  title: "The Evaluator — bukti verdict",
+  title: "The Evaluator — verdict evidence",
   description:
-    "Timeline job, bukti per-kriteria, dan panel juri untuk wasit escrow ERC-8183 dengan memori provider yang bisa diaudit.",
+    "Job timeline, per-criterion evidence, and a judge panel for an ERC-8183 escrow referee with auditable provider memory.",
 };
 
 /** @param {{ children: unknown }} props */
 export default function RootLayout({ children }) {
   return (
-    <html lang="id">
+    <html lang="en">
       <body>
         <header className="top">
           <div className="wrap">
             <h1>The Evaluator</h1>
             <nav>
-              <Link href="/">Timeline job</Link>
-              <Link href="/panel">Panel juri</Link>
+              <Link href="/">Job timeline</Link>
+              <Link href="/panel">Judge panel</Link>
             </nav>
             <span className="net">
-              {CHAIN_NAME} (chainId {CHAIN_ID}) — data dari artefak statis, tanpa RPC di browser
+              {CHAIN_NAME} (chainId {CHAIN_ID}) — data from static artifacts, no RPC in the browser
             </span>
           </div>
         </header>

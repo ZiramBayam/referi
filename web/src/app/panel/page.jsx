@@ -29,23 +29,29 @@ export default async function PanelPage() {
 
   return (
     <div>
-      <h2>Panel juri — coba sendiri</h2>
+      <h2>Judge panel — try it yourself</h2>
       <p className="lead">
-        Tempel teks deliverable apa pun (atau muat salah satu contoh), pilih kedalaman, lalu
-        jalankan cek. Kedalamannya di sini Anda pilih SENDIRI; di jalur sungguhan kedalaman itu
-        yang diturunkan dari memori provider — itulah yang membuat job 421 (
-        <code>sampling</code>) dan job 422 (<code>full</code>) berakhir berbeda meski teksnya
-        identik.
+        Paste any deliverable text (or load one of the samples), pick a depth, then run the
+        checks. Here YOU choose the depth; on the real path that depth is derived from the
+        provider&apos;s memory — that is what made job 421 (<code>sampling</code>) and job 422
+        (<code>full</code>) end differently even though their text is identical.
       </p>
 
       <div className="card warn">
-        <strong>Batas yang wajib dibaca.</strong> Panel menjalankan cek deterministik{" "}
-        <code>format</code> dan <code>links</code> saja, di proses Next.js lokal ini —
-        port dari <code>agent/agent/checks/</code>. Ia TIDAK menjalankan gerbang cap
-        provider, TIDAK membaca memori Sibyl, TIDAK memanggil gerbang 402, dan TIDAK
-        mengirim transaksi. Verdict yang mengikat tetap yang diumumkan on-chain oleh{" "}
+        <strong>Limits you must read first.</strong> The panel runs the deterministic{" "}
+        <code>format</code> and <code>links</code> checks only, inside this local Next.js
+        process — a port of <code>agent/agent/checks/</code>. It does NOT run the provider cap
+        gate, does NOT read Sibyl memory, does NOT call the 402 gate, and does NOT send any
+        transaction. The binding verdict is still the one announced on-chain by{" "}
         <code>EvaluatorVault</code>.
       </div>
+
+      <p className="lead">
+        The check results below are produced by the same code that wrote the on-chain bundles,
+        so their <code>reason</code> and <code>proof</code> strings come out in Indonesian —
+        untranslated on purpose, because the parity test compares them character for character
+        against the bundles that were hashed into <code>reasonHash</code>.
+      </p>
 
       <PanelForm samples={samples} />
 

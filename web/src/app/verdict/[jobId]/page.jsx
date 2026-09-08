@@ -36,31 +36,38 @@ export default async function VerdictPage({ params }) {
   return (
     <div>
       <p className="lead">
-        <Link href="/">← timeline job</Link>
+        <Link href="/">← job timeline</Link>
       </p>
       <h2>
-        Verdict job <span className="mono">{jobId}</span> —{" "}
+        Verdict for job <span className="mono">{jobId}</span> —{" "}
         {verdictKindLabel(readSmallInt(bundle.verdict))}
       </h2>
       <p className="lead">
-        Kenapa diputus begitu, dan apa buktinya. Seluruh isi halaman ini adalah bundel bukti
-        yang di-keccak menjadi <code>reasonHash</code> di transaksi{" "}
-        <code>VerdictPosted</code> — bukan ringkasan yang ditulis ulang.
+        Why it was decided this way, and what the evidence is. Everything on this page is the
+        evidence bundle that is keccak-hashed into the <code>reasonHash</code> of the{" "}
+        <code>VerdictPosted</code> transaction — not a rewritten summary.
+      </p>
+      <p className="lead">
+        <strong>Bundle strings are quoted, not translated.</strong> The gate <code>reason</code>,
+        each criterion&apos;s text, and every <code>reason</code>/<code>proof</code> line below are
+        the agent&apos;s own output, copied out of the bundle byte for byte. They are written in
+        Indonesian and stay that way on purpose: the bundle is what gets hashed into{" "}
+        <code>reasonHash</code>, so rewording it here would stop matching the chain.
       </p>
 
       <div className="card">
         <dl className="kv">
-          <dt>versi bundel</dt>
+          <dt>bundle version</dt>
           <dd className="mono">{bundle.version}</dd>
-          <dt>bentuk bundel</dt>
+          <dt>bundle shape</dt>
           <dd className="mono">{bundle.kind}</dd>
-          <dt>mode memori</dt>
+          <dt>memory mode</dt>
           <dd className="mono">{bundle.mode}</dd>
-          <dt>memory_root (dari agen)</dt>
+          <dt>memory_root (from the agent)</dt>
           <dd>
             <Hash value={bundle.memory_root} />
           </dd>
-          <dt>kedalaman cek</dt>
+          <dt>check depth</dt>
           <dd className="mono">{evaluation?.depth ?? gate?.depth ?? "—"}</dd>
           <dt>provider</dt>
           <dd>
@@ -68,28 +75,28 @@ export default async function VerdictPage({ params }) {
           </dd>
           <dt>budget</dt>
           <dd className="mono">
-            {formatUsdc6(job.budgetUsdc6) ?? <span className="none">belum ada</span>} unit token
-            escrow (6 desimal)
+            {formatUsdc6(job.budgetUsdc6) ?? <span className="none">not available</span>} units of
+            the escrow token (6 decimals)
           </dd>
-          <dt>status ACP terakhir</dt>
+          <dt>last ACP status</dt>
           <dd>{acpStatusLabel(job.acpStatus)}</dd>
-          <dt>hash deliverable</dt>
+          <dt>deliverable hash</dt>
           <dd>
             <Hash value={evaluation?.deliverable} />
           </dd>
-          <dt>tx VerdictPosted</dt>
+          <dt>VerdictPosted tx</dt>
           <dd>
             <TxLink hash={job.verdictTxHash} />
           </dd>
-          <dt>tx finalize</dt>
+          <dt>finalize tx</dt>
           <dd>
             <TxLink hash={job.finalizeTxHash} />
           </dd>
-          <dt>berkas bundel</dt>
+          <dt>bundle file</dt>
           <dd className="mono">
             agent/data/chain-abc/verdicts/{job.bundleFile}
             <div style={{ color: "var(--muted)" }}>
-              nama berkas = keccak256 atas isi berkas; salinannya disajikan apa adanya di{" "}
+              file name = keccak256 of the file contents; a verbatim copy is served at{" "}
               <a href={"/verdicts/" + jobId + ".json"}>/verdicts/{jobId}.json</a>
             </div>
           </dd>
@@ -97,48 +104,48 @@ export default async function VerdictPage({ params }) {
       </div>
 
       <p className="lead">
-        <strong>memory_root ditampilkan apa adanya.</strong> Halaman ini tidak menghitung root:
-        angka di atas dibaca langsung dari bundel yang ditulis agen, dan root yang MENGIKAT adalah
-        yang tercatat di transaksi <code>VerdictPosted</code> di atas.
+        <strong>memory_root is shown as-is.</strong> This page does not compute the root: the
+        value above is read straight from the bundle the agent wrote, and the root that BINDS is
+        the one recorded in the <code>VerdictPosted</code> transaction above.
       </p>
 
       {gate ? (
         <div>
-          <h2>Keputusan gerbang (tanpa evaluasi deliverable)</h2>
+          <h2>Gate decision (no deliverable evaluated)</h2>
           <p className="lead">
-            Job ini ditolak <em>sebelum</em> deliverable dinilai, jadi bundelnya berbentuk{" "}
-            <code>gate-rejection</code> dan tidak punya hasil cek per-kriteria.
+            This job was rejected <em>before</em> any deliverable was scored, so its bundle has
+            the shape <code>gate-rejection</code> and carries no per-criterion check results.
           </p>
           <div className="card">
             <dl className="kv">
-              <dt>diterima?</dt>
+              <dt>accepted?</dt>
               <dd>
                 <span className={"tag " + (gate.accept ? "pass" : "fail")}>
                   {gate.accept ? "accept" : "reject"}
                 </span>
               </dd>
-              <dt>alasan</dt>
+              <dt>reason</dt>
               <dd>{gate.reason}</dd>
               <dt>budget</dt>
-              <dd className="mono">{readUint(gate.budget) ?? "belum ada"}</dd>
-              <dt>cap provider</dt>
+              <dd className="mono">{readUint(gate.budget) ?? "not available"}</dd>
+              <dt>provider cap</dt>
               <dd className="mono">
-                {readUint(gate.cap?.usdc) ?? <span className="none">belum ada</span>} (basis{" "}
+                {readUint(gate.cap?.usdc) ?? <span className="none">not available</span>} (basis{" "}
                 {gate.cap?.basis ?? "—"}, sample_size {readUint(gate.cap?.sample_size) ?? "—"})
               </dd>
               <dt>risk level</dt>
-              <dd className="mono">{readUint(gate.risk_level) ?? "belum ada"}</dd>
-              <dt>job insiden yang mendasarinya</dt>
+              <dd className="mono">{readUint(gate.risk_level) ?? "not available"}</dd>
+              <dt>incident jobs behind it</dt>
               <dd>
                 {(gate.incident_jobs ?? []).length === 0 ? (
-                  <span className="none">belum ada</span>
+                  <span className="none">not available</span>
                 ) : (
                   gate.incident_jobs.map((/** @type {any} */ j, i) => {
                     const id = readUint(j);
                     return (
                       <span key={i} className="mono">
                         {i > 0 ? ", " : ""}
-                        {id ? <Link href={"/verdict/" + id}>{id}</Link> : "belum ada"}
+                        {id ? <Link href={"/verdict/" + id}>{id}</Link> : "not available"}
                       </span>
                     );
                   })
@@ -155,19 +162,19 @@ export default async function VerdictPage({ params }) {
 
       {evaluation ? (
         <div>
-          <h2>Bukti per-kriteria</h2>
+          <h2>Per-criterion evidence</h2>
           <p className="lead">
-            Kategori rubric <code>{evaluation.category}</code>, kedalaman{" "}
+            Rubric category <code>{evaluation.category}</code>, depth{" "}
             <code>{evaluation.depth}</code>. <code>failed_checks</code>:{" "}
             <span className="mono">
-              {evaluation.failed_checks.length ? evaluation.failed_checks.join(", ") : "[] (kosong)"}
+              {evaluation.failed_checks.length ? evaluation.failed_checks.join(", ") : "[] (empty)"}
             </span>
           </p>
           <Checks checks={checks} criteria={evaluation.criteria} />
 
           {evaluation.unscored?.length ? (
             <div className="card warn">
-              <h3 style={{ marginTop: 0 }}>Kriteria yang TIDAK dinilai</h3>
+              <h3 style={{ marginTop: 0 }}>Criteria that were NOT scored</h3>
               <p className="mono">{evaluation.unscored.join(", ")}</p>
               <p style={{ marginBottom: 0 }}>{evaluation.unscored_reason}</p>
             </div>
@@ -175,11 +182,11 @@ export default async function VerdictPage({ params }) {
         </div>
       ) : null}
 
-      <h2>Deliverable yang dinilai</h2>
+      <h2>The deliverable that was scored</h2>
       {deliverable ? (
         <div className="card">
           <dl className="kv">
-            <dt>keccak256(teks)</dt>
+            <dt>keccak256(text)</dt>
             <dd>
               <Hash value={deliverable.sha_keccak} />
             </dd>
@@ -188,8 +195,8 @@ export default async function VerdictPage({ params }) {
         </div>
       ) : (
         <p className="none">
-          belum ada — job ini ditolak sebelum provider sempat submit, jadi tidak ada teks
-          deliverable yang tersimpan.
+          not available — this job was rejected before the provider ever submitted, so no
+          deliverable text was stored.
         </p>
       )}
     </div>

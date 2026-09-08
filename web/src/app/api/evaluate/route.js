@@ -16,24 +16,24 @@ export async function POST(request) {
   try {
     payload = await request.json();
   } catch {
-    return Response.json({ error: "body bukan JSON" }, { status: 400 });
+    return Response.json({ error: "request body is not JSON" }, { status: 400 });
   }
 
   const text = payload?.text;
   const depth = payload?.depth;
 
   if (typeof text !== "string") {
-    return Response.json({ error: "field `text` wajib berupa string" }, { status: 400 });
+    return Response.json({ error: "field `text` must be a string" }, { status: 400 });
   }
   if (text.length > MAX_TEXT_BYTES) {
     return Response.json(
-      { error: `teks melebihi batas panel (${MAX_TEXT_BYTES} karakter)` },
+      { error: `text exceeds the panel limit (${MAX_TEXT_BYTES} characters)` },
       { status: 413 },
     );
   }
   if (depth !== DEPTH_FULL && depth !== DEPTH_SAMPLING) {
     return Response.json(
-      { error: "field `depth` hanya boleh 'sampling' atau 'full'" },
+      { error: "field `depth` must be either 'sampling' or 'full'" },
       { status: 400 },
     );
   }
@@ -43,7 +43,7 @@ export async function POST(request) {
     evaluation,
     scope: {
       ran: ["format", "links"],
-      not_ran: ["gerbang cap provider", "memori Sibyl", "gerbang 402", "transaksi on-chain"],
+      not_ran: ["provider cap gate", "Sibyl memory", "402 gate", "on-chain transaction"],
     },
   });
 }
