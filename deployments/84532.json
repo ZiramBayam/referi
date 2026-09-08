@@ -28,8 +28,18 @@
     "paymentToken adalah nilai paymentToken() kontrak ACP dan BUKAN USDC Circle 0x036CbD53842c5426634e7929541eC2318f3dCF7e; keduanya sama-sama bersimbol USDC, jadi bandingkan ALAMAT, bukan symbol().",
     "arbiter == agent pada deploy ini, dan tetap begitu SELAMANYA: ADR-022 membekukan alamat ini sebagai kontrak submission, kontraknya immutable, jadi tidak ada redeploy yang memisahkannya. Pada kontrak ini arbiter TIDAK punya wewenang on-chain apa pun: resolve() stub revert NotImplemented (ADR-013) dan sweepToken TIDAK ADA di bytecode terdeploy (lihat catatan bytecode). Wallet arbiter terpisah 0xC9CF30c8aB471fD22536B955b5CFb79D26672cF1 ada di .env dan hanya relevan bila sumber hari ini dideploy ulang di luar submission ini.",
     "minBondWei = 0 disengaja: vault belum punya jalur ETH keluar (ADR-013), jadi bond yang disetor akan terkunci permanen.",
-    "Bytecode runtime on-chain (3518 byte) identik dengan hasil build src/EvaluatorVault.sol pada commit 8d3e596 kecuali di slot immutable (acp, agent, arbiter, MIN_BOND): 174 byte berbeda, SELURUHNYA di dalam immutableReferences. JANGAN bandingkan dengan out/EvaluatorVault.sol/EvaluatorVault.json hasil build HEAD — sejak commit e675234 (sweepToken) artefak itu 4237 byte dan memuat selector 0x258836fe yang TIDAK ada on-chain. Verifikasi paling kuat TIDAK perlu build ulang: broadcast/Deploy.s.sol/84532/run-1788469622537.json merekam sendiri \"commit\": \"8d3e596\" dan init code yang byte-identik dengan hasil build revisi itu (di luar 128 byte argumen konstruktor). Bila tetap ingin build ulang, bandingkan dengan commit 8d3e596 dan JANGAN pakai symlink untuk lib/: remapping absolut ikut masuk metadata solc sehingga 32 byte terakhir (hash metadata) berubah dan diff palsu menjadi 206 byte."
+    "Bytecode runtime on-chain (3518 byte) identik dengan hasil build src/EvaluatorVault.sol pada commit 8d3e596 kecuali di slot immutable (acp, agent, arbiter, MIN_BOND): 174 byte berbeda, SELURUHNYA di dalam immutableReferences. JANGAN bandingkan dengan out/EvaluatorVault.sol/EvaluatorVault.json hasil build HEAD — sejak commit e675234 (sweepToken) artefak itu 4237 byte dan memuat selector 0x258836fe yang TIDAK ada on-chain. Verifikasi paling kuat TIDAK perlu build ulang: broadcast/Deploy.s.sol/84532/run-1788469622537.json merekam sendiri \"commit\": \"8d3e596\" dan init code yang byte-identik dengan hasil build revisi itu (di luar 128 byte argumen konstruktor). Bila tetap ingin build ulang, bandingkan dengan commit 8d3e596 dan JANGAN pakai symlink untuk lib/: remapping absolut ikut masuk metadata solc sehingga 32 byte terakhir (hash metadata) berubah dan diff palsu menjadi 206 byte.",
+    "Verifikasi Sourcify 8 Sep 2026 memakai sumber commit 8d3e596 (BUKAN HEAD) di worktree terpisah dengan lib/ disalin fisik, bukan symlink. Sebelum unggah, build dibandingkan dengan `cast code`: panjang sama 3518 byte, 174 byte berbeda dan SELURUHNYA di dalam immutableReferences (nol byte berbeda di luar span immutable), hash metadata 32 byte terakhir IDENTIK. Hasilnya exact_match untuk creation maupun runtime. Blockscout menarik verifikasi itu dan kini mendekode Finalized/MemoryRootUpdated/VerdictPosted/ProviderCapSet/FinalizeFailed dengan nama; BaseScan TIDAK ikut karena Etherscan tidak mengimpor dari Sourcify dan verifikasinya butuh API key yang tidak ada di repo ini."
   ],
   "deployedAtTimestamp": 1788469622,
-  "deployer": "0xfa5AF5BAeB4aC500267D7189fa1f0AA923eCA894"
+  "deployer": "0xfa5AF5BAeB4aC500267D7189fa1f0AA923eCA894",
+  "sourcify": {
+    "match": "exact_match",
+    "creationMatch": "exact_match",
+    "runtimeMatch": "exact_match",
+    "verifiedAt": "2026-09-08T12:40:49Z",
+    "repo": "https://repo.sourcify.dev/84532/0x5c6EE4586ACABcb6326069c229E58091B21ef384",
+    "verifiedFromCommit": "8d3e596",
+    "check": "curl -s https://sourcify.dev/server/v2/contract/84532/0x5c6EE4586ACABcb6326069c229E58091B21ef384"
+  }
 }
