@@ -7,8 +7,11 @@ Naskah **operasional**: dipakai sambil merekam layar, bukan untuk dibaca saja. S
 - Alur = `docs/spec.md` §7 langkah 1–5. Langkah 1–4 = satu perintah `make demo`; langkah 5 = tiga rute di browser.
 - Keadaan yang direkam adalah **kode yang dibekukan** (ADR-030). Jangan mengedit apa pun di antara take.
 - Hard stop perekaman: **9 Sep 18:00** (ADR-028 keputusan 2).
-- Kolom "Ucapan" berbahasa Indonesia. Bila video disubmit untuk juri berbahasa Inggris, terjemahkan
-  kolom itu apa adanya — struktur waktunya tidak berubah.
+- Kolom "Ucapan" berbahasa Indonesia. **Pasangan Inggrisnya sudah ada: `demo/video-script.en.md`** —
+  struktur waktu, bagian, dan buktinya identik; hanya kolom "Ucapan" dan panduan perekam yang
+  diterjemahkan, sedangkan keluaran terminal dan label UI dibiarkan berbahasa Indonesia (sesuai layar)
+  dengan glosarium Inggris dalam kurung. Juri Sibyl Labs berbahasa Inggris, jadi **berkas `.en.md` itulah
+  yang dipakai saat merekam**; berkas ini tetap sebagai panduan operator.
 
 ---
 
