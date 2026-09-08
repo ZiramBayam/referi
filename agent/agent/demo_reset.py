@@ -22,7 +22,9 @@ EMPAT BATAS, semuanya ditegakkan kode, bukan diimbau komentar:
      dari permintaan. Permintaan paling banyak boleh memilih NAMA basis data (`db`), dan nama
      itu wajib lolos `DB_NAME_RE` (nol `/`, nol `\\`, nol `..`, nol NUL) DAN hasil gabungnya
      wajib berinduk tepat pada akar demo. Dua lapis untuk satu properti, karena endpoint yang
-     tugasnya MENGHAPUS berkas adalah tempat paling mahal untuk salah sekali.
+     tugasnya MENGHAPUS berkas adalah tempat paling mahal untuk salah sekali. Penghapusannya
+     sendiri TIDAK memakai path string melainkan fd direktori akar (`_open_root_fd`), supaya
+     penukaran komponen leluhur sesudah pemeriksaan tidak bisa memindahkan sasaran.
   3. **Nol pengikutan symlink.** Berkas yang ternyata symlink TIDAK dihapus dan dilaporkan di
      `refused`. `unlink` atas symlink memang hanya melepas tautannya, tetapi menolaknya membuat
      jawaban endpoint ini jujur: tidak ada keadaan di mana ia melaporkan "terhapus" untuk
@@ -87,6 +89,11 @@ DB_SUFFIXES = ("", "-wal", "-shm")
 # bawah, dan tanda hubung. `..`, `/`, `\`, NUL, dan spasi mustahil lolos.
 DB_NAME_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
 DEFAULT_DB_NAME = "memory.db"
+
+# Penghapusan berjalan RELATIF terhadap fd direktori akar (lihat `_open_root_fd`). Tanpa
+# dukungan itu modul menolak menghapus apa pun: jalur path-string punya balapan penukaran
+# leluhur yang sudah pernah terbukti menghapus berkas di luar akar demo.
+_DIR_FD_SUPPORTED = os.open in os.supports_dir_fd and os.unlink in os.supports_dir_fd
 
 MAX_BODY_BYTES = 4 * 1024
 REQUEST_TIMEOUT_SECONDS = 15.0
@@ -219,15 +226,25 @@ class DemoResetApp:
     # -- penghapusan ----------------------------------------------------
     def reset(self, db_name: str = DEFAULT_DB_NAME) -> dict[str, Any]:
         """Sapu `<db>`, `<db>-wal`, `<db>-shm`. Idempoten: yang tidak ada = `missing`."""
+        if not _DIR_FD_SUPPORTED:  # pragma: no cover — POSIX punya keduanya
+            log.error("demo reset: platform tanpa dukungan dir_fd — penghapusan ditolak")
+            raise ResetRejected(REASON_IO)
         self._assert_root_is_not_a_symlink()
         if self.declared_root.resolve() != self.root:
             # Akar berpindah sejak konstruksi (mis. direktori ditukar). Jangan hapus apa pun.
             log.warning("demo reset: akar %s berubah sejak start — ditolak", self.declared_root)
             raise ResetRejected(REASON_ROOT_SYMLINK)
-        targets = [(suffix, self.resolve_target(db_name, suffix)) for suffix in DB_SUFFIXES]
-        outcomes: list[FileOutcome] = []
-        for _suffix, path in targets:
-            outcomes.append(FileOutcome(path.name, self._remove(path)))
+        names = [self.resolve_target(db_name, suffix).name for suffix in DB_SUFFIXES]
+        dir_fd = self._open_root_fd()
+        if dir_fd is None:
+            # Direktori demonya sendiri tidak ada: tidak ada yang bisa hilang, dan jawaban
+            # "semuanya missing" adalah laporan yang jujur untuk keadaan itu.
+            outcomes = [FileOutcome(name, "missing") for name in names]
+        else:
+            try:
+                outcomes = self._sweep(dir_fd, names)
+            finally:
+                os.close(dir_fd)
 
         body: dict[str, Any] = {
             "ok": True,
@@ -252,29 +269,63 @@ class DemoResetApp:
         )
         return body
 
-    @staticmethod
-    def _remove(path: Path) -> str:
-        """Hapus satu berkas dan laporkan nasibnya: deleted / missing / refused.
+    def _open_root_fd(self) -> int | None:
+        """Pegang akar demo sebagai FILE DESCRIPTOR direktori, bukan sebagai string.
 
-        Symlink ditolak lewat `O_NOFOLLOW`, bukan lewat `is_symlink()` lalu `unlink()`.
-        Yang kedua adalah dua panggilan atas nama yang sama: berkas biasa bisa berubah
-        jadi tautan di antaranya, dan laporannya lalu berkata "deleted" untuk sesuatu yang
-        isinya utuh di tempat lain. `O_NOFOLLOW` memutuskannya dalam SATU panggilan kernel.
+        Inilah yang menutup balapan yang dulu nyata: `self.root` adalah string yang dibekukan
+        saat konstruksi, jadi setiap `os.open`/`unlink` atas string itu meresolve ULANG seluruh
+        komponen leluhurnya. Menukar komponen `demo` menjadi symlink di antara penjaga
+        `reset()` dan `unlink` karena itu dulu mengarahkan penghapusan ke direktori lain —
+        terukur ~4,5% per panggilan di bawah balapan. Sesudah fd ini terbuka, kernel yang
+        memegang direktorinya: penukaran nama apa pun sesudahnya tidak lagi memindahkan sasaran.
 
-        Sisa balapan yang jujur diakui: entri masih bisa ditukar antara `open` dan
-        `unlink`. Dampaknya terbatas pada kejujuran laporan — `unlink` tidak pernah
-        mengikuti symlink dan namanya tetap terkurung di akar demo, jadi tidak ada berkas
-        di luar akar yang bisa hilang lewat jalur ini.
+        `O_NOFOLLOW` menolak kasus di mana `demo` SUDAH jadi symlink saat dibuka; `O_DIRECTORY`
+        menolak kasus di mana ia sudah jadi berkas biasa. `None` berarti direktorinya tidak ada
+        (mis. `sim/src/demo.ts` sedang membangun ulang `agent/data/demo`), yang bukan galat.
         """
         try:
-            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+            return os.open(self.root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        except FileNotFoundError:
+            return None
+        except OSError as err:
+            if err.errno in (errno.ELOOP, errno.EMLINK, errno.ENOTDIR):
+                log.warning("demo reset: akar %s bukan direktori sungguhan — ditolak", self.root)
+                raise ResetRejected(REASON_ROOT_SYMLINK) from None
+            log.warning("demo reset: gagal membuka akar (%s)", err.__class__.__name__)
+            raise ResetRejected(REASON_IO) from None
+
+    def _sweep(self, dir_fd: int, names: list[str]) -> list[FileOutcome]:
+        """Hapus tiap nama RELATIF terhadap `dir_fd`. Tidak ada path absolut yang dipakai lagi."""
+        return [FileOutcome(name, self._remove(dir_fd, name)) for name in names]
+
+    @staticmethod
+    def _remove(dir_fd: int, name: str) -> str:
+        """Hapus satu berkas dan laporkan nasibnya: deleted / missing / refused.
+
+        Dua penjaga, keduanya di tingkat panggilan kernel:
+
+          * `dir_fd` — `name` diresolve DI DALAM direktori yang sudah dipegang, jadi hanya
+            komponen terakhir yang bisa ditukar lawan. Leluhur tidak ikut diresolve ulang.
+          * `O_NOFOLLOW` — symlink ditolak dalam SATU panggilan, bukan lewat `is_symlink()`
+            lalu `unlink()`. Yang kedua adalah dua panggilan atas nama yang sama: berkas biasa
+            bisa berubah jadi tautan di antaranya, dan laporannya lalu berkata "deleted" untuk
+            sesuatu yang isinya utuh di tempat lain.
+
+        Sisa balapan yang jujur diakui, dan ini kali ini benar-benar terbatas: entri bernama
+        `name` masih bisa ditukar antara `open` dan `unlink`. Dampaknya hanya pada kejujuran
+        laporan — `unlink(dir_fd=...)` tidak pernah mengikuti symlink pada komponen terakhir
+        dan namanya tidak bisa keluar dari direktori yang dipegang fd, jadi berkas yang hilang
+        lewat jalur ini selalu entri di dalam akar demo itu sendiri.
+        """
+        try:
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dir_fd)
         except FileNotFoundError:
             return "missing"
         except OSError as err:
             if err.errno in (errno.ELOOP, errno.EMLINK):
                 # Lihat batas 3 di docstring modul: menolak, bukan mengikuti.
                 return "refused"
-            log.warning("demo reset: gagal membuka %s (%s)", path, err.__class__.__name__)
+            log.warning("demo reset: gagal membuka %s (%s)", name, err.__class__.__name__)
             raise ResetRejected(REASON_IO) from None
         try:
             if not stat.S_ISREG(os.fstat(fd).st_mode):
@@ -282,14 +333,14 @@ class DemoResetApp:
         finally:
             os.close(fd)
         try:
-            path.unlink()
+            os.unlink(name, dir_fd=dir_fd)
         except FileNotFoundError:
             return "missing"
         except IsADirectoryError:
             return "refused"
         except OSError as err:
-            # Path TIDAK dipantulkan ke klien; ia hanya masuk log.
-            log.warning("demo reset: gagal menghapus %s (%s)", path, err.__class__.__name__)
+            # Nama TIDAK dipantulkan ke klien; ia hanya masuk log.
+            log.warning("demo reset: gagal menghapus %s (%s)", name, err.__class__.__name__)
             raise ResetRejected(REASON_IO) from None
         return "deleted"
 
@@ -332,10 +383,22 @@ def _root_label(root: Path) -> str:
 # dan `application/json` memaksa preflight yang tidak akan pernah dijawab dengan izin.
 
 
+def _header_values(headers: Any, name: str) -> list[str]:
+    """Semua salinan satu header, sudah dipangkas. Bekerja untuk `email.message` dan dict."""
+    get_all = getattr(headers, "get_all", None)
+    if callable(get_all):
+        return [(value or "").strip() for value in (get_all(name) or [])]
+    return [(headers.get(name) or "").strip()]
+
+
 def check_same_origin(headers: Any, expected_port: int | None) -> None:
     """Tolak permintaan yang datang dari konteks browser lintas-asal. Diam bila aman."""
-    origin = (headers.get("Origin") or "").strip()
-    if origin:
+    # SEMUA salinan header dibaca, bukan hanya yang pertama: `headers.get("Origin")`
+    # mengembalikan salinan PERTAMA, jadi `Origin:` kosong yang disusul `Origin:
+    # http://jahat.example` dulu lolos gerbang ini. Pemanggil sah tidak mengirim satu pun.
+    for origin in _header_values(headers, "Origin"):
+        if not origin:
+            continue
         # TIDAK ada allowlist asal. Pemanggil sah tidak pernah mengirim header ini sama
         # sekali; membandingkan isinya hanya menambah tempat untuk salah.
         log.warning("demo reset: ditolak, permintaan membawa Origin=%r", origin[:120])
@@ -376,8 +439,15 @@ def _check_host(raw_host: str | None, expected_port: int | None) -> None:
     if name.lower() not in LOOPBACK_HOSTS:
         log.warning("demo reset: ditolak, Host=%r bukan loopback", host[:120])
         raise ResetRejected(REASON_BAD_HOST)
-    if expected_port is None or not port_part:
+    if expected_port is None:
         return
+    if not port_part:
+        # `agent/README.md` menjanjikan "port wajib port server"; menerima `Host: localhost`
+        # tanpa port membuat janji itu bohong dan menyisakan satu bentuk Host yang lolos
+        # tanpa menyebut port mana pun. Pemanggil sah selalu menyebutnya: port server ini
+        # bukan 80/443, jadi setiap klien HTTP memasangnya sendiri.
+        log.warning("demo reset: ditolak, Host=%r tanpa port", host[:120])
+        raise ResetRejected(REASON_BAD_HOST)
     if port_part != str(expected_port):
         log.warning("demo reset: ditolak, port pada Host=%r bukan %d", host[:120], expected_port)
         raise ResetRejected(REASON_BAD_HOST)

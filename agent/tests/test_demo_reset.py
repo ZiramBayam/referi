@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import pathlib
 import threading
+import time
 
 import pytest
 
@@ -783,3 +785,200 @@ def test_configFlagIsFalseWhenNothingIsConfigured(monkeypatch):
     monkeypatch.setattr(vc, "_env_file_values", dict)
     monkeypatch.delenv("X_GATE", raising=False)
     assert vc.config_flag("X_GATE") is False
+
+
+# ======================================================================
+# (j) Penukaran akar SESUDAH penjaga lewat — fd direktori, bukan path string
+# ======================================================================
+#
+# BALAPAN YANG DULU BERHASIL, dilaporkan reviewer dan diulang di sini: satu thread me-loop
+# `mv demo demo-real; ln -s ../chain-abc demo`, satu thread lain memanggil `reset()`. Karena
+# `self.root` hanyalah string, setiap `os.open`/`unlink` meresolve ULANG komponen `demo` —
+# dan penukaran yang mendarat SESUDAH kedua penjaga di `reset()` tetapi SEBELUM `unlink`
+# menghapus `chain-abc/memory.db*`, yakni berkas di LUAR akar demo (terukur ~4,5% per
+# panggilan). Sekarang akarnya dipegang sebagai fd direktori dan penukaran itu kalah.
+
+
+def _make_victim(tmp_path: pathlib.Path) -> pathlib.Path:
+    """Direktori DI LUAR akar demo, isinya bernama sama persis dengan sasaran penghapus."""
+    victim = tmp_path / "chain-abc"
+    victim.mkdir()
+    for suffix in dr.DB_SUFFIXES:
+        (victim / f"memory.db{suffix}").write_text("memori sungguhan", encoding="utf-8")
+    return victim
+
+
+def _victim_is_intact(victim: pathlib.Path) -> bool:
+    return all(
+        (victim / f"memory.db{suffix}").read_text(encoding="utf-8") == "memori sungguhan"
+        for suffix in dr.DB_SUFFIXES
+    )
+
+
+def test_aRootSwappedAfterTheFdIsOpen_cannotRedirectASingleUnlink(tmp_path):
+    """Inti perbaikannya: sesudah fd terbuka, KERNEL yang memegang direktorinya."""
+    root = make_root(tmp_path)
+    app = dr.DemoResetApp(root)
+    victim = _make_victim(tmp_path)
+
+    dir_fd = app._open_root_fd()
+    try:
+        # Penukaran yang dulu memenangkan balapan, dilakukan SESUDAH fd terbuka.
+        real = tmp_path / "demo-real"
+        root.rename(real)
+        root.symlink_to(victim, target_is_directory=True)
+
+        outcomes = app._sweep(dir_fd, [f"memory.db{s}" for s in dr.DB_SUFFIXES])
+    finally:
+        os.close(dir_fd)
+
+    assert [o.state for o in outcomes] == ["deleted", "deleted", "deleted"]
+    assert _victim_is_intact(victim), "berkas di luar akar demo ikut terhapus"
+    assert list(real.iterdir()) == [], "yang terhapus bukan isi direktori yang dipegang fd"
+
+
+def test_theReviewersRaceIsLost_noFileOutsideTheRootDisappears(tmp_path):
+    """Balapan asli reviewer, diulang: penukar vs pemanggil `reset()`, ribuan putaran."""
+    root = make_root(tmp_path, with_db=False)
+    app = dr.DemoResetApp(root)
+    victim = _make_victim(tmp_path)
+    real = tmp_path / "demo-real"
+
+    stop = threading.Event()
+    swaps = 0
+    calls = 0
+
+    def swapper() -> None:
+        nonlocal swaps
+        while not stop.is_set():
+            try:
+                root.rename(real)
+                root.symlink_to(victim, target_is_directory=True)
+                root.unlink()
+                real.rename(root)
+                swaps += 1
+            except OSError:  # penukaran yang bertabrakan dengan dirinya sendiri, ulangi
+                if real.exists() and not root.exists():
+                    real.rename(root)
+
+    # Umpan ditulis lewat fd direktori demo yang SUNGGUHAN, bukan lewat path `root`: kalau
+    # ditulis lewat path, tes sendirilah yang menimpa berkas korban saat penukar sedang
+    # memasang symlink, dan kegagalannya tidak lagi berarti apa pun.
+    bait_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    thread = threading.Thread(target=swapper, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 3.0
+    try:
+        while calls < 1500 and time.monotonic() < deadline:
+            for suffix in dr.DB_SUFFIXES:
+                fd = os.open(
+                    f"memory.db{suffix}",
+                    os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                    0o600,
+                    dir_fd=bait_fd,
+                )
+                os.write(fd, b"umpan")
+                os.close(fd)
+            try:
+                app.reset()
+            except dr.ResetRejected as rejected:
+                # Akar sedang jadi symlink saat dilihat: menolak adalah jawaban yang benar.
+                assert rejected.reason in (dr.REASON_ROOT_SYMLINK, dr.REASON_OUTSIDE)
+            except OSError:
+                pass
+            calls += 1
+    finally:
+        os.close(bait_fd)
+        stop.set()
+        thread.join(timeout=5)
+        if not root.exists() and real.exists():
+            real.rename(root)
+
+    assert calls > 100, "balapannya tidak sempat berjalan"
+    assert swaps > 0, "penukarnya tidak pernah berhasil menukar"
+    assert _victim_is_intact(victim), f"{swaps} penukaran menghapus berkas di luar akar demo"
+
+
+def test_anAncestorSwappedBeforeTheCallFailsClosed(tmp_path):
+    """Sisa yang jujur: leluhur yang ditukar SEBELUM panggilan ditolak penjaga resolve."""
+    parent = tmp_path / "data"
+    parent.mkdir()
+    root = parent / "demo"
+    root.mkdir()
+    app = dr.DemoResetApp(root)
+
+    umpan = tmp_path / "umpan"
+    (umpan / "demo").mkdir(parents=True)
+    for suffix in dr.DB_SUFFIXES:
+        (umpan / "demo" / f"memory.db{suffix}").write_text("memori sungguhan", encoding="utf-8")
+    root.rmdir()
+    parent.rmdir()
+    parent.symlink_to(umpan, target_is_directory=True)
+
+    with pytest.raises(dr.ResetRejected) as err:
+        app.reset()
+
+    assert err.value.reason == dr.REASON_ROOT_SYMLINK
+    assert _victim_is_intact(umpan / "demo")
+
+
+def test_aMissingRootReportsEverythingMissing_insteadOfExploding(tmp_path):
+    """`sim/src/demo.ts` membangun ulang `data/demo`; reset di celah itu bukan galat."""
+    root = tmp_path / "demo"
+    root.mkdir()
+    app = dr.DemoResetApp(root)
+    root.rmdir()
+
+    body = app.reset()
+
+    assert body["missing"] == ["memory.db", "memory.db-wal", "memory.db-shm"]
+    assert body["deleted"] == []
+
+
+# ======================================================================
+# (k) Header yang datang berganda / tanpa port
+# ======================================================================
+
+
+def test_aDuplicateOriginHeaderDoesNotSlipPastTheGate(tmp_path, serve_routes):
+    """`Origin:` kosong lalu `Origin: http://jahat.example` — `.get()` hanya melihat yang pertama."""
+    root = make_root(tmp_path)
+    server = serve_routes({dr.RESET_PATH: dr.DemoResetApp(root)})
+
+    conn = http.client.HTTPConnection("127.0.0.1", server.port, timeout=5)
+    try:
+        conn.putrequest("POST", dr.RESET_PATH)
+        conn.putheader("Host", f"127.0.0.1:{server.port}")
+        conn.putheader("Content-Type", "application/json")
+        conn.putheader("Origin", "")
+        conn.putheader("Origin", "http://jahat.example")
+        conn.putheader("Content-Length", "2")
+        conn.endheaders()
+        conn.send(b"{}")
+        response = conn.getresponse()
+        status, raw = response.status, response.read()
+    finally:
+        conn.close()
+
+    assert status == 403
+    assert json.loads(raw)["reason"] == dr.REASON_CROSS_ORIGIN
+    assert_nothing_deleted(root)
+
+
+def test_aLoopbackHostWithoutAPortIsRefused(tmp_path, serve_routes):
+    """`agent/README.md` menjanjikan port wajib port server — kode sekarang menepatinya."""
+    root = make_root(tmp_path)
+    server = serve_routes({dr.RESET_PATH: dr.DemoResetApp(root)})
+
+    status, raw = server.request(
+        "POST", dr.RESET_PATH, b"{}", headers={"Content-Type": "application/json", "Host": "localhost"}
+    )
+
+    assert status == 403
+    assert json.loads(raw)["reason"] == dr.REASON_BAD_HOST
+    assert_nothing_deleted(root)
+
+
+def test_theHostGateStillPassesWhenThePortIsUnknown(tmp_path):
+    """Pemanggil langsung (tanpa server terikat) tidak punya port untuk dibandingkan."""
+    dr.check_same_origin({"Host": "127.0.0.1"}, None)
