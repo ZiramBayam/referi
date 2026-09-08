@@ -7,6 +7,12 @@ import MemoryControl from "./MemoryControl.jsx";
 // pun di HTML yang bisa dibalik dari sisi klien.
 const DEMO_MODE = process.env.DEMO_MODE === "1";
 
+// Alamat server hapus memori milik `agent/` (proses terpisah, port 8010 — BUKAN port
+// gerbang 402). Dibaca di server pada setiap permintaan bersama gerbang DEMO_MODE,
+// jadi ia bisa diubah tanpa build ulang; nilainya hanya DITAMPILKAN di panel, sedangkan
+// yang benar-benar memanggilnya adalah rute `app/api/demo/memory/reset`.
+const RESET_API = process.env.NEXT_PUBLIC_AGENT_RESET_API || "http://127.0.0.1:8010";
+
 // WAJIB: tanpa ini Next memprarender /panel saat BUILD, sehingga DEMO_MODE yang berlaku
 // adalah nilai saat build — bukan saat `next start`. Gerbang DEMO_MODE harus dibaca pada
 // setiap permintaan, kalau tidak ia hanya gerbang semu.
@@ -41,7 +47,7 @@ export default async function PanelPage() {
 
       <PanelForm samples={samples} />
 
-      <MemoryControl enabled={DEMO_MODE} />
+      <MemoryControl enabled={DEMO_MODE} resetApi={RESET_API} />
     </div>
   );
 }
