@@ -1,0 +1,38 @@
+// Dipakai HANYA oleh `pnpm lint` (`tsc --noEmit -p tsconfig.lint.json`), mengikuti pola
+// `sim/tsconfig.json`. Runtime tidak memakai berkas ini sama sekali.
+//
+// Kenapa namanya BUKAN `tsconfig.json`: keberadaan `tsconfig.json` membuat Next 16
+// menyalakan mode TypeScript dan MENUNTUT `@types/react` + `@types/react-dom` — paket
+// yang TIDAK ada di `docs/versions.md`, jadi menambahkannya butuh ADR. `web/` karena itu
+// ditulis dalam JavaScript + anotasi JSDoc, dan diperiksa `checkJs`.
+//
+// Kenapa `next lint` tidak dipakai: perintah itu DIHAPUS di Next 16.3.2 — argumen `lint`
+// kini ditafsirkan sebagai direktori proyek dan perintahnya selalu exit 1.
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    // JSX & modul React/Next tidak punya .d.ts (paket `@types/*`-nya di luar
+    // docs/versions.md). Tanpa pelonggaran ini seluruh berkas .jsx hanya menghasilkan
+    // TS7026/TS7016 "tidak ada tipe", yang menenggelamkan galat yang benar-benar milik
+    // kode kita. Cek yang tersisa TETAP menggigit: sintaks, resolusi impor, nama yang
+    // tidak ada, salah jumlah argumen, dan seluruh anotasi JSDoc @param/@type di src/lib.
+    "noImplicitAny": false,
+    // `react`, `react-dom`, dan `next` TIDAK punya .d.ts sendiri dan paket `@types/*`-nya
+    // di luar docs/versions.md. Tipenya karena itu disimpulkan dari JS paketnya; batasi
+    // kedalaman inferensi supaya lint memeriksa KODE KAMI, bukan isi node_modules.
+    "maxNodeModuleJsDepth": 0,
+    "types": [],
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src"]
+}
