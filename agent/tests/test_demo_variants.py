@@ -81,3 +81,66 @@ def test_variantB_usesTheFrozenVault_andASeparateWorkdir():
     assert 'const VARIANT_B_DB = join(VARIANT_B_ROOT, "memory.db");' in source
     # `.env` TIDAK boleh diwarisi untuk lokasi memori/artefak.
     assert "SIBYL_DB_PATH: VARIANT_B_DB," in source
+
+
+# ======================================================================
+# Preflight jaringan — varian B menuntut internet, dan tuntutan itu harus
+# diketahui SEBELUM Anvil menyala
+# ======================================================================
+
+
+def preflight_body() -> str:
+    source = demo_source()
+    return source.split("export async function preflightSepolia()", 1)[1].split(
+        "\nlet anvil", 1
+    )[0]
+
+
+def test_preflightRunsBeforeAnvilIsStarted():
+    """Kegagalannya DIPERTAHANKAN, hanya waktunya dipindah ke depan.
+
+    Sebelum ini, `make demo` menyalakan Anvil, men-deploy tiga kontrak, dan menjalankan lima
+    job — beberapa menit — baru menemukan bahwa syarat varian B (jaringan ke Base Sepolia)
+    tidak terpenuhi. Syarat yang bisa diketahui di detik pertama tidak boleh menagih menit.
+    """
+    body = demo_source().split("async function main()", 1)[1]
+    assert "await preflightSepolia();" in body
+    assert body.index("await preflightSepolia();") < body.index("await startAnvil();")
+    # Juga sebelum ruang kerja disapu: demo yang gagal preflight tidak boleh menghancurkan
+    # artefak run sebelumnya.
+    assert body.index("await preflightSepolia();") < body.index("rmSync(WORK_ROOT")
+
+
+def test_preflightFailsHard_neverFailsOpen():
+    """Fail-open di klimaks demo = hijau palsu. Preflight MELEMPAR, tidak mengembalikan flag."""
+    body = preflight_body()
+    assert "throw new Error(" in body
+    for jalan_keluar in ("return false", "return true", "process.exitCode = 0", "skip"):
+        assert jalan_keluar not in body
+
+
+def test_preflightMessageNamesExactlyWhatIsNeeded():
+    body = preflight_body()
+    assert "https://sepolia.base.org" in demo_source()
+    assert "akses jaringan keluar ke ${SEPOLIA_RPC}" in body
+    assert "NOL dana, NOL transaksi, NOL kunci privat" in body
+    # Alasannya, bukan hanya syaratnya: varian B membaca vault beku (amandemen ADR-023).
+    assert "VARIAN B membaca vault BEKU" in body
+    assert "amandemen ADR-023" in body
+
+
+def test_preflightSendsNoTransaction():
+    """Preflight hanya MEMBACA: `eth_chainId` + satu `eth_call` view. Nol dana, nol tx."""
+    body = preflight_body()
+    assert '"eth_chainId"' in body
+    assert '"eth_call"' in body
+    for terlarang in ("eth_sendRawTransaction", "sendTransaction", "privateKey", "wallet("):
+        assert terlarang not in body
+
+
+def test_preflightHasATimeout_soNoNetworkDoesNotHangForever():
+    source = demo_source()
+    assert "const PREFLIGHT_TIMEOUT_MS" in source
+    assert "AbortSignal.timeout(timeoutMs)" in source
+    # Dipakai di KEDUA pembacaan preflight, bukan hanya yang pertama.
+    assert preflight_body().count("PREFLIGHT_TIMEOUT_MS") == 2

@@ -42,10 +42,16 @@ test:
 	pnpm -r test
 # demo: naskah docs/spec.md §7 langkah 1-4 DARI NOL di Anvil lokal, lalu bongkar lagi.
 #
-# Tidak menyentuh jaringan apa pun: `sim/src/demo.ts` menyalakan `anvil --chain-id 84532` di
-# 127.0.0.1, men-deploy mock ACP + MockUSDC + EvaluatorVault, lalu menjalankan sim dan agen di
-# atasnya. chainId 84532 WAJIB (bukan 31337): SDK Virtuals memetakan chainId lewat registri
-# bawaannya dan gagal-tertutup untuk id yang tidak terdaftar.
+# Langkah 1-4 varian A berjalan sepenuhnya lokal: `sim/src/demo.ts` menyalakan
+# `anvil --chain-id 84532` di 127.0.0.1, men-deploy mock ACP + MockUSDC + EvaluatorVault, lalu
+# menjalankan sim dan agen di atasnya. chainId 84532 WAJIB (bukan 31337): SDK Virtuals memetakan
+# chainId lewat registri bawaannya dan gagal-tertutup untuk id yang tidak terdaftar.
+#
+# BUTUH INTERNET: varian B membaca vault BEKU di Base Sepolia (https://sepolia.base.org) — NOL
+# dana, NOL transaksi, NOL kunci privat, hanya dua pembacaan view. Syarat itu diperiksa PREFLIGHT
+# di detik pertama, sebelum anvil menyala; tanpa jaringan demo berhenti di situ dengan exit 1
+# alih-alih membuang beberapa menit lebih dulu. Kegagalannya memang keras: melewati varian B dan
+# tetap keluar 0 berarti mencetak klaim mode aman yang tidak pernah dibaca dari chain.
 #
 # `SIBYL_DB_PATH`, `VERDICT_BUNDLE_DIR`, dan `DELIVERABLE_DIR` diteruskan EKSPLISIT oleh skrip
 # itu ke `agent/data/demo/`, dan TIDAK PERNAH diwarisi dari `.env` — `.env` repo ini menunjuk

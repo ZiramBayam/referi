@@ -246,11 +246,19 @@ function sleep(ms: number): Promise<void> {
 // Anvil
 // ---------------------------------------------------------------------------
 
-async function rpcTo(url: string, method: string, params: unknown[] = []): Promise<unknown> {
+async function rpcTo(
+  url: string,
+  method: string,
+  params: unknown[] = [],
+  timeoutMs?: number,
+): Promise<unknown> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    // Tanpa batas waktu, host yang menerima koneksi lalu diam menggantung demo TANPA BATAS.
+    // Hanya dipasang bila pemanggil memintanya, supaya jalur rantai lokal tidak berubah.
+    ...(timeoutMs === undefined ? {} : { signal: AbortSignal.timeout(timeoutMs) }),
   });
   const body = (await res.json()) as { result?: unknown; error?: { message?: string } };
   if (body.error) throw new Error(`${method}: ${body.error.message ?? "galat RPC"}`);
@@ -270,6 +278,88 @@ async function nonceOf(url: string, address: Address): Promise<number> {
 /** `eth_call` tanpa argumen (view nol-parameter). */
 async function callView(url: string, to: Address, selector: Hex): Promise<string> {
   return String(await rpcTo(url, "eth_call", [{ to, data: selector }, "latest"]));
+}
+
+/**
+ * Batas tunggu preflight. Cukup longgar untuk RPC publik yang sedang lambat, cukup ketat
+ * supaya "tidak ada jaringan" tidak berarti menunggu tanpa akhir sebelum demo dimulai.
+ */
+const PREFLIGHT_TIMEOUT_MS = 10_000;
+
+/**
+ * PREFLIGHT jaringan — dijalankan PALING AWAL, sebelum ruang kerja disapu dan sebelum Anvil
+ * menyala.
+ *
+ * Sebabnya: sejak varian B, `make demo` MEMBUTUHKAN akses keluar ke Base Sepolia. Tanpa
+ * jaringan ia tetap gagal keras (exit 1) — dan itu memang yang benar; melewati varian B lalu
+ * keluar 0 berarti demo mencetak "MODE AMAN, 0 tx" tanpa pernah membacanya di chain, yaitu
+ * hijau palsu di klimaks presentasi. Yang salah hanyalah WAKTUNYA: kegagalan itu dulu tiba
+ * sesudah Anvil menyala dan lima job dijalankan, yakni beberapa menit terbuang untuk syarat
+ * yang bisa diketahui di detik pertama. Jadi kegagalannya DIPERTAHANKAN, tempatnya dipindah
+ * ke depan.
+ *
+ * Yang diperiksa hanya keterjangkauan dan identitas rantainya. NOL dana, NOL transaksi, NOL
+ * kunci privat: dua pembacaan, `eth_chainId` dan satu `eth_call` view atas vault beku.
+ */
+export async function preflightSepolia(): Promise<void> {
+  // Anotasi tipe ada di VARIABELnya, bukan hanya di panah: analisis alur TypeScript hanya
+  // memperlakukan sebuah fungsi sebagai `never` (sehingga `onchainRoot` terhitung pasti
+  // terisi sesudah blok `catch`) bila deklarasinya sendiri beranotasi.
+  const gagal: (sebab: string) => never = (sebab) => {
+    throw new Error(
+      [
+        `PREFLIGHT GAGAL — ${sebab}.`,
+        `Yang dibutuhkan: akses jaringan keluar ke ${SEPOLIA_RPC} (Base Sepolia, chainId ${CHAIN_ID}).`,
+        "Yang TIDAK dibutuhkan: NOL dana, NOL transaksi, NOL kunci privat.",
+        `Kenapa: VARIAN B membaca vault BEKU ${FROZEN_VAULT} di Base Sepolia — root on-chain`,
+        "non-nol adalah satu-satunya keadaan yang membuat memori terhapus berarti MODE AMAN",
+        "(amandemen ADR-023: varian A di Anvil lokal, varian B di vault Sepolia beku).",
+        "Demo berhenti DI SINI, sebelum Anvil menyala: melewati varian B dan tetap keluar 0",
+        "berarti mencetak klaim mode aman yang tidak pernah dibaca dari chain.",
+      ].join("\n  "),
+    );
+  };
+
+  // `fetch` membungkus sebab sesungguhnya (DNS, koneksi ditolak, TLS) di `cause`; tanpa
+  // membukanya pesannya cuma "fetch failed", yang tidak memberi tahu apa pun untuk diperbaiki.
+  const sebabGalat = (err: unknown): string => {
+    if (!(err instanceof Error)) return String(err);
+    const cause = (err as { cause?: unknown }).cause;
+    const detail = cause instanceof Error ? ` — ${cause.message}` : "";
+    return `${err.name}: ${err.message}${detail}`;
+  };
+
+  let chainIdRaw: unknown;
+  try {
+    chainIdRaw = await rpcTo(SEPOLIA_RPC, "eth_chainId", [], PREFLIGHT_TIMEOUT_MS);
+  } catch (err: unknown) {
+    gagal(`${SEPOLIA_RPC} tidak terjangkau (${sebabGalat(err)})`);
+  }
+  const chainId = Number(chainIdRaw);
+  if (chainId !== CHAIN_ID) {
+    gagal(`${SEPOLIA_RPC} menjawab chainId ${chainId}, bukan ${CHAIN_ID}`);
+  }
+
+  // Vault beku harus BISA DIBACA dari sini juga: RPC yang hidup tetapi menolak `eth_call`
+  // akan menjatuhkan varian B belakangan, dan itu persis yang sedang dipindahkan ke depan.
+  let onchainRoot: string;
+  try {
+    onchainRoot = String(
+      await rpcTo(
+        SEPOLIA_RPC,
+        "eth_call",
+        [{ to: FROZEN_VAULT, data: SELECTOR_LAST_MEMORY_ROOT }, "latest"],
+        PREFLIGHT_TIMEOUT_MS,
+      ),
+    );
+  } catch (err: unknown) {
+    gagal(`vault beku ${FROZEN_VAULT} tidak bisa dibaca (${sebabGalat(err)})`);
+  }
+  if (onchainRoot === ZERO_ROOT) {
+    gagal(`lastMemoryRoot() vault ${FROZEN_VAULT} NOL — varian B menuntut vault yang sudah hidup`);
+  }
+
+  log("preflight.ok", { rpc: SEPOLIA_RPC, chainId, vault: FROZEN_VAULT, onchainRoot, txBaru: 0 });
 }
 
 let anvil: ReturnType<typeof spawn> | null = null;
@@ -611,6 +701,10 @@ async function main(): Promise<void> {
   const deployer = wallet("deployer");
 
   log("start", { rpc: RPC_URL, chainId: CHAIN_ID, workdir: WORK_ROOT });
+
+  // Syarat jaringan varian B DIPERIKSA DI SINI — sebelum ruang kerja disapu, sebelum Anvil
+  // menyala, sebelum satu job pun dijalankan.
+  await preflightSepolia();
 
   // Ruang kerja BERSIH tiap kali — kalau tidak, "dari nol" jadi bohong dan dua eksekusi
   // berturut-turut tidak mungkin identik.
