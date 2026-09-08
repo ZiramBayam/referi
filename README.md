@@ -26,12 +26,17 @@ Kontrak submission (BEKU, ADR-022): [`0x5c6EE4586ACABcb6326069c229E58091B21ef384
 Bagian ini sengaja ditaruh **paling atas** dan ditulis lebih dulu daripada bagian pitch mana pun. Butir
 1-13 dipindahkan apa adanya dari ADR dan artefak deploy; butir 14-25 ditambahkan sesudah audit "klaim vs
 kenyataan" dan sumbernya adalah kode serta chain yang bisa Anda buka sendiri. Angkanya tidak dilunakkan.
+Butir 26-35 datang dari review keamanan atas kontrak dan agen: setiap butirnya **dibuktikan reviewer lewat
+tes musuh** — peran yang mencoba dan galat yang ia terima — bukan disimpulkan dari membaca kode.
 
 Kalau waktu Anda hanya cukup untuk empat: **butir 14** (insentif fee belum diperbaiki — pembalikan
 terbesar), **butir 16** (jangkar root melingkar dan tanpa konsekuensi), **butir 19** (tes destruktif belum
 berartefak), dan **butir 22** — `lastMemoryRoot()` vault **sengaja tidak sama** dengan `memory_export` atas
 DB hari ini, karena memori ditulis sesudah `postVerdict`. Kalau Anda hanya akan menyalin satu blok perintah
 dari README ini, baca butir 22 lebih dulu supaya Anda tahu nilai mana yang seharusnya cocok.
+
+Dan bila dari kelompok 26-35 Anda hanya membaca satu: **butir 26** — verdict yang salah tidak bisa
+dibatalkan siapa pun, sehingga `CHALLENGE_WINDOW` hari ini adalah latensi dengan nol perlindungan.
 
 ### 1. Yang dipertaruhkan evaluator hari ini = nol
 
@@ -307,7 +312,7 @@ Jangan menilai dari `docs/spec.md` saja — berikut yang belum berjalan hari ini
 
 | Belum hidup | Bukti |
 |---|---|
-| ~~`make demo`~~ | **SUDAH HIDUP** sejak commit `a03e294` — menjalankan §7 langkah 1-4 dari nol di Anvil lokal. Yang masih belum: varian destruktif KEDUA (mode aman) — butir 19 |
+| ~~`make demo`~~ | **SUDAH HIDUP** sejak commit `a03e294` — menjalankan §7 langkah 1-4 dari nol di Anvil lokal; varian destruktif KEDUA (mode aman) menyusul di commit `986fad6`. Yang masih belum: artefak (log/fixture) yang ditinggalkannya — butir 19 |
 | x402 fee di muka (ADR-004) | gerbang 402-nya ADA (`agent/agent/payment_402.py`), tetapi **belum dikonsumsi jalur job** — butir 23 |
 | `MemoryGateHook` | tidak ada di `contracts/src/` (hanya `EvaluatorVault.sol`, `IACP.sol`); hook butuh whitelist admin Virtuals (ADR-001) |
 | Rubric LLM | dipotong; hanya cek deterministik yang jalan (`agent/agent/checks/`: `format`, `links`, `chain`) |
@@ -403,22 +408,37 @@ cap. Kontrak berfungsi sebagai **papan pengumuman yang bisa dibaca siapa pun**, 
 ### 18. `pnpm -r test` tidak cocok dengan proyek mana pun → exit 0
 
 `make test` menjalankan tiga suite, dan yang ketiga kosong: `pnpm-workspace.yaml` mendaftarkan `sim` dan
-`web` (dan `web/` belum ada, butir 11), sementara `sim/package.json:5-8` hanya punya script `job:min` dan
-`mint:client` — **nol tes**. Jadi satu-satunya kode yang menyentuh SDK Virtuals punya **nol tes otomatis**;
+`web` (dan `web/` belum ada, butir 11), sementara kelima script di `sim/package.json:6-10` — `job:min`,
+`sim:run`, `demo`, `mint:client`, `typecheck` — **tidak memuat satu pun `test`**, sehingga `pnpm -r test`
+hijau atas **nol proyek**. Jadi satu-satunya kode yang menyentuh SDK Virtuals punya **nol tes otomatis**;
 yang menjaganya hanyalah rantai on-chain yang dijalankan tangan. `forge test` dan `uv run pytest` nyata.
 
-### 19. Tes destruktif: SATU varian kini beroteomasi, varian kedua belum
+### 19. Tes destruktif: kedua varian kini diotomasi — yang belum adalah ARTEFAKNYA
 
-Sebagian batasan ini sudah dicabut sejak commit `a03e294`. Yang **sudah** ada: `make demo` menjalankan §7
-langkah 1-4 dari nol di Anvil lokal dan langkah 4-nya adalah varian destruktif pertama — vault segar +
-memori kosong, sehingga job C yang DITOLAK saat memori ada menjadi **lolos** saat memori tidak ada, pada
-budget yang IDENTIK. Dua eksekusi berturut-turut memberi ringkasan identik.
+Sebagian besar batasan ini sudah dicabut, dan versi README sebelumnya masih menyatakan sebaliknya. Keadaan
+hari ini, apa adanya:
 
-Yang **masih belum** ada, dan ini yang menahan butir ini tetap berdiri: varian destruktif **kedua** (root
+**Varian A — degradasi (commit `a03e294`).** `make demo` menjalankan §7 langkah 1-4 dari nol di Anvil lokal;
+langkah 4-nya adalah varian destruktif pertama — vault segar + memori kosong, sehingga job C yang DITOLAK
+saat memori ada menjadi **lolos** saat memori tidak ada, pada budget yang IDENTIK. Dua eksekusi berturut-turut
+memberi ringkasan identik. Label modenya `normal`, bukan `naive` — baca butir 34 sebelum mengutipnya.
+
+**Varian B — mode aman (commit `986fad6`).** Ia **juga sudah diotomasi**, di perintah yang sama: root
 on-chain non-nol + `memory.db` dihapus → **mode aman**, nol `postVerdict`, job menggantung sampai
-`expiredAt`) belum diotomasi. Juga belum ada: direktori `logs/`, fixture, dan berkas pendamping untuk klaim
-"md5 identik sebelum/sesudah" pada tabel di bawah. Jadi tabel tes destruktif itu **masih** laporan untuk
-baris mode amannya, sementara baris degradasinya kini bisa Anda jalankan sendiri dengan satu perintah.
+`expiredAt`. Ia tidak dipentaskan di chain buatan sendiri melainkan dijalankan atas **vault Sepolia yang
+beku**, dan ia **menggugurkan seluruh run** bila salah satu buktinya tidak muncul — exit agen ≠ 0, baris
+`MODE AMAN:` tidak tercetak, `gerbang memori: mode=safe` tidak tercetak, pemicunya bukan aturan (a) "file
+hilang", ada `postVerdict`/`finalize`/`setProviderCap` yang terkirim, atau nonce wallet agen berubah
+(`sim/src/demo.ts:669-678`, pesannya berbentuk `VARIAN B GUGUR: …`). Itu juga sebab `make demo` menuntut
+internet (butir 34).
+
+**Yang MASIH belum ada, dan itu artefaknya, bukan otomasinya.** `make demo` membuat direktori
+`agent/data/demo/logs/` (`sim/src/demo.ts:71` dan `:618`) tetapi **tidak pernah menulis satu berkas pun ke
+dalamnya** — tidak ada satu pun penulisan berkas di skrip itu. Seluruh bukti demo karena itu hanya **stdout
+yang lewat**, dan `data/` ter-gitignore (butir 12). Tidak ada fixture, dan tidak ada berkas pendamping untuk
+klaim "md5 identik sebelum/sesudah" pada tabel di bawah. Jadi tabel tes destruktif itu tetap **laporan** yang
+tidak bisa Anda cocokkan dengan berkas mana pun di repo; yang bisa Anda lakukan adalah menjalankan
+`make demo` sendiri dan membandingkannya dengan mata.
 
 ### 20. Pihak ketiga tidak bisa mengulang rantai A/B/C pada vault ini
 
@@ -598,6 +618,191 @@ Yang **tidak** dibuktikannya, dan ini wajib dibaca bersamanya:
 - **Job 421 yang lulus itulah yang membayar evaluator** 12.500 unit (butir 14) — bias insentif yang kami
   kritik tetap berlaku pada demo ini sendiri.
 
+---
+
+### 26. Verdict yang salah tidak bisa dibatalkan siapa pun — `CHALLENGE_WINDOW` adalah latensi, bukan perlindungan
+
+Butir 2 sudah menyebut `challenge`/`resolve` sebagai stub. Yang ditambahkan di sini adalah **akibatnya
+sampai habis**, karena reviewer keamanan menjalankan seluruh matriksnya sebagai tes musuh, bukan membacanya:
+
+| Yang mencoba membatalkan verdict salah | Yang ia dapat | Bukti |
+|---|---|---|
+| agen sendiri (`postVerdict` ulang atas job yang sama) | `VerdictAlreadyPosted()` | `contracts/src/EvaluatorVault.sol:307`; `contracts/test/EvaluatorVault.t.sol:446` |
+| penantang, membawa bond ETH | `NotImplemented()` — dan ETH-nya kembali utuh karena tx dibatalkan | `EvaluatorVault.sol:327-331`; `test_challenge_reverts` (`EvaluatorVault.t.sol:865-885`, keempat peran, dengan dan tanpa `msg.value`) |
+| arbiter | `NotImplemented()` | `EvaluatorVault.sol:341-345`; `test_resolve_arbiter_reverts_notImplemented` (`:887`) |
+| pihak asing yang ingin menjalankan verdictnya | **berhasil** — `finalize` permissionless, dan job benar-benar berpindah ke status 3 (`Completed`), yaitu **pembayaran nyata ke provider** | `EvaluatorVault.sol:363` (`finalize` tanpa modifier peran); `test_authMatrix_finalize_openToAllRoles` (`:987-997`, keempat peran, `assertEq(_status(jobId), 3)`) |
+
+Jadi kalimat yang harus Anda bawa keluar dari bagian ini, tanpa pelunakan:
+
+> **`CHALLENGE_WINDOW` = 120 detik pada kontrak submission adalah MURNI LATENSI. Ia memberi NOL
+> perlindungan.** Selama dua menit itu tidak ada satu pun panggilan yang bisa menghentikan verdict; sesudah
+> dua menit itu siapa pun boleh mengeksekusinya, dan uangnya berpindah.
+
+Satu-satunya hal yang berdiri antara verdict salah dan pembayaran hari ini adalah **agen yang menahan diri
+sebelum menandatangani**, bukan kontraknya. Itulah kenapa butir 16, 29, 30, dan 31 di bawah penting: seluruh
+pertahanan nyata ada di sisi off-chain.
+
+### 27. Guard `ArbiterEqualsAgent` ada di SKRIP DEPLOY, bukan di kontrak
+
+Butir 3 menempel keluaran `cast` yang menunjukkan `arbiter() == agent()`. Yang belum tertulis: kontraknya
+sendiri **tidak pernah** melarang keadaan itu. Yang melarangnya hanya skrip deploy —
+`contracts/script/Deploy.s.sol:64` (`error ArbiterEqualsAgent();`) dan `:112`
+(`if (arbiter == agent && !allowArbiterEqAgent) revert ArbiterEqualsAgent();`) — jadi guard itu bisa
+dimatikan lewat `ALLOW_ARBITER_EQ_AGENT`, dan pada deploy submission memang dimatikan.
+
+`EvaluatorVault.sol` sendiri tidak punya cabang itu di konstruktor mana pun. NatSpec `sweepToken` bahkan
+menyandarkan alasan `onlyArbiter`-nya pada guard tersebut:
+
+> `` `onlyArbiter`, bukan `onlyAgent`: agen adalah pihak yang mengumumkan verdict, jadi memberinya kunci ke
+> hasil finansial dari verdictnya sendiri meniadakan pemisahan peran yang justru dijaga guard
+> `ArbiterEqualsAgent` di skrip deploy. `` (`contracts/src/EvaluatorVault.sol:255-257`)
+
+Pemisahan peran yang dijanjikan kalimat itu **tidak ada pada instans terdeploy**, dan tidak akan pernah ada:
+kontraknya immutable dan ADR-022 keputusan 1 membekukannya sebagai kontrak submission. Baca NatSpec itu
+sebagai niat rancangan, bukan sebagai gambaran vault `0x5c6EE45…f384`.
+
+### 28. `BondTooLow` tidak pernah menyala — evaluator tidak mempertaruhkan apa pun, dan ETH pun terjebak
+
+`postVerdict` memang memeriksa bond (`if (bond < MIN_BOND) revert BondTooLow();`,
+`contracts/src/EvaluatorVault.sol:304`), tetapi `MIN_BOND` pada kontrak terdeploy = **0**
+(`deployments/84532.json` → `"minBondWei": "0"`, butir 1). `bond` bertipe `uint256`, jadi `bond < 0`
+mustahil: **pada vault submission cabang `BondTooLow` tidak bisa dijangkau sama sekali.** Jangan baca
+keberadaan error itu di ABI sebagai perlindungan yang hidup.
+
+Angkanya juga jangan dibaca sebagai "bond kecil": yang dipertaruhkan evaluator hari ini adalah **nol**.
+Dan seandainya ia menyetor pun, ETH itu tidak bisa keluar — tidak ada satu pun jalur ETH keluar dari vault
+(disengaja, ADR-013; NatSpec `sweepToken` menegaskan fungsi itu "tidak `payable`, tidak pernah menyentuh
+`bond`", `EvaluatorVault.sol:243-247`). Untuk ERC-20 keadaannya sama buruknya lewat jalan lain:
+`sweepToken` ADA di sumber tetapi **tidak ada di bytecode terdeploy**, sehingga 62.500 unit fee evaluator
+hangus permanen (butir 4). **Dua-duanya, ETH maupun ERC-20, terjebak permanen di vault.**
+
+### 29. Pihak yang bisa menulis `memory.db` bisa MELONGGARKAN cap sampai tanpa batas
+
+Butir 10 menjelaskan apa yang terjadi kalau memori **hilang**. Ini kebalikannya: apa yang terjadi kalau
+memori **ditulisi**. Modul memori menyatakannya sendiri, apa adanya
+(`agent/agent/memory_policy.py:45-51`):
+
+> `CAP BISA DILONGGARKAN SAMPAI TANPA BATAS. … penulis memory.db tidak hanya bisa mematikan agen, ia bisa
+> MENIMPA body provider menjadi risk_level: 0 tanpa cap_usdc, sehingga derive_cap mengembalikan NO_CAP →
+> cap_to_onchain = 0 → di kontrak berarti TANPA BATAS (ADR-001). Monoton tidak-naik tidak menolong:
+> jangkarnya adalah cap_usdc yang tersimpan di body yang sama, dan penyerang menghapusnya bersamaan.`
+
+Ia juga bisa menghapus `incident_jobs`, `confirmed_patterns`, dan seluruh entity provider sekaligus.
+
+**Mitigasinya nyata tetapi berlubang, dan lubangnya harus disebut.** `gate_job` memakai `providerCap()`
+on-chain sebagai **lantai** — cap dari memori yang lebih longgar daripada yang sedang ditegakkan vault tidak
+dipakai (`agent/agent/memory_policy.py:1752-1758`), dan `setProviderCap` yang menaikkan cap ditolak
+`_require_onchain_cap_floor` (`agent/agent/vault_client.py:1440`, dipanggil dari `_send()` :1484). Lubangnya
+ada di baris berikutnya di kode yang sama: **`providerCap == 0` BUKAN lantai** — ia berarti TANPA BATAS
+(ADR-001, `agent/agent/vault_client.py:1547`). Jadi pada provider yang belum pernah diberi cap, lantai itu
+tidak ada, dan penulis memori bebas sepenuhnya.
+
+### 30. `memory.db` yang DITUKAR dengan DB lain tidak terdeteksi
+
+Ini penajaman butir 10, dan kami ulang di sini karena mudah terlewat di tengah daftar pemicu: mode aman
+memeriksa **keadaan FILE** memori — hilang, tidak bisa dibaca, atau terkunci instans lain — dan **tidak
+pernah memeriksa isinya** (`agent/agent/memory_policy.py:59-63`; ADR-024 konsekuensi menuliskan
+`HILANG: deteksi "memory.db diganti DB LAIN", baik kosong maupun terisi`). DB tukaran yang terbaca membawa
+agen ke **mode normal**, bukan mode aman.
+
+### 31. `postVerdict` menerima `reasonHash` nol dan jobId apa pun; `UnknownMemoryRoot` tidak bisa dipicu
+
+Dua hal yang membuat "perlindungan berbasis root di kontrak" menjadi salah baca:
+
+- **`postVerdict` hampir tidak memvalidasi apa-apa.** Ia menolak `kind` di luar {1,2}, menolak `memoryRoot`
+  nol, dan menolak verdict ganda — selesai (`contracts/src/EvaluatorVault.sol:301-320`). `reasonHash` **nol
+  diterima**, dan `jobId` **tidak pernah dicek keberadaannya di ACP**. Artinya jangkar `lastMemoryRoot` bisa
+  digerakkan atas job yang tidak pernah ada. Mitigasinya jujur: lewat kode kami hal itu tidak menggigit,
+  karena `_require_derived_root` menolak menandatangani bila `memory_root` di calldata bukan turunan memori
+  yang baru saja dibaca agen (`agent/agent/vault_client.py:1339`, dipanggil dari `_send()` :1473) — nol
+  transaksi terkirim. Yang tidak tertutup adalah pemanggilan **langsung** ke kontrak dengan kunci agen,
+  yang tidak melewati kode kami sama sekali.
+- **`UnknownMemoryRoot` di `finalize` vestigial.** `finalize` menuntut `knownRoots[v.memoryRoot]`
+  (`EvaluatorVault.sol:369`), tetapi `postVerdict` menulis `verdicts[jobId].memoryRoot` **dan**
+  `knownRoots[memoryRoot] = true` dalam **satu transaksi yang sama** (`:312` dan `:315`). Tidak ada penghapus
+  `knownRoots` (butir 7), jadi syarat itu selalu terpenuhi begitu verdictnya ada. **Penjaga itu tidak bisa
+  dipicu pada kontrak ini.**
+
+Kesimpulannya, dan ini yang tidak boleh salah dibaca dari diagram alur mana pun di README ini:
+**fail-closed berbasis root sepenuhnya hidup di sisi agen, bukan di kontrak.** Kontraknya hanya menolak root
+nol (butir 16).
+
+### 32. Agen tidak punya batas waktu saat menunggu jendela challenge
+
+Sesudah `postVerdict` mendarat, agen menunggu `readyAt` dengan loop tanpa batas atas:
+
+```python
+log.info("menunggu jendela challenge sampai readyAt=%d", ready_at)
+while True:
+    now = client.w3.eth.get_block("latest")["timestamp"]
+    if now > ready_at:
+        break
+    ...
+    time.sleep(min(20, max(2, ready_at - now + 1)))
+```
+
+(`agent/agent/vault_client.py:2586-2592`.) Tidak ada `deadline`, tidak ada jumlah percobaan maksimum. Bila
+RPC macet atau `block.timestamp` berhenti maju, **prosesnya menggantung tanpa exit code dan tanpa satu baris
+log yang menyatakan ia menyerah** — operator hanya melihat baris "sisa N detik" atau tidak ada apa-apa.
+Verdictnya sendiri sudah aman on-chain dan `finalize` permissionless (butir 26), jadi pemulihannya adalah
+memanggil `finalize` dari luar; tetapi otomasinya tidak menyediakan itu sendiri.
+
+### 33. Kriteria kualitatif TIDAK DINILAI — tidak ada LLM di jalur mana pun
+
+Butir 11 menyebut rubric LLM "dipotong". Yang perlu ditegaskan: pemotongan itu **tidak** membuat kriteria
+kualitatif dianggap lolos, dan juga tidak diam-diam. Ia dicatat sebagai kategori tersendiri di setiap bundel
+bukti — `unscored` beserta `unscored_reason` (`agent/agent/criteria.py:390-392` dan `:423-424`) dengan teks
+konstan:
+
+> `kriteria kualitatif TIDAK DINILAI di 2.3-min: rubric LLM dipotong (PM 5 Sep). Ia dicatat apa adanya,
+> tidak pernah dianggap lolos.` (`agent/agent/criteria.py:121-124`, dikunci `agent/tests/test_criteria.py:336-337`)
+
+Jadi **tidak ada satu pun panggilan LLM di jalur evaluasi hari ini.** Yang berjalan hanyalah cek
+deterministik `format`, `links`, `chain` (butir 11). Bila README, video, atau post mana pun terbaca seolah
+ada penilaian kualitatif, itu salah baca — bahasanya sengaja tidak menjanjikannya.
+
+### 34. `make demo` BUTUH internet, dan label mode pada varian A adalah `normal`
+
+Dua koreksi terhadap cara demo mudah disalahpahami.
+
+**Internet.** `make demo` menjalankan `cd sim && pnpm run demo` (`Makefile:56-57`), dan komentar di atas
+target itu masih menulis "Tidak menyentuh jaringan apa pun" (`Makefile:45`). Itu benar untuk seluruh varian
+A, yang memang berjalan di Anvil lokal — tetapi **tidak** untuk varian destruktif B, yang sengaja
+membaca **vault Sepolia yang beku** supaya `lastMemoryRoot()` non-nol yang memicu mode aman adalah keadaan
+nyata, bukan keadaan yang dipentaskan (`sim/src/demo.ts:125` `SEPOLIA_RPC = "https://sepolia.base.org"`,
+`:507` blok varian B, `:842-851` barisnya). Sifat sentuhan itu: **hanya baca — nol dana, nol transaksi**,
+dan itu diukur bukan diucapkan, lewat nonce wallet agen sebelum vs sesudah (`txBaru` di `demo.ts:848`).
+Konsekuensi praktisnya: **tanpa internet, `make demo` tidak selesai.**
+
+**Label mode.** Pada varian A, `plan.mode` yang dilaporkan agen adalah **`normal`, bukan `naive`** — sebab
+invokasi pertama melahirkan `memory.db` lalu ditolak `MODE_DRIFT`, dan yang menghasilkan verdict adalah
+invokasi kedua yang sudah punya DB (ADR-026; `sim/src/demo.ts:461-489`). Yang menunjukkan degradasinya
+karena itu **bukan** label modenya, melainkan dua kolom lain di baris ringkasan: **`depth=sampling`** dan
+**`cap=TANPA CAP`** (`demo.ts:826-841`). Jangan menyebut varian A "mode naif": kata itu hanya muncul sebagai
+baris log invokasi pertama yang berakhir dengan nol transaksi, dan bukan mode yang pernah melahirkan verdict
+lewat CLI.
+
+### 35. Pembagian peran `sim/` dan `agent/` — `sim:run` memang tidak menghasilkan verdict
+
+Ini bukan batasan melainkan pembacaan yang gampang salah, dan tempatnya paling berguna di sini.
+
+`sim/` adalah **client ACP**: ia membuat, mendanai, dan menyerahkan job (`createJob → setBudget → fund →
+submit`) lewat SDK `@virtuals-protocol/acp-node-v2`, dan berhenti tepat pada status yang dituntut naskah
+demo — `SUBMITTED` untuk job A/B, `FUNDED` untuk job C — lalu mencetak `jobId`-nya. `sim/src/scenario.ts:34-39`
+menyatakan batas itu sendiri:
+
+> `BATAS: skrip ini menyiapkan JOB, bukan VERDICT. … Yang menghasilkan verdict adalah agent/; skrip ini
+> berhenti tepat pada status yang dituntut tiap langkah … dan mencetak jobId-nya supaya agen bisa
+> dijalankan atasnya.`
+
+`agent/` adalah **evaluatornya**, dan ia dipanggil **per jobId** dengan
+`uv run python -m agent.vault_client --job-id <N> --kind reject|complete` (butir 9) — **bukan** dipanggil
+oleh `sim/`. Watcher event diturunkan dari jalur kritis oleh ADR-022 keputusan 3, jadi tidak ada proses yang
+menjembatani keduanya secara otomatis di luar `make demo`, yang menjalankan kedua sisi itu berurutan sebagai
+orkestrator demo (`sim/src/demo.ts`). Karena itu `pnpm sim:run` yang selesai **tanpa** verdict adalah
+perilaku yang benar, bukan kegagalan; kolom `expectVerdict` di skenario adalah ekspektasi naskah, bukan
+pengamatan. Batasan yang menyertainya: `sim/` belum punya satu pun tes otomatis (butir 18).
+
 ## Masalah → solusi
 
 ERC-8183 menaruh seluruh kepercayaan pada evaluator dan tidak memberinya alasan untuk jujur: evaluator
@@ -773,9 +978,11 @@ Pertanyaan yang paling wajar dari juri: kalau memorinya dihapus, apakah ada yang
 Dijalankan **6 Sep 2026 di Anvil lokal** (nol transaksi ke Base Sepolia; vault submission dan file memori
 rantai A/B/C tidak berubah — md5 identik sebelum/sesudah).
 
-> **Baca bagian ini sebagai laporan, bukan sebagai bukti.** Berbeda dengan bagian on-chain di atas, tidak
-> ada skrip, log, atau fixture di repo yang mendukung tabel ini, dan md5 di atas tidak punya berkas
-> pendamping (Batasan butir 19). Yang bisa Anda verifikasi sendiri hari ini adalah rantai A/B/C on-chain.
+> **Baca tabel ini sebagai laporan, bukan sebagai bukti.** Skripnya kini ADA — `make demo` menjalankan
+> kedua varian destruktif (Batasan butir 19) — tetapi ia tidak meninggalkan satu berkas pun: tidak ada log,
+> fixture, atau berkas pendamping di repo yang bisa Anda cocokkan dengan tabel ini, dan md5 di atas juga
+> tidak punya pendamping. Yang bisa Anda verifikasi sendiri hari ini: rantai A/B/C on-chain, dan
+> `make demo` yang Anda jalankan sendiri lalu bandingkan dengan mata.
 
 ```
 # vault SEGAR di Anvil: lastMemoryRoot() = 0, providerCap(provider) = 0
@@ -816,10 +1023,12 @@ Yang **tidak** berubah saat memori hilang: lapis kriteria dan cek deterministik 
 kasar tetap ditolak. Yang hilang hanyalah kalibrasi — kedalaman cek, pola curang yang sudah dipelajari, dan
 gating cap (`docs/spec.md` §3 aturan 6).
 
-Catatan jujur soal lingkungan: varian di atas berjalan pada vault **segar** (root on-chain = 0 → mode naif).
-Pada vault submission yang sudah hidup, menghapus `memory.db` memicu **mode aman**, bukan degradasi — agen
-berhenti total dan job menggantung sampai `expiredAt` (Batasan butir 10). Kedua varian dipentaskan terpisah;
-otomasinya lewat `make demo` belum ada (Batasan butir 11).
+Catatan jujur soal lingkungan: varian di atas berjalan pada vault **segar** (root on-chain = 0). Pada vault
+submission yang sudah hidup, menghapus `memory.db` memicu **mode aman**, bukan degradasi — agen berhenti
+total dan job menggantung sampai `expiredAt` (Batasan butir 10). **Kedua varian kini dijalankan oleh satu
+perintah `make demo`**: varian A di Anvil lokal, varian B atas vault Sepolia yang beku — hanya baca, nol
+dana, nol transaksi, dan run digugurkan bila buktinya tidak muncul (Batasan butir 19 dan 34). Yang belum
+ada bukan otomasinya melainkan artefaknya: perintah itu tidak meninggalkan log atau fixture di repo.
 
 ## Di luar spek ERC-8183 — dan kenapa
 
@@ -867,7 +1076,9 @@ JobCompleted`) beserta enam hash transaksinya terdokumentasi di `deployments/pip
 ```
 make doctor    # cetak versi toolchain, exit 1 bila tidak cocok docs/versions.md
 make test      # forge test + uv run pytest + pnpm -r test (yang ketiga kosong — Batasan butir 18)
-make demo      # rantai §7 langkah 1-4 dari NOL di Anvil lokal (~2m20s), ringkasan deterministik
+make demo      # rantai §7 langkah 1-4 dari NOL di Anvil lokal (~2m20s), ringkasan deterministik,
+               # lalu varian destruktif B yang MEMBACA vault Sepolia beku — butuh internet
+               # (hanya baca: nol dana, nol transaksi — Batasan butir 34)
 ```
 
 `make doctor` membaca `node`/`forge` dari PATH yang hanya dimuat shell interaktif — jalankan dari terminal
