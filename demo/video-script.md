@@ -21,7 +21,7 @@ Naskah **operasional**: dipakai sambil merekam layar, bukan untuk dibaca saja. S
 |---|---|---|---|
 | A1 | `cd /home/zirambayam/referi && make doctor` | keluar dengan kode 0 | jangan merekam; toolchain tidak cocok `docs/versions.md` |
 | A2 | Pastikan ada internet ke `https://sepolia.base.org` | `make demo` memeriksanya PREFLIGHT di detik pertama (`Makefile:50-54`) | tanpa jaringan `make demo` berhenti dengan exit 1 sebelum Anvil menyala |
-| A3 | **Dry-run**: `make demo 2>&1 \| tee /tmp/dryrun-demo.log`, tunggu selesai | exit 0; baris `VARIAN A:` dan `VARIAN B:` tercetak | kalau tidak, perbaiki lingkungan dulu — jangan merekam kegagalan lalu menceritakannya sebagai sukses |
+| A3 | **Dry-run berwaktu**: `time make demo 2>&1 \| tee /tmp/dryrun-demo.log`, tunggu selesai | exit 0; baris `VARIAN A:` dan `VARIAN B:` tercetak; catat runtime-nya — terukur **3m23s** dan **3m56s**, jadi harapkan **Rencana B** | kalau tidak, perbaiki lingkungan dulu — jangan merekam kegagalan lalu menceritakannya sebagai sukses |
 | A4 | `pnpm --filter web build` | build selesai tanpa galat | — |
 | A5 | Terminal B: `DEMO_MODE=1 pnpm --filter web start` | server di `http://127.0.0.1:3000` (`-H 127.0.0.1` dipin di `web/package.json:9`) | — |
 | A6 | Buka 4 tab browser, urutkan kiri→kanan: (1) `http://127.0.0.1:3000/`, (2) `http://127.0.0.1:3000/verdict/420`, (3) `http://127.0.0.1:3000/verdict/422`, (4) `https://base-sepolia.blockscout.com/address/0x5c6EE4586ACABcb6326069c229E58091B21ef384?tab=logs` | keempatnya sudah termuat sebelum rekaman; **Blockscout**, bukan BaseScan — di sanalah nama event terdekode (lihat catatan Bagian 4) | tab yang masih loading memakan detik yang tidak Anda punya |
@@ -47,10 +47,13 @@ butuh gerbangnya, jalankan A5 tanpa `DEMO_MODE=1` — seluruh naskah tetap berja
 
 - **Terminal A** (kiri / layar penuh saat bagian 1 dan 6): tempat `make demo` berjalan.
 - **Browser** (bagian 2–5): empat tab dari A6.
-- Bagian 1 menyalakan `make demo`, lalu kita pindah ke browser selama ± 2 menit 35 detik sementara ia
-  berjalan, lalu kembali ke Terminal A saat ia sudah selesai. Dry-run A3 memberi Anda perkiraan waktu
-  nyata di mesin Anda; kalau di mesin Anda `make demo` butuh lebih lama dari 3 menit, pakai **Rencana B**
-  di bagian G.
+- **MULAILAH DENGAN ASUMSI RENCANA B (bagian G).** Runtime `make demo` yang **terukur** adalah
+  **3m23s dan 3m56s** pada dua eksekusi — lebih lama daripada jendela ± 2 menit 35 detik yang dipakai
+  bagian 2–5. Artinya bila Anda menjalankannya live, saat kembali ke Terminal A perintahnya
+  **kemungkinan besar belum selesai**. Angka "~2m20s" yang pernah beredar berasal dari task 3.3, sebelum
+  dua varian destruktif dan preflight jaringan ditambahkan; jangan memakainya untuk merencanakan rekaman.
+- Rencana A (live) hanya masuk akal bila dry-run A3 **di mesin Anda** selesai di bawah ± 2m30s. Ukur dulu
+  (`time make demo`), jangan menebak.
 
 ---
 
@@ -173,10 +176,12 @@ butuh gerbangnya, jalankan A5 tanpa `DEMO_MODE=1` — seluruh naskah tetap berja
 - [ ] Tombol hapus memori `/panel` tidak pernah muncul/diklik.
 - [ ] `make demo` dalam rekaman keluar 0.
 
-## G. Rencana B — kalau `make demo` terlalu lambat atau gagal saat rekaman
+## G. Rencana B — JALUR NORMAL untuk TAKE-1 (bukan rencana darurat)
 
-`make demo` deterministik (dua eksekusi berturut-turut memberi ringkasan yang identik), jadi Rencana B
-tidak mengubah satu angka pun — hanya sumber layarnya:
+Runtime terukur **3m23s–3m56s** membuat eksekusi live tidak muat di jendela bagian 2–5 (± 2m35s), jadi
+perlakukan bagian ini sebagai **jalur utama**, bukan cadangan. `make demo` deterministik (dua eksekusi
+berturut-turut memberi ringkasan yang identik), jadi Rencana B tidak mengubah satu angka pun — hanya
+sumber layarnya:
 
 1. Jalankan `make demo 2>&1 | tee /tmp/take1-demo.log` **sebelum** merekam, biarkan Terminal A memegang
    keluaran lengkapnya.

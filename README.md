@@ -19,6 +19,24 @@ berbahasa Inggris.
 
 Kontrak submission (BEKU, ADR-022): [`0x5c6EE4586ACABcb6326069c229E58091B21ef384`](https://sepolia.basescan.org/address/0x5c6EE4586ACABcb6326069c229E58091B21ef384)
 
+### Kalau Anda cuma punya 3 menit
+
+README ini panjang (dan bagian terpanjangnya adalah daftar kelemahan kami sendiri). Tiga hal ini yang
+paling kami ingin Anda periksa — semuanya bisa dibuka tanpa menjalankan apa pun:
+
+1. **Verdict yang dibentuk riwayat, di chain.** Job 421 dan 422 memakai deliverable yang identik byte demi
+   byte; 421 lulus, 422 ditolak. `postVerdict` job 422:
+   [`0xe95910d2…295830`](https://base-sepolia.blockscout.com/tx/0xe95910d28ac4b5182220b9ea7c31519fb006b99b2edb0ed453f18556fa295830)
+   (Blockscout mendekode nama eventnya — butir 15). Duduk perkaranya: **butir 25**.
+2. **Bundel bukti job 422**, yang hash-nya sudah diumumkan on-chain sebelum eksekusi:
+   [`web/public/verdicts/422.json`](web/public/verdicts/422.json) — memuat `memory_root`, `checks`,
+   `incident_jobs`, dan kriteria yang **tidak** dinilai. Cara mencocokkannya dengan chain: **butir 22**.
+3. **Baris `claim step=C-vs-D`** yang dicetak `make demo` (`sim/src/demo.ts:902-907`): gerbang cap yang
+   sama, dengan memori vs tanpa memori, pada budget identik. Konteks dan batasnya: **butir 19**.
+
+Kalau Anda hanya ingin tahu apa yang TIDAK bekerja, lompat ke "Batasan & asumsi kepercayaan" di bawah —
+ia ditulis lebih dulu daripada bagian pitch mana pun.
+
 ---
 
 ## Batasan & asumsi kepercayaan
@@ -469,13 +487,24 @@ langkah 4-nya adalah varian destruktif pertama — vault segar + memori kosong, 
 saat memori ada menjadi **lolos** saat memori tidak ada, pada budget yang IDENTIK. Dua eksekusi berturut-turut
 memberi ringkasan identik. Label modenya `normal`, bukan `naive` — baca butir 34 sebelum mengutipnya.
 
+**"Cacat KASAR" pada varian A BUKAN tingkat keparahan yang dinilai.** Baris ringkasan varian A membedakan
+"cacat halus LOLOS" dan "cacat kasar DITOLAK" (`sim/src/demo.ts:929-935`), dan itu mudah dibaca seolah
+evaluator mengenal dua kelas keparahan. Ia tidak. Cacat "kasar" adalah **token `TODO` yang SAMA persis**,
+hanya **dipindah ke bagian PERTAMA** dokumen: `sim/scenarios/coarse-defect.md:3` vs
+`sim/scenarios/depth-demo.md:11` (bagian ketiga) — dua berkas dengan cacat identik pada posisi berbeda.
+Karena `SAMPLING_SECTION_LIMIT = 2`, yang pertama duduk **di dalam** jendela `sampling` dan yang kedua di
+luarnya. Jadi yang dibuktikan varian A adalah: **memori yang hilang menurunkan KEDALAMAN, bukan mematikan
+evaluator — cacat di dalam jendela sampling tetap tertangkap** (`sim/src/demo.ts:110-116`, dan properti
+kedua berkas itu diikat `agent/tests/test_criteria.py`). Tidak ada penilaian keparahan, dan tidak ada
+kriteria kualitatif yang dinilai sama sekali (butir 33).
+
 **Varian B — mode aman (commit `986fad6`).** Ia **juga sudah diotomasi**, di perintah yang sama: root
 on-chain non-nol + `memory.db` dihapus → **mode aman**, nol `postVerdict`, job menggantung sampai
 `expiredAt`. Ia tidak dipentaskan di chain buatan sendiri melainkan dijalankan atas **vault Sepolia yang
 beku**, dan ia **menggugurkan seluruh run** bila salah satu buktinya tidak muncul — exit agen ≠ 0, baris
 `MODE AMAN:` tidak tercetak, `gerbang memori: mode=safe` tidak tercetak, pemicunya bukan aturan (a) "file
 hilang", ada `postVerdict`/`finalize`/`setProviderCap` yang terkirim, atau nonce wallet agen berubah
-(`sim/src/demo.ts:669-678`, pesannya berbentuk `VARIAN B GUGUR: …`). Itu juga sebab `make demo` menuntut
+(`sim/src/demo.ts:672-685`, pesannya berbentuk `VARIAN B GUGUR: …`). Itu juga sebab `make demo` menuntut
 internet (butir 34).
 
 **Yang MASIH belum ada, dan itu artefaknya, bukan otomasinya.** `make demo` membuat direktori
@@ -645,7 +674,9 @@ Yang **tidak** dibuktikannya, dan ini wajib dibaca bersamanya:
 - **Kedua provider adalah simulator kami sendiri** (butir 21). Yang membedakan keduanya hanyalah riwayat
   yang kami tanam lewat job 418/419, bukan perilaku pihak ketiga yang independen.
 - **Cacatnya satu kata.** `TODO` dikenali regex penanda pekerjaan (`agent/agent/checks/format.py:47-50`);
-  ini bukan deteksi kecurangan yang canggih (butir 10).
+  ini bukan deteksi kecurangan yang canggih (butir 10). Berlaku juga untuk kata "kasar" vs "halus" di
+  ringkasan `make demo`: itu **posisi** token yang sama di dalam/di luar jendela sampling, **bukan** dua
+  tingkat keparahan yang dinilai — penjelasan penuhnya di butir 19.
 - **`sampling` vs `full` hanya berbeda kalau dokumennya lebih panjang dari batas sampling.** Deliverable
   421/422 sengaja dibuat **TIGA bagian** (`# Summary`, `## Cara kerja`, `## Catatan lanjutan`) dengan
   `TODO` ditaruh di bagian **ketiga**, sementara `SAMPLING_SECTION_LIMIT = 2`
@@ -811,14 +842,19 @@ ada penilaian kualitatif, itu salah baca — bahasanya sengaja tidak menjanjikan
 
 Dua koreksi terhadap cara demo mudah disalahpahami.
 
-**Internet.** `make demo` menjalankan `cd sim && pnpm run demo` (`Makefile:56-57`), dan komentar di atas
-target itu masih menulis "Tidak menyentuh jaringan apa pun" (`Makefile:45`). Itu benar untuk seluruh varian
-A, yang memang berjalan di Anvil lokal — tetapi **tidak** untuk varian destruktif B, yang sengaja
-membaca **vault Sepolia yang beku** supaya `lastMemoryRoot()` non-nol yang memicu mode aman adalah keadaan
-nyata, bukan keadaan yang dipentaskan (`sim/src/demo.ts:125` `SEPOLIA_RPC = "https://sepolia.base.org"`,
-`:507` blok varian B, `:842-851` barisnya). Sifat sentuhan itu: **hanya baca — nol dana, nol transaksi**,
-dan itu diukur bukan diucapkan, lewat nonce wallet agen sebelum vs sesudah (`txBaru` di `demo.ts:848`).
-Konsekuensi praktisnya: **tanpa internet, `make demo` tidak selesai.**
+**Internet.** Varian A berjalan sepenuhnya di Anvil lokal, tetapi varian destruktif B sengaja membaca
+**vault Sepolia yang beku** supaya `lastMemoryRoot()` non-nol yang memicu mode aman adalah keadaan nyata,
+bukan keadaan yang dipentaskan (`sim/src/demo.ts:125` `SEPOLIA_RPC = "https://sepolia.base.org"`; blok
+varian B `:655-687`). Sifat sentuhan itu: **hanya baca — nol dana, nol transaksi**, dan itu diukur bukan
+diucapkan, lewat nonce wallet agen sebelum vs sesudah (`txBaru`, `demo.ts:943`; baris `VARIAN B:` `:947`).
+Konsekuensi praktisnya: **tanpa internet, `make demo` tidak selesai** — dan ia berhenti **PREFLIGHT di
+detik pertama, sebelum Anvil menyala**, dengan exit 1 (`demo.ts:362` `preflight.ok`).
+
+Satu koreksi terhadap versi README sebelumnya, yang mengkritik cacat yang **sudah tidak ada**: komentar
+`Makefile` **tidak lagi** menulis "Tidak menyentuh jaringan apa pun" (`grep -rn "Tidak menyentuh jaringan"
+Makefile` → kosong). Yang tertulis di sana sekarang justru sudah benar dan lebih tajam: "BUTUH INTERNET:
+varian B membaca vault BEKU di Base Sepolia … NOL dana, NOL transaksi, NOL kunci privat, hanya dua
+pembacaan view", beserta alasan kenapa kegagalannya keras (`Makefile:50-54`).
 
 **Label mode.** Pada varian A, `plan.mode` yang dilaporkan agen adalah **`normal`, bukan `naive`** — sebab
 invokasi pertama melahirkan `memory.db` lalu ditolak `MODE_DRIFT`, dan yang menghasilkan verdict adalah
@@ -1179,9 +1215,12 @@ JobCompleted`) beserta enam hash transaksinya terdokumentasi di `deployments/pip
 make doctor    # cetak versi toolchain, exit 1 bila tidak cocok docs/versions.md
 make test      # forge test + uv run pytest + pnpm -r test (yang ketiga = 5 tes paritas di web/;
                # sim/ masih tanpa tes — Batasan butir 18)
-make demo      # rantai §7 langkah 1-4 dari NOL di Anvil lokal (~2m20s), ringkasan deterministik,
-               # lalu varian destruktif B yang MEMBACA vault Sepolia beku — butuh internet
+make demo      # rantai §7 langkah 1-4 dari NOL di Anvil lokal, ringkasan deterministik, lalu DUA
+               # varian destruktif; varian B MEMBACA vault Sepolia beku — butuh internet
                # (hanya baca: nol dana, nol transaksi — Batasan butir 34)
+               # RUNTIME TERUKUR: 3m23s dan 3m56s pada dua eksekusi. Angka "~2m20s" yang pernah
+               # ditulis di sini berasal dari task 3.3, SEBELUM dua varian destruktif dan
+               # preflight jaringan ditambahkan — jangan pakai untuk merencanakan rekaman.
 ```
 
 `make doctor` membaca `node`/`forge` dari PATH yang hanya dimuat shell interaktif — jalankan dari terminal
@@ -1203,7 +1242,21 @@ cd agent && uv run python -m agent.vault_client --job-id <jobId> --kind reject
 
 # 4. audit root memori dari file ekspor, tanpa menyentuh DB
 cd agent && uv run python -m agent.memory_export --check /tmp/mem.json
+
+# 5. (OPSIONAL, di luar `make demo`) UI: panel juri + tombol hapus memori.
+#    Terminal 1 — web:
+DEMO_MODE=1 pnpm --filter web start          # http://127.0.0.1:3000/panel
+#    Terminal 2 — server hapus memori DEMO; TANPA ini tombolnya menjawab 503
+#    reset_server_unreachable (perintah yang sama ditampilkan di dalam panel):
+cd agent && DEMO_MODE=1 uv run python -m agent.demo_reset --host 127.0.0.1 --port 8010
 ```
+
+**Langkah 5 tidak dijalankan oleh `make demo` dan sengaja TIDAK dipakai di video demo.** Panel juri
+(`/panel`) berjalan tanpa langkah itu — yang butuh proses kedua **hanya** tombol hapus memori, karena
+database duduk di `agent/`, di luar batas folder frontend (`web/src/app/panel/MemoryControl.jsx:27-28`
+menampilkan perintah yang sama di UI). Tombolnya berkuasa **hanya** atas memori demo, dan riwayat review
+keamanannya ada di Batasan butir 36. Tes destruktif yang menjadi bukti submission dijalankan oleh
+`make demo`, bukan oleh tombol ini.
 
 **Pada vault SEGAR, langkah 3 butuh DUA invokasi, dan yang pertama keluar dengan exit code 4.** Itu bukan
 kerusakan: invokasi pertama melahirkan `memory.db` di tengah jalan, sehingga mode yang direncanakan

@@ -28,7 +28,7 @@ line aloud, and do not paraphrase the Indonesian line into something the screen 
 |---|---|---|---|
 | A1 | `cd /home/zirambayam/referi && make doctor` | exits with code 0 | do not record; toolchain does not match `docs/versions.md` |
 | A2 | Make sure you have internet access to `https://sepolia.base.org` | `make demo` checks this in a PREFLIGHT step in its first second (`Makefile:50-54`) | with no network `make demo` stops with exit 1 before Anvil starts |
-| A3 | **Dry run**: `make demo 2>&1 \| tee /tmp/dryrun-demo.log`, wait for it to finish | exit 0; the lines `VARIAN A:` and `VARIAN B:` are printed | if not, fix the environment first — never record a failure and narrate it as a success |
+| A3 | **Timed dry run**: `time make demo 2>&1 \| tee /tmp/dryrun-demo.log`, wait for it to finish | exit 0; the lines `VARIAN A:` and `VARIAN B:` are printed; write down the runtime — measured at **3m23s** and **3m56s**, so expect **Plan B** | if not, fix the environment first — never record a failure and narrate it as a success |
 | A4 | `pnpm --filter web build` | build finishes without errors | — |
 | A5 | Terminal B: `DEMO_MODE=1 pnpm --filter web start` | server on `http://127.0.0.1:3000` (`-H 127.0.0.1` is pinned in `web/package.json:9`) | — |
 | A6 | Open 4 browser tabs, ordered left→right: (1) `http://127.0.0.1:3000/`, (2) `http://127.0.0.1:3000/verdict/420`, (3) `http://127.0.0.1:3000/verdict/422`, (4) `https://base-sepolia.blockscout.com/address/0x5c6EE4586ACABcb6326069c229E58091B21ef384?tab=logs` | all four fully loaded before recording starts; **Blockscout**, not BaseScan — that is where event names are decoded (see the Section 4 note) | a tab still loading eats seconds you do not have |
@@ -54,9 +54,13 @@ gate at all, run A5 without `DEMO_MODE=1` — the entire script still works.
 
 - **Terminal A** (left / fullscreen during sections 1 and 6): where `make demo` runs.
 - **Browser** (sections 2–5): the four tabs from A6.
-- Section 1 starts `make demo`, then we move to the browser for about 2 minutes 35 seconds while it runs,
-  then return to Terminal A once it has finished. Dry run A3 gives you the real timing on your machine;
-  if `make demo` takes longer than 3 minutes there, use **Plan B** in section G.
+- **START FROM THE ASSUMPTION THAT YOU ARE USING PLAN B (section G).** The **measured** runtime of
+  `make demo` is **3m23s and 3m56s** across two runs — longer than the ± 2 minute 35 second window that
+  sections 2–5 provide. So if you run it live, it will most likely **not be finished** when you return to
+  Terminal A. The "~2m20s" figure that used to circulate comes from task 3.3, before the two destructive
+  variants and the network preflight were added; do not plan a recording around it.
+- Plan A (live) only makes sense if dry run A3 **on your machine** finishes under ± 2m30s. Measure it
+  (`time make demo`); do not guess.
 
 ---
 
@@ -180,10 +184,11 @@ gate at all, run A5 without `DEMO_MODE=1` — the entire script still works.
 - [ ] `make demo` exits 0 inside the recording.
 - [ ] Every Indonesian line read on screen was explained in English, and the explanation matches the line.
 
-## G. Plan B — if `make demo` is too slow or fails during recording
+## G. Plan B — the NORMAL path for TAKE-1 (not a contingency)
 
-`make demo` is deterministic (two consecutive runs give an identical summary), so Plan B changes no number
-at all — only where the screen content comes from:
+The measured runtime of **3m23s–3m56s** does not fit the window sections 2–5 provide (± 2m35s), so treat
+this section as the **primary** path, not a fallback. `make demo` is deterministic (two consecutive runs
+give an identical summary), so Plan B changes no number at all — only where the screen content comes from:
 
 1. Run `make demo 2>&1 | tee /tmp/take1-demo.log` **before** recording, and leave Terminal A holding the
    full output.
