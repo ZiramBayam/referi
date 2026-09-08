@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { loadIndex } from "../lib/data.js";
 import { formatUsdc6 } from "../lib/canonical.js";
-import { acpStatusLabel, verdictKindLabel } from "../lib/chain.js";
+import { acpStatusLabel, verdictKindLabel, EXPLORER_NAME } from "../lib/chain.js";
 import { TxLink, AddressLink, shorten } from "../components/Links.jsx";
 
 export default async function TimelinePage() {
@@ -16,7 +16,9 @@ export default async function TimelinePage() {
         &quot;verdict&quot; adalah <code>kind</code> yang diumumkan{" "}
         <code>EvaluatorVault.postVerdict</code>; kolom &quot;status ACP&quot; adalah enum status
         job di ERC-8183. Setiap verdict punya tautan ke transaksi <code>VerdictPosted</code>-nya
-        di BaseScan.
+        di {EXPLORER_NAME} — explorer itu yang dipakai karena hanya di sana verifikasi Sourcify
+        kontrak vault terbaca, sehingga nama event tampil terdekode alih-alih sebagai topic
+        mentah.
       </p>
 
       <table>

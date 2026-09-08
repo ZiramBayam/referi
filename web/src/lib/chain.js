@@ -6,7 +6,19 @@
 
 export const CHAIN_ID = 84532;
 export const CHAIN_NAME = "Base Sepolia";
-export const EXPLORER = "https://sepolia.basescan.org";
+
+// SENGAJA BERBEDA dari field `explorer` di `deployments/84532.json` (yang menunjuk
+// BaseScan). Alasannya bukan selera: `EvaluatorVault` terverifikasi lewat Sourcify
+// (`exact_match`), dan dari kedua explorer HANYA Blockscout yang menarik verifikasi itu.
+// Etherscan/BaseScan tidak mengimpor dari Sourcify dan verifikasinya butuh API key yang
+// tidak ada di repo, jadi tautan ke sana mendaratkan juri di topic log MENTAH. Di
+// Blockscout log yang sama tampil dengan nama event terdekode (`VerdictPosted`,
+// `MemoryRootUpdated`) — itulah yang dirujuk README dan naskah video.
+//
+// Berkas deployment TIDAK diubah untuk mengikuti ini: ia artefak deploy apa adanya, dan
+// field `explorer`-nya memang tidak dibaca halaman mana pun.
+export const EXPLORER = "https://base-sepolia.blockscout.com";
+export const EXPLORER_NAME = "Blockscout";
 
 /** @param {string} hash */
 export function txUrl(hash) {
