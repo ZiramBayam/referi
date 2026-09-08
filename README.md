@@ -27,7 +27,8 @@ Bagian ini sengaja ditaruh **paling atas** dan ditulis lebih dulu daripada bagia
 1-13 dipindahkan apa adanya dari ADR dan artefak deploy; butir 14-25 ditambahkan sesudah audit "klaim vs
 kenyataan" dan sumbernya adalah kode serta chain yang bisa Anda buka sendiri. Angkanya tidak dilunakkan.
 Butir 26-35 datang dari review keamanan atas kontrak dan agen: setiap butirnya **dibuktikan reviewer lewat
-tes musuh** — peran yang mencoba dan galat yang ia terima — bukan disimpulkan dari membaca kode.
+tes musuh** — peran yang mencoba dan galat yang ia terima — bukan disimpulkan dari membaca kode. Butir 36
+adalah temuan review atas `web/` yang **belum selesai ditutup** pada saat README ini ditulis.
 
 Kalau waktu Anda hanya cukup untuk empat: **butir 14** (insentif fee belum diperbaiki — pembalikan
 terbesar), **butir 16** (jangkar root melingkar dan tanpa konsekuensi), **butir 19** (tes destruktif belum
@@ -35,8 +36,9 @@ berartefak), dan **butir 22** — `lastMemoryRoot()` vault **sengaja tidak sama*
 DB hari ini, karena memori ditulis sesudah `postVerdict`. Kalau Anda hanya akan menyalin satu blok perintah
 dari README ini, baca butir 22 lebih dulu supaya Anda tahu nilai mana yang seharusnya cocok.
 
-Dan bila dari kelompok 26-35 Anda hanya membaca satu: **butir 26** — verdict yang salah tidak bisa
-dibatalkan siapa pun, sehingga `CHALLENGE_WINDOW` hari ini adalah latensi dengan nol perlindungan.
+Dan bila dari kelompok 26-36 Anda hanya membaca satu: **butir 26** — verdict yang salah tidak bisa
+dibatalkan siapa pun, sehingga `CHALLENGE_WINDOW` hari ini adalah latensi dengan nol perlindungan. Bila
+Anda berniat **menjalankan** `web/` sendiri, baca **butir 36** lebih dulu.
 
 ### 1. Yang dipertaruhkan evaluator hari ini = nol
 
@@ -317,7 +319,7 @@ Jangan menilai dari `docs/spec.md` saja — berikut yang belum berjalan hari ini
 | `MemoryGateHook` | tidak ada di `contracts/src/` (hanya `EvaluatorVault.sol`, `IACP.sol`); hook butuh whitelist admin Virtuals (ADR-001) |
 | Rubric LLM | dipotong; hanya cek deterministik yang jalan (`agent/agent/checks/`: `format`, `links`, `chain`) |
 | `checks/sandbox` | tidak diimplementasikan dan tidak diklaim hidup |
-| UI web / panel juri | direktori `web/` belum ada |
+| ~~UI web / panel juri~~ | **SUDAH HIDUP** — `web/` punya tiga rute (`web/src/app/page.jsx` timeline job 418-422 dengan tautan tx `VerdictPosted`; `web/src/app/verdict/[jobId]/page.jsx`; `web/src/app/panel/page.jsx`), dan panel juri menjalankan cek deterministik **sungguhan** di browser lewat `POST /api/evaluate` atas port `format`+`links` di `web/src/lib/checks.js`. Yang BELUM: panel tidak menjalankan gerbang cap, tidak membaca memori, tidak mengirim tx (dinyatakan di halamannya sendiri), `web/` tidak punya tes otomatis (butir 18), dan permukaan hapus-memori `DEMO_MODE` sedang ditutup setelah gagal review keamanan — butir 36 |
 | Watcher event | butir 9 |
 
 ### 12. Batasan artefak: file memori tidak ikut di-commit
@@ -408,10 +410,12 @@ cap. Kontrak berfungsi sebagai **papan pengumuman yang bisa dibaca siapa pun**, 
 ### 18. `pnpm -r test` tidak cocok dengan proyek mana pun → exit 0
 
 `make test` menjalankan tiga suite, dan yang ketiga kosong: `pnpm-workspace.yaml` mendaftarkan `sim` dan
-`web` (dan `web/` belum ada, butir 11), sementara kelima script di `sim/package.json:6-10` — `job:min`,
-`sim:run`, `demo`, `mint:client`, `typecheck` — **tidak memuat satu pun `test`**, sehingga `pnpm -r test`
-hijau atas **nol proyek**. Jadi satu-satunya kode yang menyentuh SDK Virtuals punya **nol tes otomatis**;
-yang menjaganya hanyalah rantai on-chain yang dijalankan tangan. `forge test` dan `uv run pytest` nyata.
+`web` — **keduanya kini ADA** (butir 11 diperbarui: `web/` sudah hidup) — tetapi **tidak satu pun punya
+script `test`**: `sim/package.json:6-10` memuat `job:min`, `sim:run`, `demo`, `mint:client`, `typecheck`,
+dan `web/package.json:6-11` memuat `dev`, `build`, `start`, `lint` (`tsc --noEmit`). Karena itu
+`pnpm -r test` hijau atas **nol proyek**. Jadi satu-satunya kode yang menyentuh SDK Virtuals **dan**
+seluruh kode UI punya **nol tes otomatis**; yang menjaga `sim/` hanyalah rantai on-chain yang dijalankan
+tangan. `forge test` dan `uv run pytest` nyata.
 
 ### 19. Tes destruktif: kedua varian kini diotomasi — yang belum adalah ARTEFAKNYA
 
@@ -803,6 +807,31 @@ orkestrator demo (`sim/src/demo.ts`). Karena itu `pnpm sim:run` yang selesai **t
 perilaku yang benar, bukan kegagalan; kolom `expectVerdict` di skenario adalah ekspektasi naskah, bukan
 pengamatan. Batasan yang menyertainya: `sim/` belum punya satu pun tes otomatis (butir 18).
 
+### 36. Permukaan hapus-memori di panel juri GAGAL review keamanan dan belum selesai ditutup
+
+Panel juri (`/panel`) punya tombol hapus memori untuk mempertunjukkan tes destruktif di depan penonton.
+Permukaan itu **diberi verdict BLOKIR oleh review keamanan** dengan **dua temuan TINGGI**: (a) **CSRF**
+pada endpoint hapusnya — menghapus adalah efek samping, bukan bacaan, sehingga CORS tidak pernah menjadi
+pertahanan (halaman jahat mana pun bisa mengirim POST `text/plain` `no-cors` tanpa preflight); dan (b)
+proksi Next yang **mengekspos penghapus loopback ke LAN**, karena default Next adalah mengikat `0.0.0.0`.
+
+Per **8 Sep 2026 perbaikannya BELUM selesai**, dan bagian ini ditulis sebelum ia selesai. Yang **sudah**
+mendarat dan bisa Anda baca sendiri di `web/src/app/api/demo/memory/reset/route.js`: gerbang `DEMO_MODE`
+per permintaan (mati → 404), penolakan `Sec-Fetch-Site` ≠ `same-origin` dan `Origin`/`Host` yang tidak
+cocok (→ 403), penolakan `NEXT_PUBLIC_AGENT_RESET_API` di luar loopback (→ 400), badan permintaan klien
+diabaikan, dan `-H 127.0.0.1` dipin di `web/package.json:7,9`. Yang belum: verdict reviewer belum dicabut.
+
+Dua hal yang **membatasi kerusakannya**, dan keduanya disengaja: tombol itu hanya dirender bila
+`DEMO_MODE=1` (dibaca **di server**, `web/src/app/panel/page.jsx:8,19`, jadi tidak ada penanda di HTML
+yang bisa dibalik dari klien), dan sasarannya **hanya memori demo** (`agent/data/demo/`) — ia **tidak
+pernah** diberi kuasa atas `agent/data/chain-abc/memory.db`, satu-satunya berkas yang bisa merekonstruksi
+root on-chain (butir 7 dan 12).
+
+Sampai verdict itu dicabut: **jangan jalankan `web/` dengan `DEMO_MODE=1` pada jaringan yang tidak Anda
+percayai**, dan jangan pernah menjalankannya tanpa `-H 127.0.0.1`.
+
+---
+
 ## Masalah → solusi
 
 ERC-8183 menaruh seluruh kepercayaan pada evaluator dan tidak memberinya alasan untuk jujur: evaluator
@@ -1154,6 +1183,8 @@ contracts/   EvaluatorVault.sol, IACP.sol, script/Deploy.s.sol, test/ (Foundry)
 agent/       Python: memory_policy.py (skema memori, derive_cap, promosi), vault_client.py,
              memory_export.py (audit root), checks/{format,links,chain}.py, tools/memory_root_check.mjs
 sim/         client simulator TypeScript di atas @virtuals-protocol/acp-node-v2 (tanpa tes — butir 18)
+web/         Next.js: timeline job, halaman verdict+bukti, panel juri (port cek deterministik di
+             src/lib/checks.js); data dari JSON statis di web/public/, nol RPC dari browser (butir 36)
 demo/        deliverables/<jobId>.json (teks deliverable dari simulator, ADR-019 — butir 21)
 deployments/ 84532.json (alamat + konstanta), pipeline-84532.md (pipa hidup job 417)
 docs/        spec.md, decisions.md (ADR), api-facts.md (fakta API terverifikasi), versions.md
