@@ -79,9 +79,12 @@ export default function MemoryControl({ enabled, resetApi }) {
         </div>
         <p className="lead" style={{ marginBottom: 0 }}>
           Endpoint penghapusnya dijalankan terpisah dan hanya hidup saat{" "}
-          <code>DEMO_MODE</code> menyala; halaman ini hanya meneruskan permintaan
-          (browser tidak bisa memanggilnya langsung — server itu tidak mengirim header
-          CORS dan menjawab preflight <code>OPTIONS</code> dengan 501).
+          <code>DEMO_MODE</code> menyala; halaman ini hanya meneruskan permintaan. Yang
+          menahan pemanggil lain bukan CORS (menghapus adalah efek samping, dan efek
+          samping tetap terjadi walau responsnya tak terbaca) melainkan tiga hal: server
+          penghapus menolak peer non-loopback, server halaman ini terikat{" "}
+          <code>127.0.0.1</code>, dan rute proksinya menolak permintaan yang bukan
+          same-origin.
         </p>
       </div>
 
@@ -211,6 +214,17 @@ function ResetFailure({ failure, command }) {
             mengikat port sama sekali — itu perilaku yang diinginkan, bukan galat.
           </p>
         </div>
+      ) : reason === "cross_site_request" ||
+        reason === "missing_fetch_metadata" ||
+        reason === "missing_origin" ||
+        reason === "bad_origin" ||
+        reason === "origin_host_mismatch" ? (
+        <p style={{ marginBottom: 0 }}>
+          Permintaan ditolak oleh rute proksi di halaman ini, sebelum menyentuh server
+          penghapus memori: hanya panel di origin yang sama yang boleh memicunya. Kalau
+          Anda melihat ini saat menekan tombol di halaman ini sendiri, kemungkinan
+          besar panel dibuka lewat host/port yang berbeda dari yang dilayani Next.
+        </p>
       ) : reason === "not_found" ? (
         <p style={{ marginBottom: 0 }}>
           Rutenya tidak terdaftar. Terjadi bila <code>DEMO_MODE</code> mati di proses yang

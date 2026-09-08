@@ -6,11 +6,23 @@
 //     HTTP/1.0 501 Unsupported method ('OPTIONS')
 //   $ curl -i -X POST … -H 'Origin: http://localhost:3000'   → 200, TANPA satu pun
 //     header Access-Control-Allow-*.
-// `Content-Type: application/json` memicu preflight, dan preflight itu dijawab 501;
-// tanpa `Access-Control-Allow-Origin` browser juga tidak boleh MEMBACA badan respons.
-// Jadi tombol di /panel memanggil rute ini (same-origin), dan Node yang meneruskannya.
-// Memperbaiki CORS di sisi agen bukan pilihan: `agent/` di luar batas folder ini, dan
-// kontrak HTTP-nya sudah mendarat.
+// `Content-Type: application/json` memicu preflight, preflight itu dijawab 501, dan
+// tanpa `Access-Control-Allow-Origin` browser tidak boleh MEMBACA badan responsnya.
+//
+// KOREKSI atas versi sebelumnya komentar ini: "browser tidak bisa membaca respons"
+// BUKAN berarti "browser tidak bisa MEMICU aksinya". `text/plain` termasuk
+// CORS-safelisted request header, jadi halaman jahat mana pun bisa mengirim
+//   fetch('http://127.0.0.1:8010/demo/memory/reset', {method:'POST', mode:'no-cors',
+//         headers:{'content-type':'text/plain'}, body:'{}'})
+// TANPA preflight; permintaannya tetap sampai dan penghapusan tetap terjadi, hanya
+// responsnya yang buram bagi penyerang. Menghapus adalah efek samping, bukan bacaan —
+// jadi CORS tidak pernah menjadi pertahanan di sini. Yang benar-benar menahan adalah
+// (a) sisi agen menolak peer non-loopback dan (b) cek same-origin di bawah.
+//
+// Proses Next ini sendiri HARUS terikat loopback (`next dev|start -H 127.0.0.1` di
+// package.json). Default Next adalah 0.0.0.0; tanpa `-H` rute ini menjadi relay LAN
+// yang membatalkan jaminan loopback sisi agen. Cek `Origin`/`Sec-Fetch-Site` di bawah
+// adalah lapisan kedua supaya keselamatan rute tidak bergantung pada pengikatan saja.
 //
 // Rute ini TIDAK menghapus apa pun sendiri. Ia tidak menyentuh disk, tidak menyentuh
 // chain, dan tidak menyimpan apa pun.
@@ -22,6 +34,13 @@ export const dynamic = "force-dynamic";
 const DEFAULT_BASE = "http://127.0.0.1:8010";
 const RESET_PATH = "/demo/memory/reset";
 const TIMEOUT_MS = 10_000;
+
+// Header yang dikirim KE sisi agen. Dikumpulkan di satu tempat karena sisi 8010 boleh
+// memperketat syaratnya (mis. mewajibkan `content-type` persis, atau token) — proksi
+// ini pemanggil sisi-server, jadi ia bebas mengirim apa pun yang diwajibkan dan hanya
+// konstanta ini yang perlu berubah.
+const UPSTREAM_HEADERS = { "content-type": "application/json" };
+const UPSTREAM_BODY = "{}";
 
 // Loopback saja, dicocokkan seperti `LOOPBACK_HOSTS` di sisi agen. Env salah ketik tidak
 // boleh mengubah proses Next ini menjadi relay yang mengirim "hapus berkas" ke mesin lain.
@@ -41,11 +60,55 @@ function resetUrl() {
   return url.toString();
 }
 
-export async function POST() {
+/**
+ * `null` bila permintaan ini sah datang dari halaman kita sendiri, atau kode alasan
+ * bila TIDAK.
+ *
+ * Satu-satunya pemanggil sah adalah `fetch("/api/demo/memory/reset", {method:"POST"})`
+ * di `panel/MemoryControl.jsx`. Untuk POST, semua browser arus utama mengirim `Origin`,
+ * dan sejak Fetch Metadata juga `Sec-Fetch-Site`. Jadi keduanya DIWAJIBKAN: permintaan
+ * lintas situs (`cross-site`/`same-site`), permintaan tanpa metadata (curl, skrip), dan
+ * navigasi form dari dokumen lain semuanya jatuh ke sini.
+ */
+function crossSiteReason(request) {
+  const site = request.headers.get("sec-fetch-site");
+  if (site === null) return "missing_fetch_metadata";
+  if (site !== "same-origin") return "cross_site_request";
+
+  // `Sec-Fetch-Site` bisa dipalsukan oleh klien non-browser; `Origin` vs `Host` adalah
+  // cek kedua yang murah. Keduanya harus menunjuk otoritas yang sama.
+  const origin = request.headers.get("origin");
+  const host = request.headers.get("host");
+  if (origin === null || host === null) return "missing_origin";
+  let originHost;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    return "bad_origin";
+  }
+  if (originHost !== host) return "origin_host_mismatch";
+  return null;
+}
+
+export async function POST(request) {
   // DEMO_MODE mati → 404, kode alasan yang sama dengan sisi agen. Bukan 403: 403
   // mengakui rutenya ada.
   if (process.env.DEMO_MODE !== "1") {
     return Response.json({ ok: false, reason: "not_found" }, { status: 404 });
+  }
+
+  const bad = crossSiteReason(request);
+  if (bad !== null) {
+    return Response.json(
+      {
+        ok: false,
+        reason: bad,
+        detail:
+          "Hanya panel di origin ini yang boleh memanggil rute ini; " +
+          "permintaan wajib membawa Sec-Fetch-Site: same-origin dan Origin yang cocok dengan Host.",
+      },
+      { status: 403 },
+    );
   }
 
   const url = resetUrl();
@@ -71,8 +134,8 @@ export async function POST() {
   try {
     upstream = await fetch(url, {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: "{}",
+      headers: UPSTREAM_HEADERS,
+      body: UPSTREAM_BODY,
       cache: "no-store",
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
