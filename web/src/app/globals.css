@@ -1,0 +1,219 @@
+/* CSS polos, tanpa framework dan tanpa aset pihak ketiga (putusan PM 8 Sep).
+   Target keterbacaan: 1280x720 (resolusi rekaman video). Tanpa animasi. */
+
+:root {
+  --ink: #14181d;
+  --muted: #5b6672;
+  --line: #d3dae1;
+  --bg: #f7f9fb;
+  --card: #ffffff;
+  --pass: #0a6b3d;
+  --fail: #9b1c1c;
+  --unver: #7a5a00;
+  --link: #0b4fa8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.5 ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+a {
+  color: var(--link);
+}
+
+code,
+.mono {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 16px 20px 48px;
+}
+
+header.top {
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+}
+
+header.top .wrap {
+  padding: 12px 20px;
+  display: flex;
+  align-items: baseline;
+  gap: 20px;
+}
+
+header.top h1 {
+  font-size: 16px;
+  margin: 0;
+}
+
+header.top nav a {
+  margin-right: 14px;
+  text-decoration: none;
+}
+
+header.top .net {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+h2 {
+  font-size: 15px;
+  margin: 24px 0 8px;
+}
+
+h3 {
+  font-size: 13px;
+  margin: 16px 0 6px;
+}
+
+p.lead {
+  color: var(--muted);
+  margin: 4px 0 12px;
+  max-width: 90ch;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+  border: 1px solid var(--line);
+}
+
+th,
+td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+th {
+  background: #eef2f6;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  padding: 12px 14px;
+  margin: 10px 0;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: 4px 12px;
+}
+
+.kv dt {
+  color: var(--muted);
+}
+
+.kv dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+.tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.tag.pass {
+  color: var(--pass);
+}
+
+.tag.fail {
+  color: var(--fail);
+}
+
+.tag.unverified {
+  color: var(--unver);
+}
+
+.none {
+  color: var(--muted);
+  font-style: italic;
+}
+
+pre.proof,
+pre.doc {
+  background: #f2f5f8;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  padding: 8px 10px;
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+
+textarea {
+  width: 100%;
+  min-height: 190px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+button,
+select {
+  font: inherit;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  cursor: pointer;
+}
+
+button.primary {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+
+button.danger {
+  border-color: var(--fail);
+  color: var(--fail);
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+
+.warn {
+  border-left: 3px solid var(--unver);
+  background: #fdf8e8;
+}
+
+.note {
+  border-left: 3px solid var(--muted);
+  background: #f2f5f8;
+}
