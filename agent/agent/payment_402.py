@@ -108,6 +108,7 @@ from agent.vault_client import (
     DEFAULT_CHAIN_ID,
     DEFAULT_RPC_URL,
     agent_root,
+    config_flag,
     config_value,
 )
 
@@ -293,7 +294,9 @@ def terms_from_config() -> PaymentTerms:
 
 
 def demo_mode_enabled() -> bool:
-    return config_value("DEMO_MODE", "false").strip().lower() in _DEMO_TRUE
+    """Gerbang demo. `config_flag`, BUKAN `config_value`: env yang hadir-tapi-kosong
+    (`DEMO_MODE= python ...`) berarti MATI, tidak jatuh ke `.env` yang berisi `true`."""
+    return config_flag("DEMO_MODE")
 
 
 def ledger_path_from_config() -> Path:

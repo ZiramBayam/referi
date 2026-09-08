@@ -590,6 +590,10 @@ def parse_env_file(text: str) -> dict[str, str]:
 # jadi keduanya diperiksa dengan `exists()`, bukan `is_dir()`.
 REPO_MARKERS = (".git",)
 
+# Nilai yang dihitung "hidup" untuk gerbang boolean (`config_flag`). Satu daftar, dipakai
+# oleh SEMUA gerbang, supaya dua gerbang DEMO_MODE tidak pernah berbeda pendapat lagi.
+TRUE_FLAGS = frozenset({"1", "true", "yes", "demo"})
+
 
 def repo_root(start: Path | None = None) -> Path:
     """Akar repo: leluhur PERTAMA yang memuat penanda repo, bukan hitungan `.parent` tetap.
@@ -643,6 +647,24 @@ def config_value(name: str, default: str) -> str:
         return value.strip()
     value = _env_file_values().get(name, "")
     return value.strip() or default
+
+
+def config_flag(name: str) -> bool:
+    """Gerbang boolean dari konfigurasi, dengan aturan yang BERBEDA dari `config_value`.
+
+    `config_value` memperlakukan env kosong sebagai "tidak diset" lalu jatuh ke `.env`.
+    Untuk NILAI itu masuk akal (string kosong bukan alamat/URL yang berguna). Untuk
+    GERBANG itu berbahaya persis di arah yang salah: `.env` proyek berisi `DEMO_MODE=true`,
+    jadi operator yang mengetik `DEMO_MODE= python -m agent.demo_reset` untuk MEMATIKANNYA
+    justru MENYALAKANNYA — env kosong terlewat, `.env` menang, gerbang ARMED.
+
+    Aturan di sini: env yang HADIR menang, walau isinya kosong atau spasi. Hanya env yang
+    TIDAK ADA sama sekali yang jatuh ke `.env`. Kosong = mati.
+    """
+    raw = os.environ.get(name)
+    if raw is None:
+        raw = _env_file_values().get(name, "")
+    return raw.strip().lower() in TRUE_FLAGS
 
 
 def load_private_key() -> str:

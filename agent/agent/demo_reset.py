@@ -27,8 +27,21 @@ EMPAT BATAS, semuanya ditegakkan kode, bukan diimbau komentar:
      `refused`. `unlink` atas symlink memang hanya melepas tautannya, tetapi menolaknya membuat
      jawaban endpoint ini jujur: tidak ada keadaan di mana ia melaporkan "terhapus" untuk
      sesuatu yang isinya masih utuh di tempat lain.
-  4. **Loopback saja.** `serve()` MENOLAK host non-loopback. Endpoint ini tidak punya
-     autentikasi apa pun, dan memang tidak seharusnya punya: ia perkakas demo di mesin juri.
+  4. **Loopback saja.** `serve()` MENOLAK host non-loopback.
+  5. **Bukan dari browser.** Loopback saja TERNYATA BUKAN pertahanan: browser juri juga ada
+     di loopback, dan satu tab jahat dengan `<form method=POST action="http://127.0.0.1:8010
+     /demo/memory/reset">` sudah cukup untuk menghapus memori demo — form mengirim
+     `text/plain`, yang termasuk daftar aman CORS, jadi tidak ada preflight yang menahannya
+     dan penyerang tidak perlu bisa membaca jawabannya. Karena itu POST kini wajib: tanpa
+     header `Origin`, tanpa `Sec-Fetch-Site` lintas-asal, `Content-Type: application/json`
+     PERSIS (ini yang memaksa preflight), dan `Host` yang menyebut loopback + port server
+     ini (menutup DNS rebinding). Pemanggil sah — proksi Next di sisi server — memenuhi
+     semuanya tanpa perubahan: ia bukan browser.
+
+Yang TIDAK dihapus, sengaja: `memory.db.lock`. Ia bukan isi memori melainkan pemegang
+`flock` mutual-exclusion (`agent/memory_lock.py`); menghapusnya saat proses lain memegang
+kuncinya justru menghasilkan dua proses yang sama-sama merasa memegang kunci. Membiarkan
+berkas nol-byte itu tidak memulihkan satu bit pun memori.
 
 Jawabannya melaporkan APA YANG BENAR-BENAR TERJADI per berkas (`deleted` / `missing` /
 `refused`), sehingga UI bisa menampilkan "tidak ada yang terhapus" ketika memang sudah kosong.
@@ -41,16 +54,19 @@ NOL dependensi baru: `http.server` + `json` + `pathlib` dari stdlib, dan `config
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import logging
+import os
 import re
+import stat
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from agent.vault_client import agent_root, config_value
+from agent.vault_client import agent_root, config_flag, config_value
 
 log = logging.getLogger("demo_reset")
 
@@ -75,6 +91,22 @@ DEFAULT_DB_NAME = "memory.db"
 MAX_BODY_BYTES = 4 * 1024
 REQUEST_TIMEOUT_SECONDS = 15.0
 
+# Satu-satunya `Content-Type` yang diterima. Ini BUKAN kerewelan format: `application/json`
+# TIDAK termasuk daftar aman CORS (`text/plain`, `application/x-www-form-urlencoded`,
+# `multipart/form-data`), jadi mewajibkannya memaksa browser melakukan preflight — dan
+# preflight `OPTIONS` di sini dijawab 501 tanpa satu pun header `Access-Control-Allow-*`.
+# Halaman jahat karena itu tidak pernah sampai ke `do_POST`.
+JSON_CONTENT_TYPE = "application/json"
+
+# Nilai `Sec-Fetch-Site` yang boleh lewat. Perhatikan: port BUKAN bagian dari "site", jadi
+# halaman di http://localhost:3000 yang menembak :8010 mengirim `same-site`, bukan
+# `cross-site` — menolak hanya `cross-site` akan meninggalkan lubangnya terbuka.
+ALLOWED_FETCH_SITE = frozenset({"none", "same-origin"})
+
+# Mode yang tidak mungkin datang dari pemanggil sah. `no-cors` adalah persis mode yang
+# dipakai serangan "kirim saja, tak perlu bisa membaca jawabannya".
+FORBIDDEN_FETCH_MODE = frozenset({"no-cors", "navigate", "websocket"})
+
 # Kode alasan — bagian dari kontrak HTTP modul ini.
 REASON_OK = "ok"
 REASON_NOT_FOUND = "not_found"
@@ -84,8 +116,21 @@ REASON_MALFORMED = "malformed_json"
 REASON_INVALID_DB = "invalid_db_name"
 REASON_OUTSIDE = "path_outside_demo_dir"
 REASON_IO = "delete_failed"
+REASON_CROSS_ORIGIN = "cross_origin_request"
+REASON_CONTENT_TYPE = "unsupported_media_type"
+REASON_BAD_HOST = "bad_host"
+REASON_ROOT_SYMLINK = "root_is_symlink"
 
-_DEMO_TRUE = frozenset({"1", "true", "yes", "demo"})
+
+def _status_for(reason: str) -> int:
+    """Kode alasan → status HTTP. Satu tabel, supaya semua jalur galat sepakat."""
+    return {
+        REASON_CROSS_ORIGIN: HTTPStatus.FORBIDDEN,
+        REASON_BAD_HOST: HTTPStatus.FORBIDDEN,
+        REASON_CONTENT_TYPE: HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+        REASON_IO: HTTPStatus.INTERNAL_SERVER_ERROR,
+        REASON_ROOT_SYMLINK: HTTPStatus.INTERNAL_SERVER_ERROR,
+    }.get(reason, HTTPStatus.BAD_REQUEST)
 
 
 class ResetRejected(ValueError):
@@ -97,7 +142,15 @@ class ResetRejected(ValueError):
 
 
 def demo_mode_enabled() -> bool:
-    return config_value("DEMO_MODE", "false").strip().lower() in _DEMO_TRUE
+    """Gerbang demo, dengan aturan `config_flag`: env HADIR menang walau kosong.
+
+    Sengaja BUKAN `config_value("DEMO_MODE", "false")`. Yang itu memperlakukan string
+    kosong sebagai "tidak diset" lalu membaca `.env` — dan `.env.example` proyek ini
+    mengirim `DEMO_MODE=true`, jadi `DEMO_MODE= python -m agent.demo_reset`, yang ditulis
+    operator untuk MEMATIKAN penghapus berkas, justru menyalakannya. Gerbang harus mati
+    ke arah aman.
+    """
+    return config_flag("DEMO_MODE")
 
 
 def demo_data_root() -> Path:
@@ -107,7 +160,10 @@ def demo_data_root() -> Path:
     permintaan. Tidak ada env yang bisa memindahkannya: sebuah `DEMO_RESET_DIR` akan membuat
     "hanya di bawah data demo" bergantung pada konfigurasi, dan konfigurasi bisa salah.
     """
-    return (agent_root() / "data" / "demo").resolve()
+    # SENGAJA tanpa `.resolve()`: yang dikembalikan adalah path yang DIDEKLARASIKAN.
+    # `.resolve()` di sini akan diam-diam mengikuti `data/demo -> ...` dan memindahkan
+    # sasaran penghapus ke direktori lain; `DemoResetApp` yang memeriksa lalu meresolve.
+    return agent_root() / "data" / "demo"
 
 
 @dataclass(frozen=True)
@@ -122,7 +178,23 @@ class DemoResetApp:
     """Logika endpoint, tanpa HTTP. Diuji langsung maupun lewat soket."""
 
     def __init__(self, root: Path) -> None:
-        self.root = Path(root).resolve()
+        self.declared_root = Path(root)
+        self._assert_root_is_not_a_symlink()
+        self.root = self.declared_root.resolve()
+
+    def _assert_root_is_not_a_symlink(self) -> None:
+        """Akar demo wajib direktori sungguhan, bukan tautan.
+
+        `.resolve()` MENGIKUTI symlink pada komponen terakhir. Kalau `agent/data/demo`
+        ternyata `-> data/chain-abc`, seluruh penghapus ini diam-diam pindah sasaran ke
+        basis data lain — dan basis data itulah yang menghasilkan verdict. Prasyaratnya
+        hanya hak tulis lokal, dan bisa datang dari niat baik (juri memindah direktori
+        demo ke disk lain). Diperiksa dua kali: saat konstruksi DAN saat setiap `reset()`,
+        karena tautan bisa dipasang di antara keduanya.
+        """
+        if self.declared_root.is_symlink():
+            log.warning("demo reset: akar %s adalah symlink — ditolak", self.declared_root)
+            raise ResetRejected(REASON_ROOT_SYMLINK)
 
     # -- validasi -------------------------------------------------------
     def resolve_target(self, db_name: str, suffix: str = "") -> Path:
@@ -147,6 +219,11 @@ class DemoResetApp:
     # -- penghapusan ----------------------------------------------------
     def reset(self, db_name: str = DEFAULT_DB_NAME) -> dict[str, Any]:
         """Sapu `<db>`, `<db>-wal`, `<db>-shm`. Idempoten: yang tidak ada = `missing`."""
+        self._assert_root_is_not_a_symlink()
+        if self.declared_root.resolve() != self.root:
+            # Akar berpindah sejak konstruksi (mis. direktori ditukar). Jangan hapus apa pun.
+            log.warning("demo reset: akar %s berubah sejak start — ditolak", self.declared_root)
+            raise ResetRejected(REASON_ROOT_SYMLINK)
         targets = [(suffix, self.resolve_target(db_name, suffix)) for suffix in DB_SUFFIXES]
         outcomes: list[FileOutcome] = []
         for _suffix, path in targets:
@@ -155,7 +232,11 @@ class DemoResetApp:
         body: dict[str, Any] = {
             "ok": True,
             "reason": REASON_OK,
-            "root": str(self.root),
+            # Path RELATIF, bukan absolut: jawaban sukses ini melewati proksi Next ke
+            # browser, dan `/home/<user>/...` adalah nama pengguna + tata letak disk juri
+            # yang tidak dibutuhkan UI untuk apa pun. Jalur galat memang sudah bersih;
+            # jalur sukses sekarang menyusul.
+            "root": _root_label(self.root),
             "db": db_name,
             "deleted": [o.name for o in outcomes if o.state == "deleted"],
             "missing": [o.name for o in outcomes if o.state == "missing"],
@@ -173,9 +254,33 @@ class DemoResetApp:
 
     @staticmethod
     def _remove(path: Path) -> str:
-        if path.is_symlink():
-            # Menolak, bukan mengikuti: lihat batas 3 di docstring modul.
-            return "refused"
+        """Hapus satu berkas dan laporkan nasibnya: deleted / missing / refused.
+
+        Symlink ditolak lewat `O_NOFOLLOW`, bukan lewat `is_symlink()` lalu `unlink()`.
+        Yang kedua adalah dua panggilan atas nama yang sama: berkas biasa bisa berubah
+        jadi tautan di antaranya, dan laporannya lalu berkata "deleted" untuk sesuatu yang
+        isinya utuh di tempat lain. `O_NOFOLLOW` memutuskannya dalam SATU panggilan kernel.
+
+        Sisa balapan yang jujur diakui: entri masih bisa ditukar antara `open` dan
+        `unlink`. Dampaknya terbatas pada kejujuran laporan — `unlink` tidak pernah
+        mengikuti symlink dan namanya tetap terkurung di akar demo, jadi tidak ada berkas
+        di luar akar yang bisa hilang lewat jalur ini.
+        """
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        except FileNotFoundError:
+            return "missing"
+        except OSError as err:
+            if err.errno in (errno.ELOOP, errno.EMLINK):
+                # Lihat batas 3 di docstring modul: menolak, bukan mengikuti.
+                return "refused"
+            log.warning("demo reset: gagal membuka %s (%s)", path, err.__class__.__name__)
+            raise ResetRejected(REASON_IO) from None
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                return "refused"
+        finally:
+            os.close(fd)
         try:
             path.unlink()
         except FileNotFoundError:
@@ -194,12 +299,102 @@ class DemoResetApp:
         try:
             return HTTPStatus.OK, self.reset(db_name)
         except ResetRejected as rejected:
-            status = (
-                HTTPStatus.INTERNAL_SERVER_ERROR
-                if rejected.reason == REASON_IO
-                else HTTPStatus.BAD_REQUEST
-            )
-            return status, {"ok": False, "reason": rejected.reason}
+            return _status_for(rejected.reason), {"ok": False, "reason": rejected.reason}
+
+
+def _root_label(root: Path) -> str:
+    """Nama direktori untuk DITAMPILKAN — relatif terhadap paket agen, tidak pernah absolut."""
+    try:
+        return str(root.relative_to(agent_root()))
+    except ValueError:
+        return root.name
+
+
+# ----------------------------------------------------------------------
+# Gerbang lintas-asal (CSRF)
+# ----------------------------------------------------------------------
+#
+# PELAJARAN YANG MEMATAHKAN ASUMSI VERSI PERTAMA MODUL INI: "loopback saja" BUKAN
+# pertahanan terhadap browser, karena browser juga ada di loopback. Selama endpoint ini
+# menerima POST apa pun, satu tab jahat yang kebetulan terbuka di mesin juri sudah cukup:
+#
+#     <form method="POST" action="http://127.0.0.1:8010/demo/memory/reset">
+#
+# Form itu mengirim `Content-Type: text/plain` (termasuk daftar aman CORS), jadi browser
+# MENGIRIMNYA tanpa preflight. Penyerang tidak perlu bisa membaca jawabannya — memori demo
+# sudah terhapus saat itu juga. Diuji, bukan diduga: permintaan mentah semacam itu dulu
+# dijawab `200 {"deleted": [...]}`.
+#
+# Tiga syarat di bawah semuanya dipenuhi TANPA usaha oleh pemanggil sah (proksi Next di
+# sisi server: ia bukan browser, ia tidak mengirim `Origin`/`Sec-Fetch-*`, dan ia memang
+# sudah mengirim `content-type: application/json`), sementara ketiganya mustahil dipenuhi
+# oleh halaman jahat: `Origin` dipasang browser sendiri dan tidak bisa dihapus JavaScript,
+# dan `application/json` memaksa preflight yang tidak akan pernah dijawab dengan izin.
+
+
+def check_same_origin(headers: Any, expected_port: int | None) -> None:
+    """Tolak permintaan yang datang dari konteks browser lintas-asal. Diam bila aman."""
+    origin = (headers.get("Origin") or "").strip()
+    if origin:
+        # TIDAK ada allowlist asal. Pemanggil sah tidak pernah mengirim header ini sama
+        # sekali; membandingkan isinya hanya menambah tempat untuk salah.
+        log.warning("demo reset: ditolak, permintaan membawa Origin=%r", origin[:120])
+        raise ResetRejected(REASON_CROSS_ORIGIN)
+
+    fetch_site = (headers.get("Sec-Fetch-Site") or "").strip().lower()
+    if fetch_site and fetch_site not in ALLOWED_FETCH_SITE:
+        log.warning("demo reset: ditolak, Sec-Fetch-Site=%r", fetch_site[:40])
+        raise ResetRejected(REASON_CROSS_ORIGIN)
+
+    fetch_mode = (headers.get("Sec-Fetch-Mode") or "").strip().lower()
+    if fetch_mode in FORBIDDEN_FETCH_MODE:
+        log.warning("demo reset: ditolak, Sec-Fetch-Mode=%r", fetch_mode[:40])
+        raise ResetRejected(REASON_CROSS_ORIGIN)
+
+    _check_host(headers.get("Host"), expected_port)
+
+
+def _check_host(raw_host: str | None, expected_port: int | None) -> None:
+    """`Host` wajib menyebut loopback DAN port server ini — tidak ada rebinding DNS.
+
+    Tanpa ini, nama domain penyerang yang di-resolve ke 127.0.0.1 (DNS rebinding) membuat
+    permintaannya same-origin di mata browser, dan seluruh pemeriksaan di atas lolos.
+    """
+    host = (raw_host or "").strip()
+    if not host:
+        raise ResetRejected(REASON_BAD_HOST)
+    if host.startswith("["):  # IPv6 literal: [::1] atau [::1]:8010
+        closing = host.find("]")
+        if closing < 0:
+            raise ResetRejected(REASON_BAD_HOST)
+        name, rest = host[1:closing], host[closing + 1 :]
+        port_part = rest[1:] if rest.startswith(":") else rest
+    elif host.count(":") == 1:
+        name, port_part = host.split(":", 1)
+    else:
+        name, port_part = host, ""
+    if name.lower() not in LOOPBACK_HOSTS:
+        log.warning("demo reset: ditolak, Host=%r bukan loopback", host[:120])
+        raise ResetRejected(REASON_BAD_HOST)
+    if expected_port is None or not port_part:
+        return
+    if port_part != str(expected_port):
+        log.warning("demo reset: ditolak, port pada Host=%r bukan %d", host[:120], expected_port)
+        raise ResetRejected(REASON_BAD_HOST)
+
+
+def check_content_type(headers: Any) -> None:
+    """`Content-Type: application/json` PERSIS (parameter seperti `charset` boleh).
+
+    Inilah pemaksa preflight. `text/plain`, `application/x-www-form-urlencoded`, dan
+    `multipart/form-data` — yakni segala yang bisa dikirim `<form>` tanpa preflight —
+    ditolak di sini, begitu pula permintaan tanpa `Content-Type` sama sekali.
+    """
+    raw = (headers.get("Content-Type") or "").strip()
+    base = raw.split(";", 1)[0].strip().lower()
+    if base != JSON_CONTENT_TYPE:
+        log.warning("demo reset: ditolak, Content-Type=%r", raw[:120])
+        raise ResetRejected(REASON_CONTENT_TYPE)
 
 
 def _parse_body(body_bytes: bytes) -> str:
@@ -245,6 +440,12 @@ class ResetHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    def _bound_port(self) -> int | None:
+        try:
+            return int(self.server.server_address[1])
+        except (AttributeError, IndexError, TypeError, ValueError):  # pragma: no cover
+            return None
+
     def _read_body(self) -> bytes | None:
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -260,6 +461,12 @@ class ResetHandler(BaseHTTPRequestHandler):
         if app is None:
             self._respond(HTTPStatus.NOT_FOUND, {"ok": False, "reason": REASON_NOT_FOUND})
             return
+        try:
+            check_same_origin(self.headers, self._bound_port())
+            check_content_type(self.headers)
+        except ResetRejected as rejected:
+            self._respond(_status_for(rejected.reason), {"ok": False, "reason": rejected.reason})
+            return
         body = self._read_body()
         if body is None:
             self._respond(
@@ -270,7 +477,7 @@ class ResetHandler(BaseHTTPRequestHandler):
         try:
             status, payload = app.handle_reset(body)
         except ResetRejected as rejected:
-            self._respond(HTTPStatus.BAD_REQUEST, {"ok": False, "reason": rejected.reason})
+            self._respond(_status_for(rejected.reason), {"ok": False, "reason": rejected.reason})
             return
         except Exception:  # pragma: no cover — jaring terakhir; detail hanya ke log
             log.exception("demo reset: galat tak terduga")
@@ -315,7 +522,16 @@ def serve(
 def build_routes() -> dict[str, DemoResetApp]:
     """Tabel rute dari konfigurasi. Tanpa `DEMO_MODE` → kosong."""
     demo = demo_mode_enabled()
-    return routes(DemoResetApp(demo_data_root()) if demo else None, demo_mode=demo)
+    if not demo:
+        return routes(None, demo_mode=False)
+    try:
+        app = DemoResetApp(demo_data_root())
+    except ResetRejected as rejected:
+        # Akar demo adalah symlink → JANGAN daftarkan apa pun. Gagal ke arah "tidak
+        # menghapus", bukan ke arah "menghapus sesuatu yang lain".
+        log.error("demo reset: akar demo ditolak (%s) — endpoint tidak didaftarkan", rejected.reason)
+        return {}
+    return routes(app, demo_mode=True)
 
 
 def main(argv: list[str] | None = None) -> int:
