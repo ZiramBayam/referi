@@ -1,168 +1,166 @@
 ---
-title: "Apa yang patah saat membangunnya (dan apa yang masih patah)"
+title: "What broke while building it (and what is still broken)"
 date: 2026-09-08
-proyek: The Evaluator (hackathon Sibyl, Base Sepolia)
+project: The Evaluator (Sibyl hackathon, Base Sepolia)
 repo: EvaluatorVault 0x5c6EE4586ACABcb6326069c229E58091B21ef384
 ---
 
-# Apa yang patah saat membangunnya (dan apa yang masih patah)
+# What broke while building it (and what is still broken)
 
-Dua hari sebelum submission, versi jujur dari sepuluh hari terakhir. Bukan versi mulusnya — versi yang
-memuat empat hal yang patah, siapa yang menemukannya, dan apa yang kami lakukan sesudahnya.
+Two days before submission, the honest version of the last ten days. Not the smooth version — the one
+that names four things that broke, who found them, and what we did afterwards.
 
-## 1. Tes destruktif kami dulu hanya menjalankan varian yang dijamin menang
+## 1. Our destructive test used to run only the variant guaranteed to win
 
-Gate hackathon ini terang-terangan: hapus lapisan memorinya, dan kalau proyeknya masih melakukan apa
-yang ia klaim, itu wrapper. Kami membangun tes destruktifnya sendiri — dan versi pertamanya hanya
-menjalankan **satu** varian: vault segar di Anvil lokal, memori kosong, sehingga job yang DITOLAK saat
-memori ada menjadi lolos pada budget yang identik. Degradasi terlihat, panggung meriah.
+This hackathon's gate is blunt: strip out the memory layer, and if the project still does what it claims,
+it is a wrapper. We built the destructive test ourselves — and the first version ran only **one** variant:
+a fresh vault on local Anvil, memory empty, so a job that was REJECTED with memory present now passes at
+an identical budget. Degradation visible, crowd pleased.
 
-Masalahnya: itu bukan satu-satunya yang terjadi kalau memori dihapus. Pada vault yang sudah hidup —
-root on-chain bukan nol — menghapus `memory.db` justru memicu **mode aman**: agen berhenti total, nol
-`postVerdict`, job menggantung sampai `expiredAt`, client dapat refund penuh. Menampilkan satu varian
-saja berarti memilih adegan yang paling menguntungkan.
+The problem: that is not the only thing that happens when memory is deleted. On a vault that is already
+live — on-chain root non-zero — deleting `memory.db` triggers **safe mode** instead: the agent stops
+entirely, zero `postVerdict`, the job hangs until `expiredAt`, the client gets a full refund. Showing only
+one variant means picking the most flattering scene.
 
-Sekarang `make demo` menjalankan **keduanya**, dan varian keduanya bukan panggung buatan sendiri: ia
-dijalankan atas **vault Base Sepolia yang beku** supaya `lastMemoryRoot()` non-nol itu keadaan nyata.
-Yang lebih penting, ia **menggugurkan seluruh run** kalau buktinya tidak muncul — exit agen ≠ 0, baris
-`MODE AMAN:` tidak tercetak, gerbang tidak melaporkan `mode=safe`, pemicunya bukan aturan "file
-hilang", ada transaksi terkirim, atau nonce wallet agen bergerak. Semuanya berbentuk
-`VARIAN B GUGUR: …` di `sim/src/demo.ts:672-685`. Sentuhan jaringannya hanya baca, dan itu **diukur**
-lewat nonce sebelum vs sesudah, bukan diucapkan.
+Now `make demo` runs **both**, and the second variant is not a stage we built ourselves: it runs against
+the **frozen Base Sepolia vault**, so the non-zero `lastMemoryRoot()` is a real state. More importantly,
+it **aborts the whole run** if the evidence does not appear — agent exit ≠ 0, the `MODE AMAN:` line not
+printed, the gate not reporting `mode=safe`, the trigger not being the "file missing" rule, any
+transaction sent, or the agent wallet's nonce moving. All of them come out as `VARIAN B GUGUR: …` in
+`sim/src/demo.ts:672-685`. Its network touch is read-only, and that is **measured** through the nonce
+before vs after, not asserted.
 
-Satu koreksi label yang kami minta juri catat: pada varian pertama, mode yang dilaporkan agen adalah
-`normal`, **bukan** "mode naif". Yang menunjukkan degradasinya adalah dua kolom lain di baris
-ringkasan — `depth=sampling` dan `cap=TANPA CAP` (ADR-026).
+One label correction we ask judges to note: in the first variant, the mode the agent reports is `normal`,
+**not** "naive mode". What shows the degradation is two other columns in the summary line — `depth=sampling`
+and `cap=TANPA CAP` (ADR-026).
 
-## 2. Penjaga root kami buta terhadap `importlib`, `sys.modules`, dan re-binding
+## 2. Our root guard was blind to `importlib`, `sys.modules`, and re-binding
 
-Kami punya aturan keras: hanya satu fungsi yang boleh melahirkan `memory_root` yang dikirim ke
-`postVerdict`. Penegakannya sebagian berupa pemindai statis atas sumber jalur produksi.
+We have a hard rule: only one function may produce the `memory_root` sent to `postVerdict`. Part of the
+enforcement is a static scanner over the production path's source.
 
-Review keamanan adversarial menembusnya. Pemindai versi pertama mengisi daftar modulnya **hanya** dari
-simpul `import`/`from … import`, sehingga modul yang didapat lewat `importlib.import_module(...)`,
-`__import__(...)`, atau `sys.modules["…"]` tidak pernah dikenali sama sekali — dan re-binding sesederhana
-`alt = mp` memutus jejaknya. Enam bentuk dibuktikan lolos **tanpa satu pun tes merah**.
+An adversarial security review broke through it. The first version of the scanner populated its module
+list **only** from `import`/`from … import` nodes, so a module obtained via
+`importlib.import_module(...)`, `__import__(...)`, or `sys.modules["…"]` was never recognised at all — and
+a re-binding as simple as `alt = mp` cut the trail. Six forms were demonstrated to pass **without a single
+red test**.
 
-Perbaikannya bukan menambal satu bentuk, melainkan mengajari pemindai mengenali modul yang didapat
-tanpa pernyataan import, plus melacak alias. Keenam bentuk itu sekarang menjadi tes yang harus merah:
+The fix was not patching one form but teaching the scanner to recognise modules obtained without an import
+statement, plus tracking aliases. Those six forms are now tests that must go red:
 `test_root_gate_scanner_catches_the_six_bypasses_from_the_4_1_review`
-(`agent/tests/test_memory_policy.py:2175`). Pelajarannya yang kami tulis di kode: pemindai yang tidak
-pernah merah tidak menjaga apa pun, jadi setiap penjaga di repo ini wajib punya buktinya sendiri bahwa
-ia bisa merah — dan kontrol negatif supaya "selalu merah" tidak lolos sebagai penjaga yang bekerja.
+(`agent/tests/test_memory_policy.py:2175`). The lesson we wrote into the code: a scanner that never goes
+red guards nothing, so every guard in this repo must carry its own proof that it can go red — plus a
+negative control, so that "always red" does not pass as a working guard.
 
-## 3. Vault kami dibekukan sebelum sempurna, dan 62.500 unit ikut terkunci
+## 3. Our vault was frozen before it was finished, and 62,500 units froze with it
 
-ADR-022 membekukan `0x5c6EE45…f384` sebagai kontrak submission. Keputusan itu diambil ketika perbaikan
-yang sudah ditulis di sumber — `sweepToken(address,address)` untuk menarik fee ERC-20 — belum sempat
-mendarat di bytecode. Konsekuensinya kami terima terbuka: fungsi itu **tidak ada** di kontrak
-terdeploy, dan 62.500 unit token escrow yang dipegang vault (5% dari dua job yang diluluskan)
-**hangus permanen**.
+ADR-022 froze `0x5c6EE45…f384` as the submission contract. That decision was taken when a fix already
+written in source — `sweepToken(address,address)` for withdrawing ERC-20 fees — had not yet landed in the
+bytecode. We accept the consequence openly: that function is **absent** from the deployed contract, and
+the 62,500 units of escrow token the vault holds (5% of two passed jobs) are **permanently stranded**.
 
-Kenapa tetap dibekukan: seluruh bukti on-chain yang kami tawarkan — job 417 sampai 422, delapan event
-`MemoryRootUpdated`, `JobRejected` job 420 — melekat pada alamat itu. Redeploy berarti rantai bukti
-yang lebih rapi tetapi lebih muda, dan cerita yang harus dimulai ulang dua hari sebelum tenggat. Kami
-memilih bukti yang cacat tapi utuh daripada bukti yang bersih tapi baru. Ini keputusan yang bisa dinilai
-salah, dan kami tidak memakai kata "audited" atau "production-ready" untuk menutupinya.
+Why we froze it anyway: all the on-chain evidence we offer — jobs 417 through 422, eight
+`MemoryRootUpdated` events, job 420's `JobRejected` — is attached to that address. A redeploy would mean a
+tidier but younger evidence chain, and a story restarted two days before the deadline. We chose evidence
+that is flawed but whole over evidence that is clean but new. This decision can reasonably be judged
+wrong, and we do not use the words "audited" or "production-ready" to cover it.
 
-Ikutan yang sama pahitnya, dan sudah tertulis di README: `arbiter()` == `agent()` pada instans ini, dan
-itu permanen karena kontraknya immutable.
+An equally bitter side effect, already written in the README: `arbiter()` == `agent()` on this instance,
+and that is permanent because the contract is immutable.
 
-## 4. `make demo` sekarang menuntut internet — dan kami memilih gagal keras
+## 4. `make demo` now needs internet — and we chose to fail loudly
 
-Konsekuensi dari poin 1: perintah demo kami tidak lagi sepenuhnya offline, karena varian kedua membaca
-vault Sepolia yang beku. Ada pilihan yang lebih nyaman: lewati diam-diam kalau jaringan tidak ada, cetak
-"skipped", run tetap hijau.
+A consequence of point 1: our demo command is no longer fully offline, because the second variant reads
+the frozen Sepolia vault. There was a more comfortable option: silently skip when there is no network,
+print "skipped", keep the run green.
 
-Kami menolaknya. Varian kedua adalah klimaks tes destruktif kami; run yang hijau tanpa menjalankannya
-adalah run yang berbohong tentang apa yang sudah diperiksa. Jadi tanpa internet, `make demo` tidak
-selesai — dan itu perilaku yang disengaja, dicatat sebagai batasan, bukan sebagai fitur.
+We refused. The second variant is the climax of our destructive test; a green run that never executed it
+is a run that lies about what was checked. So without internet, `make demo` does not finish — and that is
+deliberate behaviour, recorded as a limitation, not as a feature.
 
-Satu kejutan kecil yang ikut kami cetak apa adanya alih-alih disembunyikan: pada vault segar, invokasi
-pertama agen **melahirkan** `memory.db` di tengah jalan, sehingga mode yang direncanakan tidak lagi sama
-dengan mode yang dibaca sesaat sebelum menandatangani, dan penjaga `MODE_DRIFT` menolak bertransaksi —
-exit code 4, nol transaksi, fail-closed. Invokasi kedua berjalan sampai selesai. `make demo` mencetak
-`agent.retry … firstExit=4` apa adanya (ADR-026).
+One small surprise that we print as-is rather than hide: on a fresh vault, the agent's first invocation
+**creates** `memory.db` midway, so the mode it planned no longer matches the mode read just before
+signing, and the `MODE_DRIFT` guard refuses to transact — exit code 4, zero transactions, fail-closed. The
+second invocation runs to completion. `make demo` prints `agent.retry … firstExit=4` as-is (ADR-026).
 
-## 5. Panel juri: cek sungguhan di browser — dan permukaan yang baru saja gagal review keamanan
+## 5. Judge panel: real checks in the browser — and a surface that just failed a security review
 
-Bukti yang hanya bisa dibaca sebagai tabel di README gampang dicurigai sebagai hasil yang sudah
-disiapkan. Jadi `web/` punya tiga rute: timeline job 418-422 dengan tautan tx `VerdictPosted` ke
-BaseScan, halaman verdict + bukti per kriteria, dan **panel juri** tempat siapa pun bisa menempel
-teksnya sendiri, memilih kedalaman, lalu menjalankan ceknya. Yang berjalan di sana bukan pemutar ulang:
-cek deterministik `format` dan `links` **diport** dari `agent/agent/checks/` ke
-`web/src/lib/checks.js` dan dijalankan lewat `POST /api/evaluate`, dan port itu menghasilkan array
-`checks` yang identik dengan bundel bukti 418/419/421/422 — sampai ke string `detail` dan `proof`.
+Evidence that can only be read as a table in a README is easy to suspect of being pre-cooked. So `web/`
+has three routes: a timeline of jobs 418-422 with `VerdictPosted` tx links to BaseScan, a verdict +
+per-criterion evidence page, and a **judge panel** where anyone can paste their own text, pick a depth, and
+run the checks. What runs there is not a replay: the deterministic `format` and `links` checks are
+**ported** from `agent/agent/checks/` to `web/src/lib/checks.js` and executed through `POST /api/evaluate`,
+and that port produces a `checks` array identical to the 418/419/421/422 evidence bundles — down to the
+`detail` and `proof` strings.
 
-Kalimat itu, sampai kemarin, hanya **pernah diperiksa sekali dengan tangan** — dan klaim yang hanya
-diperiksa dengan tangan akan patah diam-diam pada sentuhan berikutnya. Sekarang ia **dijaga tes**:
-`web/test/checks-parity.test.js` membaca teks dari `web/public/deliverables/<jobId>.json`, harapannya
-dari `web/public/verdicts/<jobId>.json` (bundel yang hash-nya sudah diumumkan on-chain), memeriksa lebih
-dulu bahwa `sha_keccak` teks memang sama dengan `deliverable` yang dicatat bundel, lalu membandingkan
-**seluruh objek cek** field demi field — `check`, `criterion`, `depth`, `detail`, `pattern`, `proof`,
-`section`, `status` — plus `failed_checks`, `unverified`, `category`, `verdict`, dan katalog kriteria
-deterministik. Tidak ada satu pun string harapan yang diketik ulang di dalam tesnya. Runner-nya
-`node:test` bawaan Node 24, **nol dependensi baru**, dan `pnpm -r test` — yang dulu hijau atas nol
-proyek — kini menjalankan 5 tes.
+Until yesterday, that sentence had only ever been **checked once, by hand** — and a claim checked only by
+hand breaks silently on the next change. Now it is **guarded by a test**:
+`web/test/checks-parity.test.js` reads the text from `web/public/deliverables/<jobId>.json` and the
+expectations from `web/public/verdicts/<jobId>.json` (bundles whose hashes are already announced on chain),
+first verifies that the text's `sha_keccak` matches the `deliverable` the bundle records, then compares
+**the whole check object** field by field — `check`, `criterion`, `depth`, `detail`, `pattern`, `proof`,
+`section`, `status` — plus `failed_checks`, `unverified`, `category`, `verdict`, and the deterministic
+criteria catalogue. Not a single expected string is retyped inside the test. The runner is Node 24's
+built-in `node:test`, **zero new dependencies**, and `pnpm -r test` — once green over zero projects — now
+runs 5 tests.
 
-Dan seperti penjaga lain di repo ini, ia harus dibuktikan bisa merah: mengubah satu kata pada string
-`detail` membuat keempat job merah, dan menaikkan `SAMPLING_SECTION_LIMIT` dari 2 ke 3 membuat job 421
-berubah dari lulus menjadi gagal; dipulihkan, 5/5 hijau lagi.
+And like every other guard in this repo, it had to be proven capable of going red: changing one word in a
+`detail` string turns all four jobs red, and raising `SAMPLING_SECTION_LIMIT` from 2 to 3 flips job 421
+from pass to fail; restored, 5/5 green again.
 
-Batasnya ditulis di halamannya sendiri: panel tidak menjalankan gerbang cap, tidak membaca memori, tidak
-memanggil gerbang 402, tidak mengirim transaksi. Tidak ada RPC dari browser; datanya JSON statis di
-`web/public/`. Dependensinya tiga, semuanya sudah dipin di `docs/versions.md` (next 16.3.2,
+Its limits are stated on the page itself: the panel does not run the cap gate, does not read memory, does
+not call the 402 gate, and does not send transactions. There is no RPC from the browser; the data is
+static JSON in `web/public/`. It has three dependencies, all pinned in `docs/versions.md` (next 16.3.2,
 react 19.2.8, typescript 7.0.2).
 
-Ada juga tombol hapus memori di panel, untuk mempertunjukkan tes destruktif di depan penonton — dan di
-sinilah kami sempat kalah. **Permukaan tombol itu diberi verdict BLOKIR oleh review keamanan, dengan dua
-temuan TINGGI:** CSRF pada endpoint hapusnya, dan proksi Next yang mengekspos penghapus loopback ke LAN
-karena default Next mengikat `0.0.0.0`.
+There is also a memory-wipe button in the panel, for demonstrating the destructive test to an audience —
+and this is where we lost. **That button's surface received a BLOCK verdict from the security review, with
+two HIGH findings:** CSRF on its wipe endpoint, and a Next proxy exposing the loopback wiper to the LAN
+because Next binds `0.0.0.0` by default.
 
-Yang pertama pantas dikutip karena pelajarannya lebih besar dari repo ini: **"loopback saja" bukan
-pertahanan terhadap browser, karena browser juri juga ada di loopback.** Satu tab jahat cukup mengirim
-`<form method=POST action="http://127.0.0.1:8010/demo/memory/reset">`; form itu mengirim `text/plain` yang
-termasuk daftar aman CORS, jadi tidak ada preflight yang menahannya — dan penyerang tidak perlu bisa
-membaca jawabannya, karena menghapus adalah **efek samping**, bukan bacaan. CORS tidak pernah menjadi
-pertahanan di sini.
+The first deserves quoting because its lesson is bigger than this repo: **"loopback only" is not a defence
+against a browser, because the judge's browser is also on loopback.** One malicious tab only needs to send
+`<form method=POST action="http://127.0.0.1:8010/demo/memory/reset">`; that form sends `text/plain`, which
+is CORS-safelisted, so no preflight holds it back — and the attacker does not need to read the response,
+because wiping is a **side effect**, not a read. CORS was never a defence here.
 
-**Blokirnya kini sudah dicabut**, dan cara pembuktiannya yang kami anggap benar: reviewer **mengulang
-persis serangan yang dulu berhasil**. Form lintas-asal yang dulu menjawab `200 {"deleted": [3 berkas]}`
-sekarang menjawab **403 `cross_origin_request`** dengan ketiga berkas utuh; `curl` dari IP LAN tertahan
-dua lapis — sisi agen menolak peer non-loopback, dan Next kini terikat `-H 127.0.0.1`. Satu temuan SEDANG
-(TOCTOU pada komponen leluhur path) ditutup lewat jalur `dir_fd`: penghapusan tidak lagi memakai path
-string melainkan fd direktori akar. Review ulang: nol KRITIS, nol TINGGI.
+**The block has since been lifted**, and the way it was proven is the way we think is correct: the
+reviewer **re-ran exactly the attack that used to work**. The cross-origin form that once answered
+`200 {"deleted": [3 files]}` now answers **403 `cross_origin_request`** with all three files intact;
+`curl` from a LAN IP is stopped by two layers — the agent side refuses non-loopback peers, and Next is now
+bound with `-H 127.0.0.1`. One MEDIUM finding (TOCTOU on ancestor path components) was closed via the
+`dir_fd` route: deletion no longer uses a string path but the root directory's fd. Re-review: zero
+CRITICAL, zero HIGH.
 
-Yang **tetap** kami sebut sebagai risiko, karena "lulus review" bukan "tidak ada sisa": proksi Next
-membatasi **host** target ke loopback tetapi **tidak portnya**, dan docstring penghapusnya mengakui sendiri
-sisa balapan antara `open` dan `unlink` — dampaknya terbatas pada kejujuran laporan, karena namanya tidak
-bisa keluar dari direktori yang dipegang fd. Riwayat penuhnya ada di butir 36 `docs/limitations.md`, ditulis sebagai
-"gagal → apa yang gagal → apa yang menutupnya → apa yang masih diterima", bukan sebagai fitur yang selalu
-aman.
+What we **still** name as risk, because "passed review" is not "nothing left": the Next proxy restricts
+the target **host** to loopback but **not the port**, and the wiper's docstring admits a residual race
+between `open` and `unlink` — its impact is limited to the honesty of the report, because the name cannot
+escape the directory held by the fd. The full history is in item 36 of `docs/limitations.md`, written as
+"failed → what failed → what closed it → what is still accepted", not as a feature that was always safe.
 
-Satu batas yang sengaja kami pasang sejak awal dan tidak digeser saat panik: tombol itu hanya berkuasa
-atas memori **demo** (`agent/data/demo/`). Ia tidak pernah bisa menyentuh `agent/data/chain-abc/memory.db`
-— satu-satunya berkas yang bisa merekonstruksi root on-chain.
+One boundary we set from the start and did not move under pressure: that button has power only over
+**demo** memory (`agent/data/demo/`). It can never touch `agent/data/chain-abc/memory.db` — the only file
+that can reconstruct the on-chain root.
 
-## Yang MASIH belum beres
+## What is STILL not fixed
 
-Ini bagian yang paling ingin kami tulis lebih pendek, dan justru karena itu ia ditulis penuh di
-`docs/limitations.md`, dan diringkas di bagian "Batasan & asumsi kepercayaan" README:
+This is the part we would most like to write shorter, which is exactly why it is written out in full in
+`docs/limitations.md` and summarised in the README's "Limitations & trust assumptions" section:
 
-- **Insentifnya belum diperbaiki.** Fee hanya cair saat `Completed`; wasit ini masih dibayar hanya kalau
-  ia meluluskan. Fee di muka (ADR-004) adalah rancangan, dan gerbang 402 yang ada belum dikonsumsi jalur
-  job mana pun.
-- **Taruhannya nol.** `MIN_BOND` = 0. `challenge`/`resolve` stub, jadi jendela 120 detik itu latensi
-  dengan nol perlindungan: verdict salah tidak bisa dibatalkan siapa pun.
-- **Jangkar root melingkar**, dan dari delapan root vault hanya root job 418 yang bisa dihitung ulang
-  hari ini.
-- **`memory.db` yang ditukar DB lain tidak terdeteksi** — mode aman memeriksa keadaan file, bukan isinya.
-- **Tes destruktif belum berartefak**: `make demo` menjalankan keduanya tetapi tidak meninggalkan log
-  atau fixture di repo, jadi yang bisa Anda cocokkan hari ini adalah run Anda sendiri.
-- **`sim/` tidak punya satu pun tes otomatis** — satu-satunya kode yang menyentuh SDK Virtuals dijaga
-  hanya oleh rantai on-chain yang dijalankan tangan (`web/` sudah punya, poin 5).
-- **Sisa risiko di permukaan hapus-memori** yang diterima apa adanya: host target dibatasi, port tidak;
-  dan sisa balapan `open`/`unlink` yang diakui docstringnya sendiri (poin 5 di atas).
+- **The incentive is not fixed.** The fee is only paid out on `Completed`; this referee is still paid only
+  when it passes work. The up-front fee (ADR-004) is a design, and the 402 gate that exists is not
+  consumed by any job path.
+- **The stake is zero.** `MIN_BOND` = 0. `challenge`/`resolve` are stubs, so the 120-second window is
+  latency with zero protection: a wrong verdict cannot be undone by anyone.
+- **The root anchor is circular**, and of the eight vault roots only job 418's can be recomputed today.
+- **A `memory.db` swapped for another DB is not detected** — safe mode checks the file's state, not its
+  contents.
+- **The destructive test leaves no artifacts**: `make demo` runs both variants but leaves no log or
+  fixture in the repo, so what you can match against today is your own run.
+- **`sim/` has no automated tests at all** — the only code touching the Virtuals SDK is guarded solely by
+  hand-run on-chain chains (`web/` now has tests, point 5).
+- **Residual risk on the memory-wipe surface**, accepted as-is: the target host is restricted, the port is
+  not; and the `open`/`unlink` race the docstring admits itself (point 5 above).
 
-Video demonya direkam besok. Yang akan Anda lihat di sana adalah perintah yang sama persis dengan yang
-ada di README — termasuk exit code 4 itu.
+The demo video is recorded tomorrow. What you will see there is exactly the same commands as in the
+README — including that exit code 4.

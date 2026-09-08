@@ -958,3 +958,41 @@ Konsekuensi:
 (=) Nol scope bertambah; lima task ditutup tanpa satu pun dari lima langkah §7 hilang.
 (!) Seluruh penutupan di atas adalah putusan PRIORITAS, BUKAN bukti bahwa pekerjaannya selesai. Bedanya
     ditulis eksplisit di tiap baris TASKS.md supaya tidak terbaca sebagai penyusutan scope diam-diam.
+
+
+## ADR-031 Dokumen dan teks yang dilihat pengguna dialihkan ke Bahasa Inggris
+Tanggal: 2026-09-09. Status: diterima. Menembus pembekuan kode ADR-030 atas instruksi eksplisit user.
+
+Pemicu: user menegaskan bahwa ini hackathon INTERNASIONAL dan jurinya berbahasa Inggris, sementara README,
+dokumen, label UI web, dan keluaran `make demo` seluruhnya Bahasa Indonesia. CLAUDE.md membolehkan dokumen
+berbahasa Indonesia, jadi ini bukan pelanggaran aturan — tetapi ia hambatan langsung bagi penilaian, dan
+naskah video sempat menyiasatinya dengan tanda kurung terjemahan, yang tambalan, bukan solusi.
+
+Keputusan:
+1. **Dialihkan ke Inggris**: README, `docs/limitations.md`, `docs/evidence.md`, `docs/reproduce.md`,
+   `docs/design.md`, kedua post build-in-public, seluruh teks terender di `web/`, dan keluaran konsol
+   `make demo` beserta CLI agen.
+2. **TIDAK dialihkan, dan ini mengikat**: string `detail`/`proof`/`pattern` di dalam bundel bukti, teks
+   kriteria, dan teks deliverable. Sebabnya bukan selera: string itu masuk bundel, bundelnya di-keccak256
+   menjadi `reasonHash`, dan `reasonHash` itu SUDAH TERTULIS DI CHAIN untuk job 418-422. Mengubah satu
+   karakter membuat bundel di repo berhenti menghasilkan hash yang diumumkan on-chain — menghancurkan
+   klaim inti proyek yang baru diverifikasi ulang juri pada gerbang 4.2. `web/test/checks-parity.test.js`
+   mengunci properti ini karakter per karakter.
+3. **`contracts/` TIDAK disentuh sama sekali.** Komentar Solidity ikut masuk hash metadata solc; mengubahnya
+   membuat verifikasi Sourcify `exact_match` (8 Sep, dari commit `8d3e596`) tidak lagi cocok.
+4. Konsekuensi butir 2 dinyatakan TERBUKA di UI dan di dokumen batasan, bukan disembunyikan: halaman verdict
+   menjelaskan bahwa string bundel dikutip apa adanya karena itulah yang di-hash.
+5. ADR-020 kep. 8 (bunyi baris VARIAN B dikunci, dilarang DIRINGKAS) tetap berlaku. Terjemahan bukan
+   peringkasan: seluruh unsurnya wajib tetap ada — mode aman, 0 tx baru, nonce sebelum→sesudah, job
+   menggantung sampai `expiredAt`, dan jalur pemulihan dari backup.
+
+Konsekuensi:
+(+) Juri internasional membaca dan menonton dalam bahasanya sendiri; naskah video tidak lagi perlu tanda
+    kurung terjemahan atas keluaran program.
+(-) Sebagian Bahasa Indonesia BERTAHAN di dalam bukti per-kriteria, dan itu permanen selama bundel yang
+    dijangkar hari ini menjadi rujukan. Ia dijelaskan, bukan ditutupi.
+(-) Pembekuan kode ADR-030 ditembus untuk `agent/`, `sim/`, dan `web/`. Kompensasinya: seluruh gerbang
+    dijalankan ulang — `make test`, `make demo` dua kali beserta diff determinisme, dan tes paritas web.
+(=) Nol scope bertambah; nol fakta berubah. Ini pengalihan bahasa, bukan perubahan perilaku.
+(!) Komentar dan docstring di dalam kode BELUM dialihkan pada ADR ini; itu pekerjaan pasca-submission,
+    dengan `contracts/` dikecualikan selama verifikasi Sourcify hari ini masih dijadikan rujukan.

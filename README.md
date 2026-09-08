@@ -1,189 +1,193 @@
 # The Evaluator
 
-Wasit escrow ERC-8183 yang ingatannya tentang tiap provider bisa **dihitung ulang dari file**. Evaluator
-standar ERC-8183 bersifat stateless dan "fully trusted": provider yang sama bisa mengulang trik yang sama
-pada job berikutnya tanpa jejak. Di sini tiap `postVerdict` mengumumkan `memoryRoot` on-chain, dan memori
-itulah yang menentukan kedalaman pemeriksaan serta cap budget per provider.
+An ERC-8183 escrow referee whose memory of each provider can be **recomputed from files**. A standard
+ERC-8183 evaluator is stateless and "fully trusted": the same provider can repeat the same trick on the
+next job, leaving no trace. Here every `postVerdict` announces a `memoryRoot` on chain, and that memory is
+what sets the check depth and the per-provider budget cap.
 
-- Status: **proyek hackathon di Base Sepolia (testnet), belum pernah dijalankan di mainnet.**
-- Kontrak submission (BEKU, ADR-022): [`0x5c6EE4586ACABcb6326069c229E58091B21ef384`](https://sepolia.basescan.org/address/0x5c6EE4586ACABcb6326069c229E58091B21ef384)
-- **Insentifnya BELUM diperbaiki**: `evaluatorFeeBP` = 500 (5%) hanya cair saat job `Completed`, jadi wasit
-  ini masih dibayar hanya kalau ia meluluskan. Fee di muka via x402 adalah rancangan (ADR-004), bukan
-  fitur. Detail: [`docs/limitations.md`](docs/limitations.md) butir 14.
-- Prosa berbahasa Indonesia; identifier, perintah, dan kutipan kode berbahasa Inggris. Lisensi: MIT.
+- Status: **hackathon project on Base Sepolia (testnet); never run on mainnet.**
+- Submission contract (FROZEN, ADR-022): [`0x5c6EE4586ACABcb6326069c229E58091B21ef384`](https://sepolia.basescan.org/address/0x5c6EE4586ACABcb6326069c229E58091B21ef384)
+- **The incentive is NOT fixed yet**: `evaluatorFeeBP` = 500 (5%) is only paid out when a job is
+  `Completed`, so this referee is still paid only when it passes work. An up-front fee via x402 is a
+  design (ADR-004), not a feature. Details: [`docs/limitations.md`](docs/limitations.md) item 14.
+- Prose, identifiers, and commands are in English. Licence: MIT.
 
-## Kalau Anda cuma punya 3 menit
+## If you only have 3 minutes
 
-Tiga hal ini yang paling kami ingin Anda periksa — semuanya bisa dibuka tanpa menjalankan apa pun:
+These are the three things we most want you to check. All three open without running anything:
 
-1. **Verdict yang dibentuk riwayat, di chain.** Job 421 dan 422 memakai deliverable yang identik byte demi
-   byte; 421 lulus, 422 ditolak. `postVerdict` job 422:
+1. **A verdict shaped by history, on chain.** Jobs 421 and 422 use byte-for-byte identical deliverables;
+   421 passed, 422 was rejected. `postVerdict` for job 422:
    [`0xe95910d2…295830`](https://base-sepolia.blockscout.com/tx/0xe95910d28ac4b5182220b9ea7c31519fb006b99b2edb0ed453f18556fa295830)
-   (Blockscout mendekode nama eventnya — butir 15). Duduk perkaranya: **butir 25**.
-2. **Bundel bukti job 422**, yang hash-nya sudah diumumkan on-chain sebelum eksekusi:
-   [`web/public/verdicts/422.json`](web/public/verdicts/422.json) — memuat `memory_root`, `checks`,
-   `incident_jobs`, dan kriteria yang **tidak** dinilai. Cara mencocokkannya dengan chain: **butir 22**.
-3. **Baris `claim step=C-vs-D`** yang dicetak `make demo` (`sim/src/demo.ts:902-907`): gerbang cap yang
-   sama, dengan memori vs tanpa memori, pada budget identik. Konteks dan batasnya: **butir 19**.
+   (Blockscout decodes the event name — item 15). The full story: **item 25**.
+2. **The evidence bundle for job 422**, whose hash was announced on chain before execution:
+   [`web/public/verdicts/422.json`](web/public/verdicts/422.json) — it carries `memory_root`, `checks`,
+   `incident_jobs`, and the criteria that were **not** scored. How to match it against the chain:
+   **item 22**.
+3. **The `claim step=C-vs-D` line** printed by `make demo` (`sim/src/demo.ts:902-907`): the same cap gate,
+   with memory and without, at an identical budget. Context and limits: **item 19**.
 
-Kalau Anda hanya ingin tahu apa yang TIDAK bekerja: [`docs/limitations.md`](docs/limitations.md).
+If you only want to know what does NOT work: [`docs/limitations.md`](docs/limitations.md).
 
-## Alur
+## Flow
 
 ```
 CLIENT ──createJob(evaluator = VAULT)──► ACP (Base Sepolia) ◄──setBudget / submit── PROVIDER
                                               │
                                               │ getJob + log JobFunded / JobSubmitted
                                               ▼
-                                 Evaluator Agent (Python, dipanggil per job)
-                                   • cek deterministik: format, links, chain
-                                   • memori Sibyl: provider / pattern / suspicion(karantina)
-                                   • derive_cap(memori) — hanya bisa mengetat
+                                 Evaluator Agent (Python, invoked per job)
+                                   • deterministic checks: format, links, chain
+                                   • Sibyl memory: provider / pattern / suspicion (quarantine)
+                                   • derive_cap(memory) — can only tighten
                                               │
                                               │ setProviderCap(provider, cap)
                                               │ postVerdict(jobId, kind, reasonHash, memoryRoot)
                                               ▼
                                  EvaluatorVault 0x5c6EE45…f384
                                    • emit MemoryRootUpdated(memoryRoot)
-                                   • tunggu CHALLENGE_WINDOW = 120 detik
+                                   • wait CHALLENGE_WINDOW = 120 seconds
                                    • finalize() → acp.complete / acp.reject
                                               ▼
                                     JobCompleted / JobRejected
 ```
 
-Kenapa tiga hal ini ada di luar spek ERC-8183, dan ADR mana yang memutuskannya:
+Why those three pieces sit outside the ERC-8183 spec, and which ADR decided each:
 [`docs/design.md`](docs/design.md).
 
-## Cara menjalankan
+## How to run
 
 ```
-make doctor    # cetak versi toolchain, exit 1 bila tidak cocok docs/versions.md
+make doctor    # print toolchain versions, exit 1 if they do not match docs/versions.md
 make test      # forge test + uv run pytest + pnpm -r test
-make demo      # §7 langkah 1-4 dari NOL di Anvil lokal + DUA varian destruktif
-               # BUTUH INTERNET (varian B membaca vault Sepolia beku: nol dana, nol transaksi)
-               # runtime terukur: 3m23s dan 3m56s pada dua eksekusi
+make demo      # §7 steps 1-4 from SCRATCH on local Anvil + TWO destructive variants
+               # NEEDS INTERNET (variant B reads the frozen Sepolia vault: no funds, no transactions)
+               # measured runtime: 3m23s and 3m56s across two runs
 ```
 
-UI (opsional, di luar `make demo`):
+UI (optional, outside `make demo`):
 
 ```
 DEMO_MODE=1 pnpm --filter web start          # http://127.0.0.1:3000/panel
 cd agent && DEMO_MODE=1 uv run python -m agent.demo_reset --host 127.0.0.1 --port 8010
 ```
 
-Perintah per-job, reproduksi rantai A/B/C, reproduksi demo kedalaman, dan troubleshooting exit code 4:
-[`docs/reproduce.md`](docs/reproduce.md).
+Per-job commands, reproducing the A/B/C chain, reproducing the depth demo, and troubleshooting exit
+code 4: [`docs/reproduce.md`](docs/reproduce.md).
 
-## Tes destruktif
+## Destructive test
 
-`make demo` menjalankan kedua varian; keduanya menghapus `memory.db`, dan yang berubah adalah lingkungannya:
+`make demo` runs both variants. Both delete `memory.db`; what differs is the environment:
 
-| Varian | Kondisi | Yang berubah |
+| Variant | Condition | What changes |
 |---|---|---|
-| **A — degradasi** (Anvil lokal) | vault segar, `lastMemoryRoot()` = 0, `SIBYL_DB_PATH` ke path yang belum pernah ada | job C yang DITOLAK saat memori ada menjadi **lolos** pada budget IDENTIK: `depth=sampling`, `cap=TANPA CAP`. Label modenya `normal`, bukan `naive` (butir 34) |
-| **B — mode aman** (baca vault Sepolia beku) | root on-chain non-nol + `memory.db` dihapus | **mode aman**: nol `postVerdict`, nol `finalize`, nol `setProviderCap`; job menggantung sampai `expiredAt`. Run digugurkan bila buktinya tidak muncul (`sim/src/demo.ts:672-685`) |
+| **A — degradation** (local Anvil) | fresh vault, `lastMemoryRoot()` = 0, `SIBYL_DB_PATH` pointed at a path that never existed | job C, REJECTED while memory existed, now **passes** at an IDENTICAL budget: `depth=sampling`, `cap=TANPA CAP`. The mode label is `normal`, not `naive` (item 34) |
+| **B — safe mode** (reads the frozen Sepolia vault) | non-zero on-chain root + `memory.db` deleted | **safe mode**: zero `postVerdict`, zero `finalize`, zero `setProviderCap`; the job hangs until `expiredAt`. The run is aborted if the evidence does not appear (`sim/src/demo.ts:672-685`) |
 
 ```
-# varian A, dijalankan tangan (bentuk yang sama dipakai make demo)
+# variant A, run by hand (make demo uses the same form)
 cd agent && uv run python -m agent.vault_client --job-id <job C> --kind reject
 ```
 
-Pada vault segar perintah itu butuh **dua** invokasi: yang pertama melahirkan `memory.db` lalu ditolak
-penjaga `MODE_DRIFT` dengan **exit code 4 dan nol transaksi** (ADR-026). Tabel hasil lengkap dan
-troubleshooting: [`docs/reproduce.md`](docs/reproduce.md). Yang belum ada adalah **artefaknya** — perintah
-itu tidak meninggalkan log atau fixture di repo (butir 19).
+On a fresh vault that command needs **two** invocations: the first creates `memory.db` and is then
+refused by the `MODE_DRIFT` guard with **exit code 4 and zero transactions** (ADR-026). Full result table
+and troubleshooting: [`docs/reproduce.md`](docs/reproduce.md). What is missing is the **artifacts** — the
+command leaves no log or fixture in the repo (item 19).
 
-> **Hapus memori kami, dan kamu dapat evaluator stateless biasa — persis pesaing kami.**
+> **Delete our memory, and you get an ordinary stateless evaluator — exactly our competitors.**
 
-Yang **tidak** berubah saat memori hilang: cek deterministik tetap berjalan, jadi cacat kasar tetap ditolak.
-Yang hilang hanyalah kalibrasi — kedalaman cek, pola yang sudah dipelajari, dan gating cap. Catatan penting:
-"cacat kasar" adalah **posisi** token `TODO` di dalam jendela sampling, bukan tingkat keparahan yang dinilai
-(butir 19).
+What does **not** change when memory is gone: the deterministic checks still run, so blatant defects are
+still rejected. What is lost is calibration — check depth, learned patterns, and cap gating. Important
+note: a "blatant" defect is the **position** of a `TODO` token inside the sampling window, not a scored
+severity (item 19).
 
-## Bukti on-chain (yang paling kuat)
+## On-chain evidence (the strongest part)
 
-| Fakta | Nilai / bukti |
+| Fact | Value / evidence |
 |---|---|
-| EvaluatorVault (submission, beku) | `0x5c6EE4586ACABcb6326069c229E58091B21ef384` |
-| ACP (ERC-8183 Virtuals, Base Sepolia) | `0x0b93793923CD5De81850aF8604a233f3f24d461e` |
-| Verifikasi sumber | Sourcify `exact_match` (creation + runtime), dari commit `8d3e596` — `deployments/84532.json:36-44`; Blockscout mendekode event vault dengan nama; BaseScan tidak menariknya (butir 15) |
-| `postVerdict` job 422 (`VerdictPosted`, kind=2) | [`0xe95910d2…295830`](https://base-sepolia.blockscout.com/tx/0xe95910d28ac4b5182220b9ea7c31519fb006b99b2edb0ed453f18556fa295830) — blok 46455552 |
-| SDK yang dipakai | `@virtuals-protocol/acp-node-v2@0.1.12` (`sim/package.json:12`); `evaluatorAddress` diisi alamat vault (default SDK = 0x0 = skip evaluasi) |
+| EvaluatorVault (submission, frozen) | `0x5c6EE4586ACABcb6326069c229E58091B21ef384` |
+| ACP (Virtuals ERC-8183, Base Sepolia) | `0x0b93793923CD5De81850aF8604a233f3f24d461e` |
+| Source verification | Sourcify `exact_match` (creation + runtime), from commit `8d3e596` — `deployments/84532.json:36-44`; Blockscout decodes vault events by name; BaseScan does not import it (item 15) |
+| `postVerdict` job 422 (`VerdictPosted`, kind=2) | [`0xe95910d2…295830`](https://base-sepolia.blockscout.com/tx/0xe95910d28ac4b5182220b9ea7c31519fb006b99b2edb0ed453f18556fa295830) — block 46455552 |
+| SDK used | `@virtuals-protocol/acp-node-v2@0.1.12` (`sim/package.json:12`); `evaluatorAddress` is set to the vault address (SDK default = 0x0 = skip evaluation) |
 
-**Teks identik, verdict berlawanan.** Dua job, deliverable sama byte demi byte
-(`keccak256(text)` = `0x246071b3…0a51` di `demo/deliverables/421.json` dan `422.json`), budget sama
-(250.000), evaluator sama — yang berbeda hanya riwayat providernya di memori:
+**Identical text, opposite verdicts.** Two jobs, byte-for-byte identical deliverables
+(`keccak256(text)` = `0x246071b3…0a51` in `demo/deliverables/421.json` and `422.json`), same budget
+(250,000), same evaluator — the only difference is the provider's history in memory:
 
-| job | provider | riwayat | depth | verdict on-chain |
+| job | provider | history | depth | on-chain verdict |
 |---|---|---|---|---|
-| 421 | `0xc3c6Bf20…aeff` | nol insiden | `sampling` (2 bagian pertama) | `kind=1` → status 3 (Completed) |
-| 422 | `0x20212E4D…b321` | 2 insiden (418, 419) | `full` | `kind=2` → status 4 (Rejected) — `TODO` di bagian ketiga |
+| 421 | `0xc3c6Bf20…aeff` | zero incidents | `sampling` (first 2 sections) | `kind=1` → status 3 (Completed) |
+| 422 | `0x20212E4D…b321` | 2 incidents (418, 419) | `full` | `kind=2` → status 4 (Rejected) — `TODO` in the third section |
 
-`SAMPLING_SECTION_LIMIT = 2` (`agent/agent/checks/base.py:78`); regex penanda pekerjaan di
-`agent/agent/checks/format.py:47-50`. Apa yang pasangan ini **tidak** buktikan: butir 25.
+`SAMPLING_SECTION_LIMIT = 2` (`agent/agent/checks/base.py:78`); the placeholder regex is in
+`agent/agent/checks/format.py:47-50`. What this pair does **not** prove: item 25.
 
-Alamat lengkap, rantai A/B/C beserta `cast logs` `JobRejected`, riwayat delapan `MemoryRootUpdated`, empat
-hash tx demo kedalaman, dan peta angka → sumber: [`docs/evidence.md`](docs/evidence.md).
+Full address list, the A/B/C chain with `cast logs` for `JobRejected`, the history of eight
+`MemoryRootUpdated` events, four depth-demo tx hashes, and a number → source map:
+[`docs/evidence.md`](docs/evidence.md).
 
-## Batasan & asumsi kepercayaan
+## Limitations & trust assumptions
 
-Daftar lengkap 36 butir ada di [`docs/limitations.md`](docs/limitations.md) — penomorannya tidak berubah,
-dan naskah video merujuknya dengan nomor yang sama. Delapan yang paling menentukan:
+The full list of 36 items is in [`docs/limitations.md`](docs/limitations.md) — the numbering does not
+change, and the video script refers to the same numbers. The eight that matter most:
 
-1. **Verdict yang salah tidak bisa dibatalkan siapa pun.** `challenge`/`resolve` adalah stub
-   (`revert NotImplemented()`), jadi `CHALLENGE_WINDOW` = 120 detik adalah **murni latensi, nol
-   perlindungan**; sesudah jendela itu `finalize` permissionless dan uangnya berpindah
-   (`EvaluatorVault.sol:327-331`, `:363`; butir 2 dan 26).
-2. **Bond evaluator = nol.** `MIN_BOND` pada kontrak terdeploy = 0 (`deployments/84532.json` →
-   `minBondWei`), jadi cabang `BondTooLow` tidak bisa dijangkau (butir 1 dan 28).
-3. **`arbiter()` == `agent()`, permanen.** Satu EOA merangkap deployer, agen, arbiter, dan satu-satunya
-   penanda tangan; kontraknya immutable, tanpa rotasi dan tanpa pause (butir 3 dan 27).
-4. **Dana yang masuk vault terjebak.** `sweepToken` ada di sumber tetapi **tidak ada di bytecode
-   terdeploy**, dan tidak ada jalur ETH keluar — 62.500 unit fee hangus permanen (butir 4 dan 28).
-5. **Kriteria kualitatif TIDAK dinilai.** Rubric LLM dipotong; tidak ada satu pun panggilan LLM di jalur
-   evaluasi. Kriteria itu dicatat `unscored` di tiap bundel, tidak pernah dianggap lolos
-   (`agent/agent/criteria.py:121-124`; butir 33).
-6. **Cap awal adalah parameter tim, bukan hasil belajar.** `BASELINE_CAP_USDC` = 1.000.000 dipilih tim;
-   bundel job 420 sendiri menulis `sample_size: 0`. Memori hanya bisa **mengetatkan** cap (butir 8).
-7. **Cap diterbitkan di kontrak, tetapi ditegakkan di agen off-chain.** `providerCap` ditulis
-   (`EvaluatorVault.sol:289`) dan **tidak pernah dibaca** kontrak (butir 17).
-8. **Jangkar root melingkar, dan agen tidak otonom.** On-chain hanya root nol yang ditolak
-   (`EvaluatorVault.sol:303`); `memory.db` yang **ditukar** DB lain tidak terdeteksi (butir 16, 29, 30).
-   Agen dijalankan per job dengan `--job-id` — bukan watcher (butir 9).
+1. **A wrong verdict cannot be undone by anyone.** `challenge`/`resolve` are stubs
+   (`revert NotImplemented()`), so `CHALLENGE_WINDOW` = 120 seconds is **pure latency, zero protection**;
+   after the window `finalize` is permissionless and the money moves
+   (`EvaluatorVault.sol:327-331`, `:363`; items 2 and 26).
+2. **The evaluator's bond is zero.** `MIN_BOND` on the deployed contract is 0 (`deployments/84532.json` →
+   `minBondWei`), so the `BondTooLow` branch is unreachable (items 1 and 28).
+3. **`arbiter()` == `agent()`, permanently.** One EOA is deployer, agent, arbiter, and the only signer;
+   the contract is immutable, with no rotation and no pause (items 3 and 27).
+4. **Funds that enter the vault are stuck.** `sweepToken` exists in the source but is **not in the
+   deployed bytecode**, and there is no ETH exit path — 62,500 units of fees are permanently stranded
+   (items 4 and 28).
+5. **Qualitative criteria are NOT scored.** The LLM rubric was cut; there is no LLM call anywhere in the
+   evaluation path. Those criteria are recorded as `unscored` in every bundle and are never treated as
+   passed (`agent/agent/criteria.py:121-124`; item 33).
+6. **The initial cap is a team parameter, not a learned result.** `BASELINE_CAP_USDC` = 1,000,000 was
+   picked by the team; the job 420 bundle itself records `sample_size: 0`. Memory can only **tighten** the
+   cap (item 8).
+7. **The cap is published by the contract but enforced by the off-chain agent.** `providerCap` is written
+   (`EvaluatorVault.sol:289`) and **never read** by the contract (item 17).
+8. **The root anchor is circular, and the agent is not autonomous.** On chain, only a zero root is
+   rejected (`EvaluatorVault.sol:303`); a `memory.db` **swapped** for another DB is not detected
+   (items 16, 29, 30). The agent is invoked per job with `--job-id` — it is not a watcher (item 9).
 
-Lainnya di daftar itu, antara lain: teks deliverable tidak datang dari API ACP resmi (butir 6), tiga dari
-delapan root vault bukan turunan memori (butir 7), `sim/` tanpa tes otomatis (butir 18), tes destruktif
-belum meninggalkan artefak (butir 19), gerbang 402 belum dikonsumsi jalur job (butir 23), wallet simulator
-belum terdaftar di Service Registry Virtuals (butir 24), dan riwayat review keamanan permukaan hapus-memori
-(butir 36).
+Also on that list, among others: the deliverable text does not come from the official ACP API (item 6),
+three of the eight vault roots are not derived from memory (item 7), `sim/` has no automated tests
+(item 18), the destructive test leaves no artifacts (item 19), the 402 gate is not consumed by the job
+path (item 23), the simulator wallet is not registered in the Virtuals Service Registry (item 24), and
+the security-review history of the memory-wipe surface (item 36).
 
-## Struktur repo
+## Repo structure
 
 ```
 contracts/   EvaluatorVault.sol, IACP.sol, script/Deploy.s.sol, test/ (Foundry)
-agent/       Python: memory_policy.py (skema memori, derive_cap, promosi), vault_client.py,
+agent/       Python: memory_policy.py (memory schema, derive_cap, promotion), vault_client.py,
              memory_export.py (audit root), checks/{format,links,chain}.py, tools/memory_root_check.mjs
-sim/         client simulator TypeScript di atas @virtuals-protocol/acp-node-v2 (tanpa tes — butir 18)
-web/         Next.js: timeline job, halaman verdict+bukti, panel juri (port cek deterministik di
-             src/lib/checks.js, paritasnya dijaga test/checks-parity.test.js); data dari JSON statis
-             di web/public/, nol RPC dari browser (butir 18 dan 36)
-demo/        deliverables/<jobId>.json (teks deliverable dari simulator, ADR-019 — butir 21)
-deployments/ 84532.json (alamat + konstanta), pipeline-84532.md (pipa hidup job 417)
-docs/        spec.md, decisions.md (ADR), api-facts.md, versions.md,
+sim/         TypeScript client simulator on @virtuals-protocol/acp-node-v2 (no tests — item 18)
+web/         Next.js: job timeline, verdict+evidence page, judge panel (deterministic-check port in
+             src/lib/checks.js, parity guarded by test/checks-parity.test.js); data from static JSON
+             in web/public/, zero RPC from the browser (items 18 and 36)
+demo/        deliverables/<jobId>.json (deliverable text from the simulator, ADR-019 — item 21)
+deployments/ 84532.json (addresses + constants), pipeline-84532.md (live pipeline, job 417)
+docs/        spec.md, decisions.md (ADRs), api-facts.md, versions.md,
              limitations.md, evidence.md, reproduce.md, design.md
 ```
 
-## Dokumen
+## Documents
 
-| Berkas | Isi |
+| File | Contents |
 |---|---|
-| [`docs/limitations.md`](docs/limitations.md) | 36 butir batasan & asumsi kepercayaan, lengkap |
-| [`docs/evidence.md`](docs/evidence.md) | bukti on-chain lengkap, tabel tx, peta angka → sumber |
-| [`docs/reproduce.md`](docs/reproduce.md) | perintah reproduksi, varian destruktif, troubleshooting |
-| [`docs/design.md`](docs/design.md) | masalah → solusi, konsumen hari pertama, di luar spek ERC-8183 |
-| [`docs/decisions.md`](docs/decisions.md) | ADR — bila spec dan ADR berbeda, ADR yang berlaku (ADR-025) |
-| [`demo/video-script.md`](demo/video-script.md) | naskah video demo (dan `video-script.en.md`) |
+| [`docs/limitations.md`](docs/limitations.md) | all 36 limitations & trust assumptions |
+| [`docs/evidence.md`](docs/evidence.md) | full on-chain evidence, tx tables, number → source map |
+| [`docs/reproduce.md`](docs/reproduce.md) | reproduction commands, destructive variants, troubleshooting |
+| [`docs/design.md`](docs/design.md) | problem → solution, day-one consumer, what sits outside ERC-8183 |
+| [`docs/decisions.md`](docs/decisions.md) | ADRs — where the spec and an ADR disagree, the ADR wins (ADR-025) |
+| [`demo/video-script.md`](demo/video-script.md) | demo video script (and `video-script.en.md`) |
 
-## Lisensi
+## Licence
 
-MIT — lihat [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).

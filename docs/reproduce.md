@@ -1,93 +1,92 @@
-# Reproduksi & tes destruktif
+# Reproduction & destructive test
 
-Nomor butir di halaman ini merujuk ke [`docs/limitations.md`](limitations.md).
+Item numbers on this page refer to [`docs/limitations.md`](limitations.md).
 
-## Perintah pokok
-
-```
-make doctor    # cetak versi toolchain, exit 1 bila tidak cocok docs/versions.md
-make test      # forge test + uv run pytest + pnpm -r test (yang ketiga = 5 tes paritas di web/;
-               # sim/ masih tanpa tes — butir 18)
-make demo      # rantai §7 langkah 1-4 dari NOL di Anvil lokal, ringkasan deterministik, lalu DUA
-               # varian destruktif; varian B MEMBACA vault Sepolia beku — butuh internet
-               # (hanya baca: nol dana, nol transaksi — butir 34)
-               # RUNTIME TERUKUR: 3m23s dan 3m56s pada dua eksekusi. Angka "~2m20s" yang pernah
-               # ditulis berasal dari task 3.3, SEBELUM dua varian destruktif dan preflight
-               # jaringan ditambahkan — jangan pakai untuk merencanakan rekaman.
-```
-
-`make doctor` membaca `node`/`forge` dari PATH yang hanya dimuat shell interaktif — jalankan dari terminal
-biasa, bukan dari hook non-interaktif (pesan merahnya menjelaskan ini sendiri).
-
-## Menjalankan rantai A/B/C sendiri
-
-Rantai A/B/C dijalankan dengan perintah eksplisit, satu job per pemanggilan. Perintah ini menjalankan
-rantai **baru** pada vault Anda sendiri; ia tidak mereproduksi job 418/419/420 pada vault submission, yang
-`agent`-nya immutable milik kami (butir 20):
+## Core commands
 
 ```
-# 1. job A/B: createJob → setBudget → fund → submit (ketiganya lewat SDK Virtuals)
+make doctor    # print toolchain versions, exit 1 if they do not match docs/versions.md
+make test      # forge test + uv run pytest + pnpm -r test (the third = 5 parity tests in web/;
+               # sim/ still has no tests — item 18)
+make demo      # §7 steps 1-4 from SCRATCH on local Anvil, deterministic summary, then TWO
+               # destructive variants; variant B READS the frozen Sepolia vault — needs internet
+               # (read only: no funds, no transactions — item 34)
+               # MEASURED RUNTIME: 3m23s and 3m56s across two runs. The "~2m20s" figure that was
+               # once written down comes from task 3.3, BEFORE the two destructive variants and the
+               # network preflight were added — do not use it to plan a recording.
+```
+
+`make doctor` reads `node`/`forge` from a PATH that only an interactive shell loads — run it from a
+normal terminal, not from a non-interactive hook (its red message explains this itself).
+
+## Running the A/B/C chain yourself
+
+The A/B/C chain runs through explicit commands, one job per invocation. These commands run a **new**
+chain on **your own** vault; they do not reproduce jobs 418/419/420 on the submission vault, whose
+`agent` is immutable and ours (item 20):
+
+```
+# 1. jobs A/B: createJob → setBudget → fund → submit (all three via the Virtuals SDK)
 DELIVERABLE_TEXT=... pnpm --filter sim run job:min
 
-# 2. job C: berhenti sesudah fund, supaya gating terjadi saat status Funded
+# 2. job C: stop after fund, so gating happens while the status is Funded
 BUDGET_RAW=2000000 STOP_AFTER=fund pnpm --filter sim run job:min
 
-# 3. agen menilai satu job (tanpa --kind: exit 2, nol RPC, nol tx)
+# 3. the agent evaluates one job (without --kind: exit 2, zero RPC, zero tx)
 cd agent && uv run python -m agent.vault_client --job-id <jobId> --kind reject
 
-# 4. audit root memori dari file ekspor, tanpa menyentuh DB
+# 4. audit the memory root from an export file, without touching the DB
 cd agent && uv run python -m agent.memory_export --check /tmp/mem.json
 
-# 5. (OPSIONAL, di luar `make demo`) UI: panel juri + tombol hapus memori.
+# 5. (OPTIONAL, outside `make demo`) UI: judge panel + memory-wipe button.
 #    Terminal 1 — web:
 DEMO_MODE=1 pnpm --filter web start          # http://127.0.0.1:3000/panel
-#    Terminal 2 — server hapus memori DEMO; TANPA ini tombolnya menjawab 503
-#    reset_server_unreachable (perintah yang sama ditampilkan di dalam panel):
+#    Terminal 2 — the DEMO memory-wipe server; WITHOUT it the button answers 503
+#    reset_server_unreachable (the same command is shown inside the panel):
 cd agent && DEMO_MODE=1 uv run python -m agent.demo_reset --host 127.0.0.1 --port 8010
 ```
 
-**Langkah 5 tidak dijalankan oleh `make demo` dan sengaja TIDAK dipakai di video demo.** Panel juri
-(`/panel`) berjalan tanpa langkah itu — yang butuh proses kedua **hanya** tombol hapus memori, karena
-database duduk di `agent/`, di luar batas folder frontend (`web/src/app/panel/MemoryControl.jsx:27-28`
-menampilkan perintah yang sama di UI). Tombolnya berkuasa **hanya** atas memori demo, dan riwayat review
-keamanannya ada di butir 36. Tes destruktif yang menjadi bukti submission dijalankan oleh
-`make demo`, bukan oleh tombol ini.
+**Step 5 is not run by `make demo` and is deliberately NOT used in the demo video.** The judge panel
+(`/panel`) works without it — the **only** thing that needs a second process is the memory-wipe button,
+because the database lives in `agent/`, outside the frontend folder boundary
+(`web/src/app/panel/MemoryControl.jsx:27-28` shows the same command in the UI). The button has power
+**only** over demo memory, and its security-review history is in item 36. The destructive test that
+serves as submission evidence is run by `make demo`, not by this button.
 
-Verdict tidak bisa dikalahkan flag: bila cek deterministik gagal (`Evaluation.passed == False`) atau gerbang
-cap menolak, hasilnya REJECT apa pun isi `--kind`.
+A verdict cannot be overridden by a flag: if a deterministic check fails (`Evaluation.passed == False`)
+or the cap gate rejects, the result is REJECT whatever `--kind` says.
 
-## Mereproduksi demo kedalaman (butir 25)
+## Reproducing the depth demo (item 25)
 
-Menuntut DUA provider, karena yang membedakan job 421 dan 422 hanyalah riwayat providernya. Pemilihnya
-`PROVIDER_SLOT` (`sim/src/client_min.ts:102,160-162`), dengan dua nilai sah: `alpha` (default, kunci
-`PROVIDER_PRIVATE_KEY` — provider yang di rantai kami sudah punya dua insiden) dan `beta`
-(`PROVIDER2_PRIVATE_KEY` — provider bersih):
+This needs TWO providers, because the only difference between jobs 421 and 422 is the provider's history.
+The selector is `PROVIDER_SLOT` (`sim/src/client_min.ts:102,160-162`), with two valid values: `alpha`
+(default, key `PROVIDER_PRIVATE_KEY` — the provider that already has two incidents on our chain) and
+`beta` (`PROVIDER2_PRIVATE_KEY` — a clean provider):
 
 ```
-# provider BERSIH → depth sampling → dua bagian pertama saja → LULUS
+# CLEAN provider → depth sampling → first two sections only → PASS
 PROVIDER_SLOT=beta  BUDGET_RAW=250000 DELIVERABLE_FILE=sim/scenarios/depth-demo.md \
   pnpm --filter sim run job:min
 
-# provider BERISIKO (2 insiden) → depth full → bagian ketiga terbaca → DITOLAK
+# RISKY provider (2 incidents) → depth full → the third section is read → REJECTED
 PROVIDER_SLOT=alpha BUDGET_RAW=250000 DELIVERABLE_FILE=sim/scenarios/depth-demo.md \
   pnpm --filter sim run job:min
 ```
 
-Sama seperti rantai A/B/C, ini menjalankan job **baru** pada vault Anda sendiri dan **tidak** mereproduksi
-job 421/422 pada vault submission (butir 20). Yang menentukan hasilnya bukan flag mana pun,
-melainkan apakah memori provider itu sudah memuat dua insiden — jadi urutan menjalankannya penting.
+As with the A/B/C chain, this runs **new** jobs on your own vault and does **not** reproduce jobs 421/422
+on the submission vault (item 20). What decides the outcome is not any flag but whether that provider's
+memory already holds two incidents — so the order you run them in matters.
 
-## Troubleshooting: exit code 4 pada vault segar
+## Troubleshooting: exit code 4 on a fresh vault
 
-**Pada vault SEGAR, langkah 3 butuh DUA invokasi, dan yang pertama keluar dengan exit code 4.** Itu bukan
-kerusakan: invokasi pertama melahirkan `memory.db` di tengah jalan, sehingga mode yang direncanakan
-(`naive`) tidak lagi sama dengan mode yang dibaca sesaat sebelum menandatangani (`normal`), dan penjaga
-`MODE_DRIFT` menolak bertransaksi — **nol tx, fail-closed**. Invokasi kedua atas job yang sama berjalan
-sampai selesai dan keluar 0.
+**On a FRESH vault, step 3 needs TWO invocations, and the first exits with code 4.** That is not a
+malfunction: the first invocation creates `memory.db` midway, so the planned mode (`naive`) no longer
+matches the mode read just before signing (`normal`), and the `MODE_DRIFT` guard refuses to transact —
+**zero tx, fail-closed**. The second invocation on the same job runs to completion and exits 0.
 
-**Exit 4 itu TIDAK bisa dilewati dengan melahirkan DB lebih dulu.** README versi sebelumnya menyarankan
-`memory_export --db … --out …` untuk itu; resep tersebut **tidak bisa dijalankan**, karena alat ekspor
-sengaja menolak membuat DB baru (lihat butir 7):
+**That exit 4 CANNOT be avoided by creating the DB first.** An earlier README version suggested
+`memory_export --db … --out …` for that; that recipe **cannot be run**, because the export tool
+deliberately refuses to create a new DB (see item 7):
 
 ```
 $ cd agent && uv run python -m agent.memory_export --db ./data/baru/memory.db --out /tmp/mem.json
@@ -95,68 +94,69 @@ GAGAL: MemoryExportError: DB memori tidak ditemukan: ./data/baru/memory.db — j
 tunjuk file yang ada dengan --db (alat ini sengaja TIDAK membuat DB baru)
 ```
 
-Jadi jalannya memang **menjalankan agen dua kali**: invokasi pertama melahirkan DB-nya dan keluar 4 dengan
-nol transaksi, invokasi kedua menghasilkan verdict. `make demo` melakukan persis itu dan mencetaknya apa
-adanya (`agent.retry … firstExit=4`), bukan menyembunyikannya.
+So the way through really is to **run the agent twice**: the first invocation creates the DB and exits 4
+with zero transactions, the second produces the verdict. `make demo` does exactly that and prints it
+as-is (`agent.retry … firstExit=4`) rather than hiding it.
 
-Ini diputuskan dan diukur di **ADR-026** (keputusan 6 mewajibkan README menyebutkannya), dan konsekuensinya
-nol byte on-chain: root, depth, dan cap yang diumumkan sama saja pada kedua jalur.
+This was decided and measured in **ADR-026** (decision 6 requires the README to mention it), and its
+consequence is zero bytes on chain: the root, depth, and cap announced are the same on either path.
 
-## Tes destruktif
+## Destructive test
 
-Pertanyaan yang paling wajar dari juri: kalau memorinya dihapus, apakah ada yang berubah?
-Dijalankan **6 Sep 2026 di Anvil lokal** (nol transaksi ke Base Sepolia; vault submission dan file memori
-rantai A/B/C tidak berubah — md5 identik sebelum/sesudah).
+The most reasonable question a judge can ask: if the memory is deleted, does anything change?
+Run **6 Sep 2026 on local Anvil** (zero transactions to Base Sepolia; the submission vault and the
+A/B/C-chain memory files were unchanged — md5 identical before and after).
 
-> **Baca tabel ini sebagai laporan, bukan sebagai bukti.** Skripnya kini ADA — `make demo` menjalankan
-> kedua varian destruktif (butir 19) — tetapi ia tidak meninggalkan satu berkas pun: tidak ada log,
-> fixture, atau berkas pendamping di repo yang bisa Anda cocokkan dengan tabel ini, dan md5 di atas juga
-> tidak punya pendamping. Yang bisa Anda verifikasi sendiri hari ini: rantai A/B/C on-chain, dan
-> `make demo` yang Anda jalankan sendiri lalu bandingkan dengan mata.
+> **Read this table as a report, not as evidence.** The script now EXISTS — `make demo` runs both
+> destructive variants (item 19) — but it leaves not a single file behind: there is no log, fixture, or
+> companion file in the repo you could match against this table, and the md5 above has no companion
+> either. What you can verify yourself today: the on-chain A/B/C chain, and a `make demo` run you do
+> yourself and then compare by eye.
 
 ```
-# vault SEGAR di Anvil: lastMemoryRoot() = 0, providerCap(provider) = 0
-# SIBYL_DB_PATH diarahkan ke path yang belum pernah ada; agent/data/ TIDAK dihapus
+# FRESH vault on Anvil: lastMemoryRoot() = 0, providerCap(provider) = 0
+# SIBYL_DB_PATH points at a path that never existed; agent/data/ is NOT deleted
 cd agent && uv run python -m agent.vault_client --job-id <job C> --kind reject
 ```
 
-| Kondisi | Hasil |
+| Condition | Result |
 |---|---|
-| **Tanpa file memori, invokasi PERTAMA** | gerbang start membaca `mode=naive`, lalu `plan_job` **MEMBUAT** `memory.db` saat membuka `MemoryClient.local()`; gerbang yang dibaca ulang sebelum tx kini melihat file itu ADA → `mode=normal`, sementara `plan.mode` masih `naive` → penjaga **`MODE_DRIFT`** menolak. Hasil: **`EXIT_REFUSED` (exit code 4)**, `sent_transactions == []`, **nol `postVerdict`**, `cast logs JobRejected` KOSONG |
-| **Tanpa file memori, invokasi KEDUA** (job yang sama) | berjalan sampai selesai: `mode=normal`, `depth=sampling`, `cap=TANPA CAP gate=lolos`, `postVerdict` + `finalize` mendarat, **exit 0** |
-| **File memori dikembalikan** (chain yang sama, perintah yang sama) | `cap=250000 gate=DITOLAK` → `postVerdict(REJECT)` → `Finalized(kind=2)`, `JobRejected` MUNCUL, job jadi status 4, client refund penuh |
+| **No memory file, FIRST invocation** | the start gate reads `mode=naive`, then `plan_job` **CREATES** `memory.db` when it opens `MemoryClient.local()`; the gate re-read before the tx now sees that file EXISTS → `mode=normal`, while `plan.mode` is still `naive` → the **`MODE_DRIFT`** guard refuses. Result: **`EXIT_REFUSED` (exit code 4)**, `sent_transactions == []`, **zero `postVerdict`**, `cast logs JobRejected` EMPTY |
+| **No memory file, SECOND invocation** (same job) | runs to completion: `mode=normal`, `depth=sampling`, `cap=TANPA CAP gate=lolos`, `postVerdict` + `finalize` land, **exit 0** |
+| **Memory file restored** (same chain, same command) | `cap=250000 gate=DITOLAK` → `postVerdict(REJECT)` → `Finalized(kind=2)`, `JobRejected` APPEARS, the job moves to status 4, the client is fully refunded |
 
-**Baris pertama adalah PENOLAKAN, bukan penerimaan — dan README versi sebelumnya menuliskannya seperti
-penerimaan.** Yang terjadi bukan "agen lolos-kan job karena memorinya hilang"; yang terjadi adalah agen
-**menolak bertransaksi sama sekali** karena mode yang ia rencanakan tidak lagi sama dengan mode yang ia
-baca sesaat sebelum menandatangani. Perilakunya fail-closed dan sembuh sendiri pada invokasi berikutnya.
-Ini dicatat dan diterima apa adanya di **ADR-026**, termasuk konsekuensinya: **pada vault segar, hari
-pertama menuntut DUA invokasi `--job-id`, dan yang pertama keluar dengan exit code 4.** Operator yang tidak
-diberi tahu akan membaca exit 4 itu sebagai kerusakan. ADR-026 keputusan (e) juga mengukur bahwa selisih ini
-**nol byte on-chain**: `empty_memory_root()` dan root atas DB kosong yang baru dibuat adalah nilai yang sama
-persis (`0x4e2a1ca1…ff5a`), dan depth serta cap-nya identik.
+**The first row is a REFUSAL, not an acceptance — and an earlier README version wrote it up as an
+acceptance.** What happens is not "the agent passed the job because its memory was gone"; what happens is
+that the agent **refuses to transact at all** because the mode it planned no longer matches the mode it
+read just before signing. The behaviour is fail-closed and self-healing on the next invocation. This is
+recorded and accepted as-is in **ADR-026**, including its consequence: **on a fresh vault, day one needs
+TWO `--job-id` invocations, and the first exits with code 4.** An operator who is not told will read that
+exit 4 as a malfunction. ADR-026 decision (e) also measures that the difference is **zero bytes on
+chain**: `empty_memory_root()` and the root over a freshly created empty DB are exactly the same value
+(`0x4e2a1ca1…ff5a`), and the depth and cap are identical.
 
-Konsekuensi yang harus ikut dibaca: **`MODE NAIF` tidak pernah menjadi mode yang melahirkan verdict lewat
-CLI.** Ia hanya muncul sebagai baris log invokasi pertama (ADR-026 keputusan 4 dan konsekuensi). README,
-video, dan post build-in-public **dilarang** menyajikannya seolah ia jalur produksi.
+A consequence that must be read alongside it: **`MODE NAIF` has never been the mode that produced a
+verdict via the CLI.** It only appears as a log line from the first invocation (ADR-026 decision 4 and
+consequences). The README, the video, and the build-in-public posts are **forbidden** from presenting it
+as a production path.
 
-Kosongnya hasil pada baris pertama bukan lulus palsu: kontrol positif `JobFunded` pada rentang dan bentuk
-filter yang IDENTIK tetap mengembalikan log. Dan bundel bukti pada baris kedua menyebut `cap.usdc 250000` +
-`incident_jobs [418, 419]` — **keberadaan** cap itu terlacak ke job A dan B di Base Sepolia, bukan ke aturan
-yang menyala tanpa riwayat. Yang perlu dibaca bersamanya: **angka** 250.000 sendiri tetap konstanta tim
-dibagi 4, dengan `sample_size: 0` di bundel yang sama (butir 8). Yang berubah karena memori adalah **ada
-atau tidak adanya gate**, bukan besar angkanya.
+The empty result on the first row is not a false pass: a positive control for `JobFunded` over an
+IDENTICAL range and filter shape still returns logs. And the evidence bundle on the second row names
+`cap.usdc 250000` + `incident_jobs [418, 419]` — the **existence** of that cap traces back to jobs A and
+B on Base Sepolia, not to a rule firing without history. What must be read with it: the **number**
+250,000 is still a team constant divided by 4, with `sample_size: 0` in that same bundle (item 8). What
+memory changes is **whether a gate exists at all**, not the size of the number.
 
-> **Hapus memori kami, dan kamu dapat evaluator stateless biasa — persis pesaing kami.**
+> **Delete our memory, and you get an ordinary stateless evaluator — exactly our competitors.**
 
-Yang **tidak** berubah saat memori hilang: lapis kriteria dan cek deterministik tetap berjalan, jadi cacat
-kasar tetap ditolak. Yang hilang hanyalah kalibrasi — kedalaman cek, pola curang yang sudah dipelajari, dan
-gating cap (`docs/spec.md` §3 aturan 6). Catatan penting: "cacat kasar" adalah **posisi** token `TODO` yang
-sama di dalam jendela sampling, bukan tingkat keparahan yang dinilai — butir 19.
+What does **not** change when memory is gone: the criteria layer and the deterministic checks still run,
+so blatant defects are still rejected. What is lost is calibration — check depth, learned cheating
+patterns, and cap gating (`docs/spec.md` §3 rule 6). Important note: a "blatant" defect is the
+**position** of the same `TODO` token inside the sampling window, not a scored severity — item 19.
 
-Catatan jujur soal lingkungan: varian di atas berjalan pada vault **segar** (root on-chain = 0). Pada vault
-submission yang sudah hidup, menghapus `memory.db` memicu **mode aman**, bukan degradasi — agen berhenti
-total dan job menggantung sampai `expiredAt` (butir 10). **Kedua varian kini dijalankan oleh satu
-perintah `make demo`**: varian A di Anvil lokal, varian B atas vault Sepolia yang beku — hanya baca, nol
-dana, nol transaksi, dan run digugurkan bila buktinya tidak muncul (butir 19 dan 34). Yang belum
-ada bukan otomasinya melainkan artefaknya: perintah itu tidak meninggalkan log atau fixture di repo.
+An honest note about the environment: the variant above runs on a **fresh** vault (on-chain root = 0). On
+the live submission vault, deleting `memory.db` triggers **safe mode**, not degradation — the agent stops
+entirely and the job hangs until `expiredAt` (item 10). **Both variants are now run by a single
+`make demo` command**: variant A on local Anvil, variant B against the frozen Sepolia vault — read only,
+no funds, no transactions, and the run is aborted if the evidence does not appear (items 19 and 34). What
+is missing is not the automation but the artifacts: that command leaves no log or fixture in the repo.
