@@ -565,7 +565,7 @@ def test_a_failure_after_postverdict_reports_stopped_midway_with_its_tx_list(
     assert "finalize" not in sent_names(client)
     assert kode == vc.EXIT_STOPPED_MIDWAY
     assert vc.EXIT_STOPPED_MIDWAY_MESSAGE in caplog.text
-    assert "MENGGANTUNG" in caplog.text
+    assert "HANGS until expiredAt" in caplog.text
     for tx_hash in client.sent_transactions:
         assert "0x" + tx_hash in caplog.text
 

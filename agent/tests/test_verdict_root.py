@@ -237,7 +237,7 @@ def test_post_verdict_with_a_foreign_root_raises_and_sends_nothing(db):
         client.post_verdict(1, vc.KIND_REJECT, b"\x01" * 32, ASING)
 
     pesan = str(exc.value)
-    assert "ROOT BUKAN TURUNAN MEMORI" in pesan
+    assert "ROOT IS NOT DERIVED FROM MEMORY" in pesan
     assert "0x" + ASING.hex() in pesan, "root yang ditolak wajib disebut apa adanya"
     assert "0x" + client.derived_memory_root().hex() in pesan, "root yang benar wajib disebut"
     assert_nothing_was_sent(client)
@@ -371,7 +371,7 @@ def test_an_unreadable_memory_yields_no_root_at_all_not_the_empty_one(tmp_path):
 
     with pytest.raises(vc.MemoryRootMismatch) as exc:
         client.derived_memory_root()
-    assert "ROOT TIDAK BISA DITURUNKAN" in str(exc.value)
+    assert "ROOT CANNOT BE DERIVED" in str(exc.value)
     assert mp.empty_memory_root().hex() not in str(exc.value)
     assert_nothing_was_sent(client)
 

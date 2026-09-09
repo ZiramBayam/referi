@@ -289,7 +289,7 @@ def test_foreign_evaluator_is_refused_with_zero_transactions(db, caplog):
     client = build_client(db=db, evaluator=FOREIGN_EVALUATOR)
     with caplog.at_level(logging.INFO, logger="vault_client"):
         assert vc.run_job(client, JOB_ID, vc.KIND_REJECT) == 0
-    assert "JOB BUKAN MILIK VAULT INI" in caplog.text
+    assert "JOB DOES NOT BELONG TO THIS VAULT" in caplog.text
     assert_nothing_was_sent(client)
 
 

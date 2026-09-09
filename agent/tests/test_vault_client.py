@@ -50,7 +50,7 @@ def test_unknown_status_is_not_terminal_and_reported_verbatim():
 
 
 def test_voided_message_is_verbatim():
-    assert voided_message(407, 3) == "VERDICT DIANULIR PIHAK KETIGA jobId=407 status=3"
+    assert voided_message(407, 3) == "VERDICT VOIDED BY A THIRD PARTY jobId=407 status=3"
 
 
 def test_parse_env_file_handles_comments_and_quotes():

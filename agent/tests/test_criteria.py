@@ -415,7 +415,7 @@ def test_evaluateJob_requiresFacts_whenCategoryNeedsChainClaims(tmp_path):
 def test_evaluateJob_refuses_whenHashDoesNotMatch(tmp_path):
     """REFUSE mendahului seluruh penilaian: tidak ada `Evaluation` yang lahir."""
     prepare(tmp_path, 23, HONEST)
-    with pytest.raises(DeliverableUnverifiedError, match="DELIVERABLE TIDAK TERVERIFIKASI"):
+    with pytest.raises(DeliverableUnverifiedError, match="DELIVERABLE NOT VERIFIED"):
         C.evaluate_job(23, "0x" + "22" * 32, facts=FACTS, deliverable_dir=tmp_path)
 
 

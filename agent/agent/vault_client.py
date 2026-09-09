@@ -172,7 +172,7 @@ JOB_STATUS_NAMES: dict[int, str] = {
 TERMINAL_JOB_STATUSES: frozenset[int] = frozenset({3, 4, 5})
 
 # Pesan yang dicetak apa adanya saat penjaga menganulir verdict (TASKS 1.3b AC (b)).
-VOIDED_MESSAGE_TEMPLATE = "VERDICT DIANULIR PIHAK KETIGA jobId={job_id} status={status}"
+VOIDED_MESSAGE_TEMPLATE = "VERDICT VOIDED BY A THIRD PARTY jobId={job_id} status={status}"
 
 # `kind` di vault: 1 = complete, 2 = reject.
 KIND_COMPLETE = 1
@@ -184,7 +184,7 @@ KIND_REJECT = 2
 # sampai `expiredAt` sementara verdictnya sudah diumumkan. Otomasi 2.5 harus bisa
 # membedakannya; exit 0 di sini adalah laporan sukses palsu.
 EXIT_STOPPED_MIDWAY = 3
-EXIT_STOPPED_MIDWAY_MESSAGE = "PIPA BERHENTI DI TENGAH"
+EXIT_STOPPED_MIDWAY_MESSAGE = "PIPELINE STOPPED MIDWAY"
 
 # Kode keluar untuk PENOLAKAN yang bukan mode aman saat start: root asing di calldata,
 # mode yang berubah di tengah pipa, bukti yang tidak cocok dengan verdict. Keadaan itu
@@ -193,7 +193,7 @@ EXIT_STOPPED_MIDWAY_MESSAGE = "PIPA BERHENTI DI TENGAH"
 # mendarat" dari "agen menolak calldata-nya sendiri". Mode aman SAAT START tetap 0: ia
 # perilaku yang diinginkan (spec §3 aturan 5) dan keluar lebih awal, tidak lewat sini.
 EXIT_REFUSED = 4
-EXIT_REFUSED_MESSAGE = "AGEN MENOLAK MELANJUTKAN"
+EXIT_REFUSED_MESSAGE = "AGENT REFUSES TO CONTINUE"
 
 # ----------------------------------------------------------------------
 # Root & reasonHash: TIDAK ADA KONSTANTA (task 2.4b)
@@ -301,22 +301,22 @@ MEMORY_DB_SUFFIXES = ("", "-wal", "-shm")
 #      beku memang berarti mode aman permanen, dan menyebut akibat tanpa menyebut jalan
 #      keluarnya membuat operator menyangka agennya rusak, bukan sedang menolak.
 SAFE_MODE_TEMPLATE = (
-    "MODE AMAN: root onchain={onchain} (konteks saja); memori lokal {origin} di {db}; "
-    "menolak postVerdict/finalize/setProviderCap; "
-    "job menggantung sampai expiredAt, refund lewat claimRefund publik; "
-    "pulihkan memory.db dari backup untuk melanjutkan"
+    "SAFE MODE: onchain root={onchain} (context only); local memory {origin} at {db}; "
+    "refusing postVerdict/finalize/setProviderCap; "
+    "job hangs until expiredAt, refund via the public claimRefund; "
+    "restore memory.db from backup to continue"
 )
 # Baris untuk mode yang BERJALAN. Root on-chain ikut dicetak — ia konteks audit, bukan
 # syarat eksekusi (ADR-023 keputusan 1), dan penandanya `(konteks saja)` ada supaya tidak
 # ada pembaca yang menyangka ia sedang dibandingkan dengan apa pun.
 NORMAL_MODE_TEMPLATE = (
-    "MODE NORMAL: root onchain={onchain} (konteks saja); memori lokal {jobs} job di {db}"
+    "NORMAL MODE: onchain root={onchain} (context only); local memory {jobs} job at {db}"
 )
 NAIVE_MODE_TEMPLATE = (
-    "MODE NAIF: root onchain={onchain} (konteks saja, nol = belum ada verdict diumumkan); "
-    "memori lokal {jobs} job di {db}; evaluasi stateless"
+    "NAIVE MODE: onchain root={onchain} (context only, zero = no verdict announced yet); "
+    "local memory {jobs} job at {db}; stateless evaluation"
 )
-MISSING_LOCAL_MEMORY = "HILANG/TIDAK TERBACA"
+MISSING_LOCAL_MEMORY = "MISSING/UNREADABLE"
 
 # Ambang gas `finalize` di vault (MIN_ACP_GAS = 300000) + kepala untuk sisa eksekusi.
 FINALIZE_GAS_FLOOR = 420_000
@@ -355,8 +355,8 @@ JOB_LINE_TEMPLATE = (
 # vault v1 yang dibekukan tidak punya pemeriksa on-chain-nya). Bentuknya menyebut KEDUA
 # alamat supaya juri bisa membandingkannya sendiri dengan `cast call <ACP> "getJob(...)"`.
 FOREIGN_JOB_TEMPLATE = (
-    "JOB BUKAN MILIK VAULT INI: jobId={job_id} evaluator={evaluator} != vault={vault}; "
-    "menolak menilai; nol postVerdict/finalize/setProviderCap"
+    "JOB DOES NOT BELONG TO THIS VAULT: jobId={job_id} evaluator={evaluator} != vault={vault}; "
+    "refusing to evaluate; zero postVerdict/finalize/setProviderCap"
 )
 
 # `getJob(jobId).client` yang tidak berbentuk alamat = pembacaan chain yang GAGAL, dan
@@ -365,18 +365,18 @@ FOREIGN_JOB_TEMPLATE = (
 # bukan sesudah `postVerdict` mendarat, yang akan meninggalkan job menggantung dengan
 # verdict yang diumumkan tetapi tidak pernah difinalisasi (task 2.4a AC (j)).
 BROKEN_CLIENT_TEMPLATE = (
-    "MODE AMAN: getJob(jobId={job_id}).client={client!r} bukan alamat EVM — pembacaan "
-    "chain GAGAL, dan filter ADR-021 keputusan 2 (client == provider -> budget dibuang) "
-    "tidak bisa dievaluasi; menolak postVerdict/finalize/setProviderCap; "
-    "job menggantung sampai expiredAt, refund lewat claimRefund publik; "
-    "ulangi run ini dengan RPC yang sehat untuk melanjutkan"
+    "SAFE MODE: getJob(jobId={job_id}).client={client!r} is not an EVM address — the chain "
+    "read FAILED, so the ADR-021 decision 2 filter (client == provider -> budget discarded) "
+    "cannot be evaluated; refusing postVerdict/finalize/setProviderCap; "
+    "job hangs until expiredAt, refund via the public claimRefund; "
+    "re-run with a healthy RPC to continue"
 )
 
 # Baris ringkas hasil keputusan memori atas satu job (spec §5 langkah 2-3). Ia LAPORAN,
 # bukan perintah: pemilihan verdict dan pengiriman `setProviderCap` bukan milik task ini.
 JOB_PLAN_TEMPLATE = (
-    "RENCANA jobId={job_id} mode={mode} depth={depth} cap={cap} gate={gate} ({reason}) "
-    "evaluasi={evaluation}"
+    "PLAN jobId={job_id} mode={mode} depth={depth} cap={cap} gate={gate} ({reason}) "
+    "evaluation={evaluation}"
 )
 
 # ----------------------------------------------------------------------
@@ -678,8 +678,8 @@ def load_private_key() -> str:
         key = _env_file_values().get("AGENT_PRIVATE_KEY", "").strip()
     if not key:
         raise RuntimeError(
-            f"AGENT_PRIVATE_KEY kosong (env maupun {env_file_path() or '.env (tidak ditemukan)'}) "
-            "— tidak bisa menandatangani tx"
+            f"AGENT_PRIVATE_KEY is empty (env and {env_file_path() or '.env (not found)'}) "
+            "— cannot sign a tx"
         )
     if not key.startswith("0x"):
         key = "0x" + key
@@ -856,51 +856,51 @@ SET_PROVIDER_CAP_FN = "setProviderCap"
 SET_PROVIDER_CAP_ARGS = (("provider", 0), ("capUsdc", 1))
 
 ROOT_MISMATCH_TEMPLATE = (
-    "ROOT BUKAN TURUNAN MEMORI: postVerdict membawa {given} sementara memory_root atas "
-    "{db} saat ini {derived}; menolak mengumumkan root yang tidak bisa direkonstruksi dari "
-    "memori; nol postVerdict/finalize/setProviderCap"
+    "ROOT IS NOT DERIVED FROM MEMORY: postVerdict carries {given} while memory_root over "
+    "{db} is currently {derived}; refusing to announce a root that cannot be reconstructed "
+    "from memory; zero postVerdict/finalize/setProviderCap"
 )
 ROOT_UNREADABLE_TEMPLATE = (
-    "ROOT TIDAK BISA DITURUNKAN: memori lokal di {db} {status}, jadi tidak ada memory_root "
-    "untuk diumumkan; nol postVerdict/finalize/setProviderCap"
+    "ROOT CANNOT BE DERIVED: local memory at {db} {status}, so there is no memory_root "
+    "to announce; zero postVerdict/finalize/setProviderCap"
 )
 ROOT_EMPTY_AFTER_READ_TEMPLATE = (
-    "ROOT KOSONG DITOLAK: pipa ini SUDAH pernah membaca memori yang ADA di {db}, jadi root "
-    "memori KOSONG tidak boleh diumumkan sebagai keadaan yang melahirkan verdict ini; "
-    "nol postVerdict/finalize/setProviderCap"
+    "EMPTY ROOT REFUSED: this pipeline HAS already read memory that EXISTS at {db}, so an "
+    "EMPTY memory root must not be announced as the state that produced this verdict; "
+    "zero postVerdict/finalize/setProviderCap"
 )
 # Mode yang dipakai saat RENCANA disusun WAJIB sama dengan mode saat transaksi dikirim.
 # Kalau tidak, `reasonHash` mengikat bundel yang menyatakan satu mode sementara root yang
 # diumumkan lahir dari mode lain — auditor yang merekonstruksi memori pelahir verdict
 # mendapat keadaan yang berbeda dari yang dinyatakan bundel.
 MODE_DRIFT_TEMPLATE = (
-    "MODE BERUBAH DI TENGAH PIPA: rencana jobId={job_id} disusun dalam mode {planned} "
-    "sementara gerbang saat mengirim membaca mode {current} atas {db}; bundel bukti dan "
-    "root yang diumumkan akan berasal dari dua keadaan berbeda; "
-    "nol postVerdict/finalize/setProviderCap"
+    "MODE CHANGED MID-PIPELINE: the plan for jobId={job_id} was built in mode {planned} "
+    "while the gate at send time reads mode {current} over {db}; the evidence bundle and "
+    "the announced root would come from two different states; "
+    "zero postVerdict/finalize/setProviderCap"
 )
 # Bundel penolakan gerbang hanya boleh menemani verdict REJECT (spec §5 langkah 2:
 # "jika budget > cap → postVerdict(REJECT)"). `complete` dengan bukti penolakan adalah
 # verdict yang membantah buktinya sendiri.
 GATE_REJECTION_KIND_TEMPLATE = (
-    "BUKTI PENOLAKAN GERBANG TIDAK COCOK DENGAN VERDICT: jobId={job_id} kind={kind} "
-    "({kind_name}) sementara buktinya adalah penolakan cap; hanya reject yang sah; "
-    "nol postVerdict/finalize/setProviderCap"
+    "GATE-REJECTION EVIDENCE DOES NOT MATCH THE VERDICT: jobId={job_id} kind={kind} "
+    "({kind_name}) while the evidence is a cap rejection; only reject is valid; "
+    "zero postVerdict/finalize/setProviderCap"
 )
 # Cermin aturan di atas untuk bukti CEK DETERMINISTIK (temuan TINGGI-B). Bundel yang
 # menyatakan `passed=false` di sebelah verdict `complete` adalah verdict yang membantah
 # buktinya sendiri — dan ia MEMBAYAR provider atas pekerjaan yang gagal cek agen sendiri.
 FAILED_CHECKS_KIND_TEMPLATE = (
-    "BUKTI CEK GAGAL TIDAK COCOK DENGAN VERDICT: jobId={job_id} kind={kind} ({kind_name}) "
-    "sementara cek deterministik yang GAGAL adalah {failed}; hanya reject yang sah; "
-    "nol postVerdict/finalize/setProviderCap"
+    "FAILED-CHECK EVIDENCE DOES NOT MATCH THE VERDICT: jobId={job_id} kind={kind} "
+    "({kind_name}) while the FAILED deterministic checks are {failed}; only reject is valid; "
+    "zero postVerdict/finalize/setProviderCap"
 )
 # Rencana WAJIB milik job yang sedang diumumkan (temuan RENDAH review putaran-2:
 # `postVerdict(777, …)` terkirim membawa bundel job 43).
 PLAN_JOB_MISMATCH_TEMPLATE = (
-    "RENCANA MILIK JOB LAIN: run_live dipanggil untuk jobId={job_id} sementara rencananya "
-    "disusun untuk jobId={planned}; bukti dan verdict akan menunjuk dua job berbeda; "
-    "nol postVerdict/finalize/setProviderCap"
+    "PLAN BELONGS TO ANOTHER JOB: run_live was called for jobId={job_id} while the plan "
+    "was built for jobId={planned}; evidence and verdict would point at two different jobs; "
+    "zero postVerdict/finalize/setProviderCap"
 )
 # Rencana WAJIB terikat pada ROOT yang dibacanya (temuan SEDANG-1 putaran-2). Nama mode
 # saja TIDAK cukup: penulis `memory.db` yang mendarat SESUDAH `plan_job` (kunci memori
@@ -909,54 +909,55 @@ PLAN_JOB_MISMATCH_TEMPLATE = (
 # pada `gate`/`cap`/`incident_jobs` hasil DB LAMA. Auditor yang merekonstruksi memori pada
 # root yang diumumkan mendapat cap yang berbeda.
 ROOT_DRIFT_TEMPLATE = (
-    "MEMORI BERUBAH DI TENGAH PIPA: rencana jobId={job_id} dibaca dari memori ber-root "
-    "{planned} sementara root {db} saat mengirim {current}; bundel bukti dan root yang "
-    "diumumkan akan berasal dari dua keadaan berbeda; "
-    "nol postVerdict/finalize/setProviderCap"
+    "MEMORY CHANGED MID-PIPELINE: the plan for jobId={job_id} was read from memory with "
+    "root {planned} while the root of {db} at send time is {current}; the evidence bundle "
+    "and the announced root would come from two different states; "
+    "zero postVerdict/finalize/setProviderCap"
 )
 PLAN_WITHOUT_ROOT_TEMPLATE = (
-    "RENCANA TIDAK TERIKAT ROOT: rencana jobId={job_id} tidak membawa root memori yang "
-    "melahirkannya, jadi tidak ada yang bisa dibandingkan dengan root yang akan diumumkan; "
-    "nol postVerdict/finalize/setProviderCap"
+    "PLAN IS NOT BOUND TO A ROOT: the plan for jobId={job_id} carries no memory root that "
+    "produced it, so there is nothing to compare with the root about to be announced; "
+    "zero postVerdict/finalize/setProviderCap"
 )
 # Verdict yang SUDAH ADA on-chain WAJIB sama dengan yang baru dihitung (temuan SEDANG-2).
 # Cabang ini dulu memfinalisasi apa pun: verdict `complete` yang terlanjur diumumkan tetap
 # dieksekusi walau gerbang SEKARANG menolak, dan run melaporkan exit 0 `PIPA HIDUP SELESAI`.
 ONCHAIN_KIND_DRIFT_TEMPLATE = (
-    "VERDICT ON-CHAIN BERBEDA DARI HITUNGAN SEKARANG: jobId={job_id} sudah diumumkan "
-    "kind={onchain} ({onchain_name}) sementara bukti hari ini menuntut kind={fresh} "
-    "({fresh_name}); menolak finalize verdict yang bukan hasil cek sendiri; "
-    "nol postVerdict/finalize/setProviderCap"
+    "ON-CHAIN VERDICT DIFFERS FROM TODAY'S COMPUTATION: jobId={job_id} was announced with "
+    "kind={onchain} ({onchain_name}) while today's evidence demands kind={fresh} "
+    "({fresh_name}); refusing to finalize a verdict that is not the result of our own checks; "
+    "zero postVerdict/finalize/setProviderCap"
 )
 # `reasonHash`/`memoryRoot` on-chain yang tidak punya preimage yang kita kenal: jejak audit
 # akan menunjuk bundel yang BUKAN yang terikat on-chain. Satu-satunya pengecualian yang sah
 # adalah bundel tersimpan milik run yang mengumumkannya — dibuktikan dengan keccak, bukan
 # dengan kepercayaan.
 ONCHAIN_EVIDENCE_DRIFT_TEMPLATE = (
-    "BUKTI ON-CHAIN TIDAK BISA DIREPRODUKSI: jobId={job_id} terikat reasonHash={onchain_hash} "
-    "memoryRoot={onchain_root} sementara run ini menghitung reasonHash={fresh_hash} "
-    "memoryRoot={fresh_root}, dan tidak ada bundel tersimpan di {store} yang keccak-nya "
-    "sama dengan reasonHash on-chain untuk job dan arah verdict ini; menolak finalize bukti "
-    "yang tidak bisa ditunjukkan. Toko bukti itu tidak terlacak git — pulihkan berkas "
-    "{store}/{job_id}-<reasonHash>.json dari backup yang sama dengan memory.db; "
-    "nol postVerdict/finalize/setProviderCap"
+    "ON-CHAIN EVIDENCE CANNOT BE REPRODUCED: jobId={job_id} is bound to reasonHash={onchain_hash} "
+    "memoryRoot={onchain_root} while this run computes reasonHash={fresh_hash} "
+    "memoryRoot={fresh_root}, and no stored bundle in {store} has a keccak equal to the "
+    "on-chain reasonHash for this job and verdict direction; refusing to finalize evidence "
+    "that cannot be shown. That evidence store is not tracked by git — restore the file "
+    "{store}/{job_id}-<reasonHash>.json from the same backup as memory.db; "
+    "zero postVerdict/finalize/setProviderCap"
 )
 # Jalur SAH untuk perbedaan di atas: memori maju SESUDAH `postVerdict` (spec §5 langkah 5),
 # jadi root hari ini memang lebih baru. Yang mengikat tetap bundel on-chain, dan ia
 # DITUNJUKKAN — bukan diklaim.
 ONCHAIN_BUNDLE_REPRODUCED_TEMPLATE = (
-    "bundel bukti on-chain jobId={job_id} DIREPRODUKSI dari {path}: reasonHash={hash} "
-    "memoryRoot={root}. Memori sudah maju sejak verdict itu diumumkan (spec §5 langkah 5), "
-    "jadi root hari ini ({fresh_root}) berbeda dan BUKAN yang mengikat verdict ini"
+    "on-chain evidence bundle for jobId={job_id} REPRODUCED from {path}: reasonHash={hash} "
+    "memoryRoot={root}. Memory has moved on since that verdict was announced (spec §5 step 5), "
+    "so today's root ({fresh_root}) differs and is NOT the one binding this verdict"
 )
 # Nama file bundel diturunkan dari keccak isinya, jadi "file itu sudah ada dengan isi LAIN"
 # berarti dua teks berbeda dengan keccak sama — tabrakan keccak256, atau (jauh lebih
 # mungkin) file yang diedit tangan. Keduanya membuat toko bukti tidak bisa dipercaya, dan
 # menimpanya justru menghapus preimage yang mungkin sudah terikat on-chain.
 BUNDLE_COLLISION_TEMPLATE = (
-    "TOKO BUKTI TIDAK KONSISTEN: {path} sudah ada dengan isi BERBEDA padahal namanya "
-    "diturunkan dari keccak isinya (jobId={job_id}); file itu TIDAK ditimpa. Periksa/pindahkan "
-    "berkas itu sebelum menjalankan ulang; nol postVerdict/finalize/setProviderCap"
+    "EVIDENCE STORE IS INCONSISTENT: {path} already exists with DIFFERENT content even "
+    "though its name is derived from the keccak of that content (jobId={job_id}); the file "
+    "was NOT overwritten. Inspect/move that file before re-running; "
+    "zero postVerdict/finalize/setProviderCap"
 )
 # `setProviderCap(provider, 0)` berarti TANPA BATAS di kontrak (ADR-001), dan ia MENIMPA
 # cap yang sudah ketat tanpa syarat (`EvaluatorVault.sol:287-291`). Peracun cukup MENGHAPUS
@@ -965,13 +966,13 @@ BUNDLE_COLLISION_TEMPLATE = (
 # Penjaganya ada DI BATAS KIRIM, bukan di `derive_cap`: monoton-tidak-naik di sana bersandar
 # pada `previous` yang ikut terhapus.
 UNLIMITED_CAP_TEMPLATE = (
-    "CAP TANPA BATAS DITOLAK: setProviderCap({provider}, {cap}) — nilai 0 berarti TANPA "
-    "BATAS di kontrak (ADR-001) dan MENIMPA cap yang sudah ada; memori di {db} mungkin "
-    "kehilangan profil provider ini. Kirim hanya lewat jalur sadar "
-    "(set_provider_cap(..., allow_unlimited=True)); nol setProviderCap"
+    "UNLIMITED CAP REFUSED: setProviderCap({provider}, {cap}) — the value 0 means UNLIMITED "
+    "in the contract (ADR-001) and OVERWRITES the existing cap; memory at {db} may have lost "
+    "this provider profile. Send only through the deliberate path "
+    "(set_provider_cap(..., allow_unlimited=True)); zero setProviderCap"
 )
 NEGATIVE_CAP_TEMPLATE = (
-    "CAP NEGATIF DITOLAK: setProviderCap({provider}, {cap}) bukan uint256; nol setProviderCap"
+    "NEGATIVE CAP REFUSED: setProviderCap({provider}, {cap}) is not a uint256; zero setProviderCap"
 )
 # LANTAI MONOTON ON-CHAIN. `providerCap()` yang sedang ditegakkan vault MENGIKAT: cap baru
 # boleh sama atau lebih ketat, tidak pernah lebih longgar. Tanpa ini, penulis `memory.db`
@@ -980,16 +981,18 @@ NEGATIVE_CAP_TEMPLATE = (
 # baris pun yang mengatakannya. Nilai 0 on-chain BUKAN cap terkecil melainkan TANPA BATAS
 # (ADR-001), jadi ia tidak pernah menjadi lantai.
 CAP_RAISE_TEMPLATE = (
-    "CAP DINAIKKAN DITOLAK: setProviderCap({provider}, {cap}) MELONGGARKAN cap yang sedang "
-    "ditegakkan vault ({onchain}); memori di {db} mungkin dimundurkan ke snapshot lama. "
-    "Kirim hanya lewat jalur sadar (set_provider_cap(..., allow_raise=True)); nol setProviderCap"
+    "CAP RAISE REFUSED: setProviderCap({provider}, {cap}) LOOSENS the cap the vault is "
+    "currently enforcing ({onchain}); memory at {db} may have been rolled back to an old "
+    "snapshot. Send only through the deliberate path "
+    "(set_provider_cap(..., allow_raise=True)); zero setProviderCap"
 )
 # `--kind` TIDAK punya default (temuan TINGGI-B). Default `complete` berarti baris perintah
 # terpendek adalah baris yang MEMBAYAR provider; verdict adalah milik cek, dan pilihan
 # operator di atasnya harus diketik.
 KIND_REQUIRED_MESSAGE = (
-    "--kind WAJIB disebut bersama --job-id (complete|reject): tidak ada verdict default. "
-    "Gerbang cap dan cek deterministik tetap bisa MEMAKSA reject di atas pilihan itu."
+    "--kind IS REQUIRED together with --job-id (complete|reject): there is no default "
+    "verdict. The cap gate and the deterministic checks can still FORCE reject over that "
+    "choice."
 )
 
 
@@ -1114,21 +1117,21 @@ def read_local_memory(db: Path) -> LocalMemoryEvidence:
     yang menjadi bukti, dan exit code-nya bukan 0.
     """
     if not db.is_file():
-        return LocalMemoryEvidence.missing(f"file {db} tidak ada")
+        return LocalMemoryEvidence.missing(f"file {db} does not exist")
     client = None
     try:
         client = MemoryClient.local(str(db))
         evidence = local_memory_evidence(client)
     except MemoryLockError as exc:
-        log.warning("kunci memory.db tidak didapat: %s", exc)
+        log.warning("memory.db lock not acquired: %s", exc)
         return LocalMemoryEvidence.lock_failed(f"MemoryLockError: {exc}")
     except Exception as exc:  # noqa: BLE001 — SEMUA kegagalan lain = memori tidak dipercaya
-        log.warning("memori lokal tidak bisa dipercaya: %s: %s", type(exc).__name__, exc)
+        log.warning("local memory cannot be trusted: %s: %s", type(exc).__name__, exc)
         return LocalMemoryEvidence.error(f"{type(exc).__name__}: {exc}")
     finally:
         if client is not None:
             close_memory_client(client)
-    return replace(evidence, detail=f"{evidence.detail} di {db}")
+    return replace(evidence, detail=f"{evidence.detail} at {db}")
 
 
 @dataclass(frozen=True)
@@ -1147,7 +1150,7 @@ class MemoryGate:
 
     @property
     def onchain_hex(self) -> str:
-        return "TIDAK TERBACA" if self.onchain is None else "0x" + self.onchain.hex()
+        return "UNREADABLE" if self.onchain is None else "0x" + self.onchain.hex()
 
     @property
     def local_hex(self) -> str:
@@ -1178,16 +1181,16 @@ class MemoryGate:
     def log_summary(self) -> None:
         log.info("%s", self.line)
         log.info(
-            "gerbang memori: mode=%s onchain=%s (%s) lokal-root=%s (%s)",
+            "memory gate: mode=%s onchain=%s (%s) local-root=%s (%s)",
             self.decision.mode,
             self.onchain_hex,
             self.onchain_reason,
             self.local_hex,
             self.local.detail,
         )
-        log.info("file memori di %s: %s", self.db_path.parent, memory_files_report(self.db_path))
+        log.info("memory files at %s: %s", self.db_path.parent, memory_files_report(self.db_path))
         if self.is_safe:
-            log.info("alasan: %s", self.decision.reason)
+            log.info("reason: %s", self.decision.reason)
 
 
 def evaluate_memory_gate(client: VaultClient, db_path: Path | None = None) -> MemoryGate:
@@ -1284,17 +1287,17 @@ class VaultClient:
         try:
             raw = self.vault.functions.lastMemoryRoot().call()
         except Exception as exc:  # noqa: BLE001 — RPC apa pun yang gagal = kita tidak tahu
-            log.warning("root on-chain tidak terbaca: %s: %s", type(exc).__name__, exc)
+            log.warning("on-chain root unreadable: %s: %s", type(exc).__name__, exc)
             return None, f"{type(exc).__name__}: {exc}"
         root = bytes(raw)
-        return root, ("nol (belum ada verdict diumumkan)" if root == ZERO_ROOT else "dibaca dari vault")
+        return root, ("zero (no verdict announced yet)" if root == ZERO_ROOT else "read from the vault")
 
     def refresh_memory_gate(self) -> MemoryGate:
         """Membaca ULANG gerbang (chain DAN memori lokal) dan memasangnya ke klien ini."""
         if self.db_path is None:
             raise SafeModeStop(
-                "klien vault dibangun tanpa path memori — gerbang tidak bisa dibaca, jadi "
-                "tidak ada transaksi yang boleh dikirim (spec §3 aturan 5, ADR-023)"
+                "the vault client was built without a memory path — the gate cannot be read, "
+                "so no transaction may be sent (spec §3 rule 5, ADR-023)"
             )
         gate = evaluate_memory_gate(self, self.db_path)
         if gate.local.local_memory_readable:
@@ -1313,7 +1316,7 @@ class VaultClient:
         gate = self.refresh_memory_gate()
         log.info("%s", gate.line)
         if gate.is_safe:
-            log.info("alasan: %s", gate.decision.reason)
+            log.info("reason: %s", gate.decision.reason)
             raise SafeModeStop(f"{action}: {gate.line}")
 
     def derived_memory_root(self) -> bytes:
@@ -1417,7 +1420,7 @@ class VaultClient:
                 terbaru = max(events, key=lambda e: int(e["blockNumber"]))
                 nilai = bytes(terbaru["args"]["deliverable"])
                 log.info(
-                    "JobSubmitted(jobId=%d) di blok %d: deliverable=0x%s",
+                    "JobSubmitted(jobId=%d) in block %d: deliverable=0x%s",
                     job_id,
                     int(terbaru["blockNumber"]),
                     nilai.hex(),
@@ -1427,7 +1430,7 @@ class VaultClient:
                 break
             high = low - 1
         log.warning(
-            "log JobSubmitted(jobId=%d) tidak ditemukan dalam %d blok terakhir (%d..%d)",
+            "JobSubmitted(jobId=%d) log not found in the last %d blocks (%d..%d)",
             job_id,
             lookback_blocks,
             floor,
@@ -1506,7 +1509,7 @@ class VaultClient:
             self._require_onchain_cap_floor(func)
         if self.account is None:
             raise RuntimeError(
-                "klien vault dibangun tanpa kunci privat (baca-saja) — tidak ada tx yang bisa dikirim"
+                "the vault client was built without a private key (read-only) — no tx can be sent"
             )
         tx_params: dict = {
             "from": self.account.address,
@@ -1537,7 +1540,7 @@ class VaultClient:
         self._require_memory_gate("postVerdict")
         self.guard(job_id, "postVerdict")
         tx_hash = self._send(self.vault.functions.postVerdict(job_id, kind, reason_hash, memory_root))
-        log.info("postVerdict terkirim: 0x%s", tx_hash)
+        log.info("postVerdict sent: 0x%s", tx_hash)
         return tx_hash
 
     def set_provider_cap(
@@ -1582,7 +1585,7 @@ class VaultClient:
             self.vault.functions.setProviderCap(Web3.to_checksum_address(provider), cap),
             allow_raise=allow_raise,
         )
-        log.info("setProviderCap terkirim: 0x%s", tx_hash)
+        log.info("setProviderCap sent: 0x%s", tx_hash)
         return tx_hash
 
     def finalize(self, job_id: int) -> str:
@@ -1591,7 +1594,7 @@ class VaultClient:
         self._require_memory_gate("finalize")
         self.guard(job_id, "finalize")
         tx_hash = self._send(self.vault.functions.finalize(job_id), {"gas": FINALIZE_GAS_FLOOR})
-        log.info("finalize terkirim: 0x%s", tx_hash)
+        log.info("finalize sent: 0x%s", tx_hash)
         return tx_hash
 
     def wait_receipt(self, tx_hash: str):
@@ -1616,8 +1619,8 @@ def build_client(private_key: str | None = None) -> VaultClient:
     if onchain_chain_id != chain_id:
         raise RuntimeError(f"chainId RPC {onchain_chain_id} != CHAIN_ID {chain_id}")
     log.info("rpc=%s chainId=%d vault=%s acp=%s", rpc_url, chain_id, vault_address, acp_address)
-    log.info("memori=%s (.env=%s)", db_path, env_file_path() or "tidak ada")
-    log.info("agen=%s", account.address if account else "(kunci belum dimuat; klien baca-saja)")
+    log.info("memory=%s (.env=%s)", db_path, env_file_path() or "none")
+    log.info("agent=%s", account.address if account else "(key not loaded; read-only client)")
     return VaultClient(w3, vault_address, acp_address, account, chain_id, db_path=db_path)
 
 
@@ -1655,13 +1658,13 @@ class JobPlan:
             job_id=self.job.job_id,
             mode=self.mode.mode,
             depth=self.gate.depth,
-            cap="TANPA CAP" if self.gate.cap.cap_usdc is None else self.gate.cap.cap_usdc,
-            gate="lolos" if self.gate.accept else "DITOLAK",
+            cap="NO CAP" if self.gate.cap.cap_usdc is None else self.gate.cap.cap_usdc,
+            gate="pass" if self.gate.accept else "REJECTED",
             reason=self.gate.reason,
             evaluation=(
-                "belum ada deliverable"
+                "no deliverable yet"
                 if self.evaluation is None
-                else ("LOLOS" if self.evaluation.passed else f"GAGAL {list(self.evaluation.failed_checks)}")
+                else ("PASS" if self.evaluation.passed else f"FAIL {list(self.evaluation.failed_checks)}")
             ),
         )
 
@@ -1763,11 +1766,11 @@ def verdict_evidence(plan: JobPlan, memory_root: bytes, kind: int) -> dict:
             "evaluation": plan.evaluation.to_body(),
         }
     raise MemoryRootMismatch(
-        f"BELUM ADA YANG BISA DIUMUMKAN untuk jobId={plan.job.job_id}: gerbang MELOLOSKAN "
-        f"budget {plan.job.budget} (status job {plan.job.status}) dan provider belum "
-        "submit(), jadi belum ada hasil cek maupun penolakan cap yang bisa di-hash jadi "
-        "reasonHash; tunggu JobSubmitted (spec §5 langkah 2 vs 3). "
-        "Nol postVerdict/finalize/setProviderCap"
+        f"NOTHING TO ANNOUNCE YET for jobId={plan.job.job_id}: the gate ACCEPTS budget "
+        f"{plan.job.budget} (job status {plan.job.status}) and the provider has not called "
+        "submit() yet, so there is neither a check result nor a cap rejection to hash into a "
+        "reasonHash; wait for JobSubmitted (spec §5 step 2 vs 3). "
+        "Zero postVerdict/finalize/setProviderCap"
     )
 
 
@@ -1794,8 +1797,8 @@ def verdict_bundle_dir(client: VaultClient) -> Path:
     """
     if client.db_path is None:
         raise SafeModeStop(
-            "klien vault dibangun tanpa path memori — bundel bukti tidak punya tempat, "
-            "jadi tidak ada transaksi yang boleh dikirim"
+            "the vault client was built without a memory path — the evidence bundle has "
+            "nowhere to live, so no transaction may be sent"
         )
     raw = config_value(VERDICT_BUNDLE_DIR_ENV, "")
     if raw:
@@ -1933,7 +1936,7 @@ def plan_job(
     """
     if client.db_path is None:
         raise SafeModeStop(
-            "klien vault dibangun tanpa path memori — keputusan memori tidak bisa diambil"
+            "the vault client was built without a memory path — no memory decision can be made"
         )
     gate = client.refresh_memory_gate()
     # Root DIREKAM di sini, pada pembacaan gerbang yang SAMA yang memberi `mode` dan
@@ -1944,7 +1947,7 @@ def plan_job(
     try:
         root_rencana: bytes | None = client.derived_memory_root()
     except MemoryRootMismatch as exc:
-        log.warning("root memori tidak bisa diturunkan saat menyusun rencana: %s", exc)
+        log.warning("memory root could not be derived while building the plan: %s", exc)
         root_rencana = None
     # Lantai on-chain untuk jalur KEPUTUSAN (task 3.0b). Lantai yang dipasang 2.4b hidup di
     # batas KIRIM dan hanya menahan `setProviderCap` dari NAIK; ia tidak pernah menahan
@@ -1960,9 +1963,9 @@ def plan_job(
             f"providerCap({job.provider}) tidak bisa dibaca — lantai on-chain tidak diketahui"
         )
         raise SafeModeStop(
-            f"providerCap({job.provider}) tidak bisa dibaca dari vault: {exc}; "
-            "lantai on-chain tidak diketahui, jadi gerbang TIDAK boleh menerima apa pun; "
-            "nol postVerdict/finalize/setProviderCap"
+            f"providerCap({job.provider}) cannot be read from the vault: {exc}; "
+            "the on-chain floor is unknown, so the gate must NOT accept anything; "
+            "zero postVerdict/finalize/setProviderCap"
         ) from exc
 
     memori = MemoryClient.local(str(client.db_path))
@@ -1983,8 +1986,8 @@ def plan_job(
         onchain = client.job_deliverable(job.job_id, lookback_blocks=lookback_blocks)
         if onchain is None:
             raise DeliverableUnverifiedError(
-                f"{REFUSAL_LINE}: log JobSubmitted(jobId={job.job_id}) tidak ditemukan, "
-                "jadi tidak ada hash on-chain untuk membuktikan teks deliverable"
+                f"{REFUSAL_LINE}: the JobSubmitted(jobId={job.job_id}) log was not found, "
+                "so there is no on-chain hash to prove the deliverable text"
             )
         evaluation = evaluate_job(
             job.job_id,
@@ -2058,7 +2061,7 @@ def record_outcome(client: VaultClient, plan: JobPlan) -> ProviderProfile | None
         for incident in plan.evaluation.incidents():
             body = record_suspicion(memori, provider, incident.pattern_id, incident.evidence)
             log.info(
-                "karantina ditulis: provider=%s pola=%s count=%d (bukti dari cek %s)",
+                "quarantine written: provider=%s pattern=%s count=%d (evidence from the %s check)",
                 provider,
                 incident.pattern_id,
                 int(body["count"]),
@@ -2067,8 +2070,8 @@ def record_outcome(client: VaultClient, plan: JobPlan) -> ProviderProfile | None
         promoted = promote_suspicions(memori, provider)
         if promoted:
             log.info(
-                "POLA DIPROMOSIKAN (>= 2 job berbeda, semua bukti deterministik): "
-                "provider=%s pola=%s → reference:pattern + confirmed_patterns",
+                "PATTERN PROMOTED (>= 2 distinct jobs, all evidence deterministic): "
+                "provider=%s pattern=%s -> reference:pattern + confirmed_patterns",
                 provider,
                 promoted,
             )
@@ -2084,7 +2087,7 @@ def record_outcome(client: VaultClient, plan: JobPlan) -> ProviderProfile | None
     finally:
         close_memory_client(memori)
     log.info(
-        "memori diperbarui: provider=%s jobs=%d pass=%d reject=%d risk=%d insiden=%s pola=%s",
+        "memory updated: provider=%s jobs=%d pass=%d reject=%d risk=%d incidents=%s patterns=%s",
         profile.address,
         profile.stats_jobs,
         profile.stats_pass,
@@ -2147,8 +2150,8 @@ def sync_provider_cap(
     cap: CapPlan = derive_cap(profile, mode)
     if cap.cap_usdc is None:
         log.info(
-            "cap provider=%s: TANPA CAP (risk=%d, basis=%s) — nol setProviderCap, karena "
-            "nilai 0 di kontrak berarti TANPA BATAS (ADR-001)",
+            "cap provider=%s: NO CAP (risk=%d, basis=%s) — zero setProviderCap, because the "
+            "value 0 in the contract means UNLIMITED (ADR-001)",
             profile.address,
             profile.risk_level,
             cap.basis,
@@ -2173,8 +2176,8 @@ def sync_provider_cap(
     onchain = client.provider_cap(profile.address)
     if onchain > 0 and int(cap.cap_usdc) > onchain:
         log.warning(
-            "cap provider=%s DIKLEM ke lantai on-chain: memori menghitung %d (basis=%s) "
-            "sementara vault menegakkan %d — nilai yang MELONGGARKAN tidak dikirim",
+            "cap provider=%s CLAMPED to the on-chain floor: memory computes %d (basis=%s) "
+            "while the vault enforces %d — a LOOSENING value is not sent",
             profile.address,
             int(cap.cap_usdc),
             cap.basis,
@@ -2183,7 +2186,7 @@ def sync_provider_cap(
         cap = replace(cap, cap_usdc=onchain, basis=f"onchain-floor({cap.basis})")
     if onchain == int(cap.cap_usdc):
         log.info(
-            "cap provider=%s sudah %d di vault — tidak dikirim ulang",
+            "cap provider=%s is already %d in the vault — not re-sent",
             profile.address,
             onchain,
         )
@@ -2194,7 +2197,7 @@ def sync_provider_cap(
         store_cap_in_memory(client, profile.address, cap)
         return None
     log.info(
-        "cap provider=%s: %d → %d (risk=%d, basis=%s, milestone=%s, sampel=%d)",
+        "cap provider=%s: %d -> %d (risk=%d, basis=%s, milestone=%s, sample=%d)",
         profile.address,
         onchain,
         int(cap.cap_usdc),
@@ -2206,7 +2209,7 @@ def sync_provider_cap(
     tx_hash = client.set_provider_cap(profile.address, cap_to_onchain(cap))
     receipt = client.wait_receipt(tx_hash)
     log.info(
-        "TX setProviderCap = 0x%s (status=%d, blok=%d)",
+        "TX setProviderCap = 0x%s (status=%d, block=%d)",
         tx_hash,
         receipt.status,
         receipt.blockNumber,
@@ -2255,10 +2258,11 @@ def verdict_kind(plan: JobPlan, requested: int) -> int:
     # "GERBANG MENOLAK" untuk pelanggaran cap (spec §5 langkah 2) dan "CEK DETERMINISTIK
     # GAGAL" untuk hasil cek sendiri (langkah 3-4). Keduanya bisa berlaku bersamaan.
     log.info(
-        "%s jobId=%d — gerbang=%s (%s), cek gagal=%s; verdict dipaksa REJECT, bukan %s yang diminta",
-        "GERBANG MENOLAK" if not plan.gate.accept else "CEK DETERMINISTIK GAGAL",
+        "%s jobId=%d — gate=%s (%s), failed checks=%s; verdict FORCED to REJECT, not the "
+        "requested %s",
+        "GATE REJECTS" if not plan.gate.accept else "DETERMINISTIC CHECKS FAILED",
         plan.job.job_id,
-        "lolos" if plan.gate.accept else "DITOLAK",
+        "pass" if plan.gate.accept else "REJECTED",
         plan.gate.reason,
         list(plan.evaluation.failed_checks) if plan.evaluation is not None else [],
         "complete" if requested == KIND_COMPLETE else str(requested),
@@ -2353,9 +2357,9 @@ def read_ready_at(client: VaultClient, job_id: int, post_receipt) -> int:
         state = client.verdict(job_id)
         if state.kind != 0:
             return state.ready_at
-        log.info("  verdicts(%d) masih kosong di node RPC ini (lag) — coba lagi", job_id)
+        log.info("  verdicts(%d) still empty on this RPC node (lag) — retrying", job_id)
         time.sleep(4)
-    raise RuntimeError(f"tidak bisa membaca readyAt untuk jobId={job_id}")
+    raise RuntimeError(f"cannot read readyAt for jobId={job_id}")
 
 
 def require_onchain_verdict_agrees(
@@ -2465,11 +2469,11 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
     job hilang dari memori SELAMANYA setiap kali run diulang.
     """
     kind_name = verdict_kind_name(kind)
-    log.info("LIVE jobId ACP NYATA=%d kind=%d (%s)", job_id, kind, kind_name)
+    log.info("LIVE REAL ACP jobId=%d kind=%d (%s)", job_id, kind, kind_name)
     if plan is None:
         raise MemoryRootMismatch(
-            f"run_live jobId={job_id} tanpa rencana job — tidak ada bukti dan tidak ada "
-            "keadaan memori yang bisa diumumkan; nol postVerdict/finalize/setProviderCap"
+            f"run_live jobId={job_id} without a job plan — there is no evidence and no "
+            "memory state to announce; zero postVerdict/finalize/setProviderCap"
         )
     # Rencana WAJIB milik job INI. Tanpa penjaga satu baris ini `postVerdict(777, …)`
     # terkirim membawa bundel job 43 (temuan RENDAH review putaran-2).
@@ -2530,9 +2534,9 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
             )
         )
     reason_hash = verdict_reason_hash(bundle)
-    log.info("memory_root TURUNAN memory.db di %s = 0x%s", client.db_path, memory_root.hex())
+    log.info("memory_root DERIVED from memory.db at %s = 0x%s", client.db_path, memory_root.hex())
     log.info(
-        "reason_hash (TURUNAN bukti job, kind bukti=%s)=0x%s",
+        "reason_hash (DERIVED from the job evidence, evidence kind=%s)=0x%s",
         evidence_kind(bundle),
         reason_hash.hex(),
     )
@@ -2540,7 +2544,7 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
     existing = client.verdict(job_id)
     if existing.finalized:
         log.error(
-            "verdict jobId=%d SUDAH finalized (kind=%d) — tidak ada yang dikerjakan",
+            "verdict jobId=%d is ALREADY finalized (kind=%d) — nothing to do",
             job_id,
             existing.kind,
         )
@@ -2557,9 +2561,9 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
         # ini log hanya memuat `reasonHash`/`memoryRoot` hasil hitung run SEKARANG, dan jejak
         # audit menunjuk bundel yang BUKAN yang terikat on-chain (temuan SEDANG-2).
         log.info(
-            "verdict jobId=%d SUDAH ADA (kind=%d (%s), readyAt=%d, reasonHash=0x%s, "
-            "memoryRoot=0x%s — nilai ON-CHAIN inilah yang mengikat) — melewati postVerdict, "
-            "lanjut finalize",
+            "verdict jobId=%d ALREADY EXISTS (kind=%d (%s), readyAt=%d, reasonHash=0x%s, "
+            "memoryRoot=0x%s — these ON-CHAIN values are the binding ones) — skipping "
+            "postVerdict, continuing to finalize",
             job_id,
             existing.kind,
             verdict_kind_name(int(existing.kind)),
@@ -2568,7 +2572,7 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
             bytes(existing.memory_root).hex(),
         )
         ready_at = existing.ready_at
-        post_hash = "(sudah ada sebelumnya)"
+        post_hash = "(already existed)"
         # spec §5 langkah 5 TETAP berlaku di cabang ini (temuan TINGGI-2). Rerun sesudah
         # `postVerdict` mendarat — `EXIT_STOPPED_MIDWAY`, timeout receipt, atau `--job-id`
         # yang dijalankan ulang tangan — dulu melewati `record_outcome` SELAMANYA, sehingga
@@ -2586,11 +2590,11 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
         # mengembalikan 0 walau verdict sudah ada), jadi ia MENAMBAH bundel, tidak pernah
         # mengganti: nama file ber-alamat-isi yang membuatnya begitu (temuan TINGGI-A7).
         simpanan = store_verdict_bundle(verdict_bundle_dir(client), job_id, bundle)
-        log.info("bundel bukti (preimage reasonHash) disimpan: %s", simpanan)
+        log.info("evidence bundle (reasonHash preimage) stored: %s", simpanan)
         post_hash = client.post_verdict(job_id, kind, reason_hash, memory_root)
         post_receipt = client.wait_receipt(post_hash)
         log.info(
-            "TX 1 postVerdict = 0x%s (status=%d, blok=%d)",
+            "TX 1 postVerdict = 0x%s (status=%d, block=%d)",
             post_hash,
             post_receipt.status,
             post_receipt.blockNumber,
@@ -2605,41 +2609,42 @@ def run_live(client: VaultClient, job_id: int, kind: int, plan: JobPlan | None =
         # readyAt dari event di receipt (RPC publik bisa tertinggal di belakang receipt).
         ready_at = read_ready_at(client, job_id, post_receipt)
 
-    log.info("menunggu jendela challenge sampai readyAt=%d", ready_at)
+    log.info("waiting for the challenge window until readyAt=%d", ready_at)
     while True:
         now = client.w3.eth.get_block("latest")["timestamp"]
         if now > ready_at:
             break
-        log.info("  block.timestamp=%d, sisa %d detik", now, ready_at - now + 1)
+        log.info("  block.timestamp=%d, %d seconds left", now, ready_at - now + 1)
         time.sleep(min(20, max(2, ready_at - now + 1)))
 
     final_hash = client.finalize(job_id)
     final_receipt = client.wait_receipt(final_hash)
     log.info(
-        "TX 2 finalize    = 0x%s (status=%d, blok=%d)",
+        "TX 2 finalize    = 0x%s (status=%d, block=%d)",
         final_hash,
         final_receipt.status,
         final_receipt.blockNumber,
     )
     if final_receipt.status != 1:
-        log.error("finalize REVERT on-chain: 0x%s", final_hash)
+        log.error("finalize REVERTED on-chain: 0x%s", final_hash)
         return 1
 
     failed = client.vault.events.FinalizeFailed().process_receipt(final_receipt, errors=DISCARD)
     finalized = client.vault.events.Finalized().process_receipt(final_receipt, errors=DISCARD)
-    log.info("log receipt finalize: FinalizeFailed=%d, Finalized=%d", len(failed), len(finalized))
+    log.info("finalize receipt logs: FinalizeFailed=%d, Finalized=%d", len(failed), len(finalized))
     for event in finalized:
         log.info("  Finalized(jobId=%d, kind=%d)", int(event["args"]["jobId"]), int(event["args"]["kind"]))
     for event in failed:
         log.info("  FinalizeFailed(jobId=%d)", int(event["args"]["jobId"]))
 
     if finalized and not failed:
-        log.info("PIPA HIDUP SELESAI. postVerdict=%s finalize=0x%s", post_hash, final_hash)
+        log.info("LIVE PIPELINE COMPLETE. postVerdict=%s finalize=0x%s", post_hash, final_hash)
         return 0
 
     log.error(
-        "HASIL TIDAK SESUAI HARAPAN untuk jobId NYATA %d: FinalizeFailed=%d Finalized=%d "
-        "(acp.complete() ditolak dan ditangkap catch vault). receipt finalize=0x%s blok=%d",
+        "UNEXPECTED OUTCOME for REAL jobId %d: FinalizeFailed=%d Finalized=%d "
+        "(acp.complete() was rejected and swallowed by the vault catch). "
+        "finalize receipt=0x%s block=%d",
         job_id,
         len(failed),
         len(finalized),
@@ -2666,8 +2671,8 @@ def report_stopped_midway(sent: list[str], cause: str) -> int:
     yang hilang adalah SINYAL untuk operator, dan justru itu gunanya kode keluar ini.
     """
     log.error(
-        "%s: %d transaksi sudah mendarat sebelum %s (%s) — job MENGGANTUNG sampai "
-        "expiredAt, dan run ini TIDAK selesai",
+        "%s: %d transaction(s) already landed before %s (%s) — the job HANGS until "
+        "expiredAt, and this run did NOT complete",
         EXIT_STOPPED_MIDWAY_MESSAGE,
         len(sent),
         cause,
@@ -2733,7 +2738,7 @@ def main(argv: list[str] | None = None) -> int:
 
         private_key = load_private_key()
         client.account = Account.from_key(private_key)
-        log.info("agen=%s", client.account.address)
+        log.info("agent=%s", client.account.address)
 
         if args.guard is not None:
             client.guard(args.guard, "guard-only")
@@ -2779,7 +2784,7 @@ def main(argv: list[str] | None = None) -> int:
         # Nol tx, tetapi tetap BUKAN sukses: gerbang start sudah lolos, jadi sesuatu
         # menolak di tengah jalan. Exit 0 di sini adalah laporan sukses palsu.
         log.error(
-            "%s: nol transaksi terkirim, dan run ini TIDAK menghasilkan verdict",
+            "%s: zero transactions sent, and this run produced NO verdict",
             EXIT_REFUSED_MESSAGE,
         )
         return EXIT_REFUSED
@@ -2788,7 +2793,7 @@ def main(argv: list[str] | None = None) -> int:
         log.info("%s", voided_message(exc.job_id, exc.status))
         return 0
     except Exception as exc:  # noqa: BLE001 — pesan disensor sebelum dicetak
-        log.error("GAGAL: %s: %s", type(exc).__name__, redact(str(exc), private_key))
+        log.error("FAILED: %s: %s", type(exc).__name__, redact(str(exc), private_key))
         terkirim = landed_transactions(dibangun)
         if terkirim:
             # Galat teknis SESUDAH sebuah tx mendarat adalah kelas keadaan yang sama

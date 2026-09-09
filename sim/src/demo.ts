@@ -156,7 +156,7 @@ type Wallet = { readonly address: Address; readonly privateKey: Hex };
 function wallet(role: Role): Wallet {
   const account = mnemonicToAccount(ANVIL_MNEMONIC, { addressIndex: ROLE_INDEX[role] });
   const key = account.getHdKey().privateKey;
-  if (!key) throw new Error(`kunci untuk peran ${role} tidak bisa diturunkan dari mnemonic Anvil`);
+  if (!key) throw new Error(`the key for role ${role} cannot be derived from the Anvil mnemonic`);
   return { address: account.address, privateKey: toHex(key) };
 }
 
@@ -220,7 +220,7 @@ async function mustRun(
 ): Promise<RunResult> {
   const result = await run(command, args, options);
   if (result.code !== 0) {
-    throw new Error(`perintah gagal (exit ${result.code}): ${command} ${args.join(" ")}`);
+    throw new Error(`command failed (exit ${result.code}): ${command} ${args.join(" ")}`);
   }
   return result;
 }
@@ -261,7 +261,7 @@ async function rpcTo(
     ...(timeoutMs === undefined ? {} : { signal: AbortSignal.timeout(timeoutMs) }),
   });
   const body = (await res.json()) as { result?: unknown; error?: { message?: string } };
-  if (body.error) throw new Error(`${method}: ${body.error.message ?? "galat RPC"}`);
+  if (body.error) throw new Error(`${method}: ${body.error.message ?? "RPC error"}`);
   return body.result;
 }
 
@@ -308,14 +308,14 @@ export async function preflightSepolia(): Promise<void> {
   const gagal: (sebab: string) => never = (sebab) => {
     throw new Error(
       [
-        `PREFLIGHT GAGAL — ${sebab}.`,
-        `Yang dibutuhkan: akses jaringan keluar ke ${SEPOLIA_RPC} (Base Sepolia, chainId ${CHAIN_ID}).`,
-        "Yang TIDAK dibutuhkan: NOL dana, NOL transaksi, NOL kunci privat.",
-        `Kenapa: VARIAN B membaca vault BEKU ${FROZEN_VAULT} di Base Sepolia — root on-chain`,
-        "non-nol adalah satu-satunya keadaan yang membuat memori terhapus berarti MODE AMAN",
-        "(amandemen ADR-023: varian A di Anvil lokal, varian B di vault Sepolia beku).",
-        "Demo berhenti DI SINI, sebelum Anvil menyala: melewati varian B dan tetap keluar 0",
-        "berarti mencetak klaim mode aman yang tidak pernah dibaca dari chain.",
+        `PREFLIGHT FAILED — ${sebab}.`,
+        `Required: outbound network access to ${SEPOLIA_RPC} (Base Sepolia, chainId ${CHAIN_ID}).`,
+        "NOT required: ZERO funds, ZERO transactions, ZERO private keys.",
+        `Why: VARIANT B reads the FROZEN vault ${FROZEN_VAULT} on Base Sepolia — a non-zero`,
+        "on-chain root is the only state in which wiped memory means SAFE MODE",
+        "(ADR-023 amendment: variant A on local Anvil, variant B on the frozen Sepolia vault).",
+        "The demo stops HERE, before Anvil starts: bypassing variant B and still exiting 0",
+        "would print a safe-mode claim that was never read from the chain.",
       ].join("\n  "),
     );
   };
@@ -333,11 +333,11 @@ export async function preflightSepolia(): Promise<void> {
   try {
     chainIdRaw = await rpcTo(SEPOLIA_RPC, "eth_chainId", [], PREFLIGHT_TIMEOUT_MS);
   } catch (err: unknown) {
-    gagal(`${SEPOLIA_RPC} tidak terjangkau (${sebabGalat(err)})`);
+    gagal(`${SEPOLIA_RPC} is unreachable (${sebabGalat(err)})`);
   }
   const chainId = Number(chainIdRaw);
   if (chainId !== CHAIN_ID) {
-    gagal(`${SEPOLIA_RPC} menjawab chainId ${chainId}, bukan ${CHAIN_ID}`);
+    gagal(`${SEPOLIA_RPC} answered chainId ${chainId}, not ${CHAIN_ID}`);
   }
 
   // Vault beku harus BISA DIBACA dari sini juga: RPC yang hidup tetapi menolak `eth_call`
@@ -353,13 +353,13 @@ export async function preflightSepolia(): Promise<void> {
       ),
     );
   } catch (err: unknown) {
-    gagal(`vault beku ${FROZEN_VAULT} tidak bisa dibaca (${sebabGalat(err)})`);
+    gagal(`the frozen vault ${FROZEN_VAULT} cannot be read (${sebabGalat(err)})`);
   }
   if (onchainRoot === ZERO_ROOT) {
-    gagal(`lastMemoryRoot() vault ${FROZEN_VAULT} NOL — varian B menuntut vault yang sudah hidup`);
+    gagal(`lastMemoryRoot() of vault ${FROZEN_VAULT} is ZERO — variant B needs a vault that is already live`);
   }
 
-  log("preflight.ok", { rpc: SEPOLIA_RPC, chainId, vault: FROZEN_VAULT, onchainRoot, txBaru: 0 });
+  log("preflight.ok", { rpc: SEPOLIA_RPC, chainId, vault: FROZEN_VAULT, onchainRoot, newTx: 0 });
 }
 
 let anvil: ReturnType<typeof spawn> | null = null;
@@ -378,8 +378,8 @@ async function startAnvil(): Promise<void> {
   }
   if (occupied) {
     throw new Error(
-      `${RPC_URL} sudah dihuni proses lain. Demo menuntut rantai yang lahir dari NOL; ` +
-        "matikan node itu, atau jalankan dengan DEMO_PORT=<port lain>.",
+      `${RPC_URL} is already occupied by another process. The demo needs a chain born from ZERO; ` +
+        "stop that node, or run with DEMO_PORT=<another port>.",
     );
   }
 
@@ -390,13 +390,13 @@ async function startAnvil(): Promise<void> {
     { cwd: REPO_ROOT, stdio: ["ignore", "ignore", "inherit"] },
   );
   anvil.on("error", (err) => {
-    throw new Error(`anvil tidak bisa dijalankan: ${err.message} (foundryup terpasang?)`);
+    throw new Error(`anvil could not be started: ${err.message} (is foundryup installed?)`);
   });
   for (let attempt = 1; attempt <= 40; attempt += 1) {
     try {
       const chainId = Number(await rpc("eth_chainId"));
       if (chainId !== CHAIN_ID) {
-        throw new Error(`anvil di ${RPC_URL} melayani chainId ${chainId}, bukan ${CHAIN_ID}`);
+        throw new Error(`anvil at ${RPC_URL} serves chainId ${chainId}, not ${CHAIN_ID}`);
       }
       return;
     } catch (err) {
@@ -468,7 +468,7 @@ async function forgeCreate(
   if (constructorArgs.length > 0) args.push("--constructor-args", ...constructorArgs);
   const { stdout } = await mustRun("forge", args, { cwd: CONTRACTS_ROOT });
   const match = stdout.match(/Deployed to:\s*(0x[0-9a-fA-F]{40})/);
-  if (!match) throw new Error(`forge create ${target}: alamat tidak terbaca dari keluarannya`);
+  if (!match) throw new Error(`forge create ${target}: no address could be read from its output`);
   return match[1] as Address;
 }
 
@@ -488,9 +488,9 @@ export function parseLogLine(line: string, prog: string, event: string): Record<
   return fields;
 }
 
-/** Baris `RENCANA jobId=… mode=… depth=… cap=… gate=… evaluasi=…` milik `vault_client`. */
+/** Baris `PLAN jobId=… mode=… depth=… cap=… gate=… evaluation=…` milik `vault_client`. */
 export function parsePlanLine(text: string): Record<string, string> {
-  const line = text.split("\n").find((l) => l.startsWith("RENCANA "));
+  const line = text.split("\n").find((l) => l.startsWith("PLAN "));
   if (!line) return {};
   const grab = (key: string, stop: string): string => {
     const re = new RegExp(`${key}=(.*?)(?= ${stop}=)`);
@@ -500,8 +500,8 @@ export function parsePlanLine(text: string): Record<string, string> {
     mode: grab("mode", "depth"),
     depth: grab("depth", "cap"),
     cap: grab("cap", "gate"),
-    gate: grab("gate", "evaluasi"),
-    evaluasi: line.match(/ evaluasi=(.*)$/)?.[1] ?? "?",
+    gate: grab("gate", "evaluation"),
+    evaluation: line.match(/ evaluation=(.*)$/)?.[1] ?? "?",
   };
 }
 
@@ -573,22 +573,22 @@ async function runAgent(
     let result = await invoke();
     let retried = false;
     if (result.code === EXIT_REFUSED) {
-      log("agent.retry", { jobId, reason: "MODE_DRIFT-memori-baru-lahir-ADR-026", firstExit: EXIT_REFUSED });
+      log("agent.retry", { jobId, reason: "MODE_DRIFT-memory-just-born-ADR-026", firstExit: EXIT_REFUSED });
       retried = true;
       result = await invoke();
     }
     if (result.code !== 0) {
-      throw new Error(`agen keluar dengan kode ${result.code} untuk jobId=${jobId}`);
+      throw new Error(`the agent exited with code ${result.code} for jobId=${jobId}`);
     }
     return {
       exit: result.code,
       retried,
       plan: parsePlanLine(result.stdout),
-      memoryRoot: firstMatch(result.stdout, /memory_root TURUNAN[^=]*= (0x[0-9a-f]{64})/),
+      memoryRoot: firstMatch(result.stdout, /memory_root DERIVED[^=]*= (0x[0-9a-f]{64})/),
       reasonHash: firstMatch(result.stdout, /reason_hash \([^)]*\)=(0x[0-9a-f]{64})/),
-      cap: firstMatch(result.stdout, /^cap provider=0x[0-9a-f]{40}: (\d+ → \d+)/m),
-      postVerdict: firstMatch(result.stdout, /postVerdict terkirim: (0x[0-9a-f]{64})/),
-      finalize: firstMatch(result.stdout, /finalize terkirim: (0x[0-9a-f]{64})/),
+      cap: firstMatch(result.stdout, /^cap provider=0x[0-9a-f]{40}: (\d+ -> \d+)/m),
+      postVerdict: firstMatch(result.stdout, /postVerdict sent: (0x[0-9a-f]{64})/),
+      finalize: firstMatch(result.stdout, /finalize sent: (0x[0-9a-f]{64})/),
     };
   });
 }
@@ -625,22 +625,22 @@ export async function runVariantB(): Promise<VariantBResult> {
   if (sisa.length > 0) {
     // Nama BERKASNYA, bukan sufiksnya: sufiks `""` mencetak string kosong dan pesan
     // "masih ada " yang tidak menyebut apa pun adalah pesan yang tidak bisa dipakai.
-    throw new Error(`memori varian B tidak benar-benar terhapus: masih ada ${sisa.join(", ")}`);
+    throw new Error(`variant B memory was not really wiped: still present ${sisa.join(", ")}`);
   }
-  log("varianB.memory.wiped", { db: VARIANT_B_DB, files: MEMORY_DB_SUFFIXES.length });
+  log("variantB.memory.wiped", { db: VARIANT_B_DB, files: MEMORY_DB_SUFFIXES.length });
 
   const onchainRoot = await callView(SEPOLIA_RPC, FROZEN_VAULT, SELECTOR_LAST_MEMORY_ROOT as Hex);
   if (onchainRoot === ZERO_ROOT) {
     throw new Error(
-      `lastMemoryRoot() vault ${FROZEN_VAULT} NOL — varian B menuntut vault yang sudah ` +
-        "mengumumkan root; pada root nol yang benar adalah mode NAIF (varian A), bukan mode aman",
+      `lastMemoryRoot() of vault ${FROZEN_VAULT} is ZERO — variant B needs a vault that has ` +
+        "already announced a root; on a zero root the correct mode is NAIVE (variant A), not safe mode",
     );
   }
   const agentAddress = getAddress(
     `0x${(await callView(SEPOLIA_RPC, FROZEN_VAULT, SELECTOR_AGENT as Hex)).slice(-40)}`,
   );
   const nonceBefore = await nonceOf(SEPOLIA_RPC, agentAddress);
-  log("varianB.begin", {
+  log("variantB.begin", {
     rpc: SEPOLIA_RPC,
     vault: FROZEN_VAULT,
     jobId: FROZEN_JOB_ID,
@@ -670,19 +670,19 @@ export async function runVariantB(): Promise<VariantBResult> {
   const nonceAfter = await nonceOf(SEPOLIA_RPC, agentAddress);
 
   const gugur = (pesan: string): never => {
-    throw new Error(`VARIAN B GUGUR: ${pesan}`);
+    throw new Error(`VARIANT B FAILED: ${pesan}`);
   };
   // Mode aman adalah perilaku yang DIINGINKAN, jadi kode keluarnya 0 — bukan kegagalan.
-  if (result.code !== 0) gugur(`agen keluar dengan kode ${result.code}, seharusnya 0`);
-  if (!/MODE AMAN:/.test(result.stdout)) gugur("agen tidak mencetak baris MODE AMAN");
-  if (!/gerbang memori: mode=safe\b/.test(result.stdout)) gugur("gerbang tidak melaporkan mode=safe");
-  if (!/memori lokal hilang .* → memori dihapus/.test(result.stdout)) {
-    gugur("mode aman tidak dipicu aturan (a) 'file hilang' — ADR-024 keputusan 2 cabang 2");
+  if (result.code !== 0) gugur(`the agent exited with code ${result.code}, expected 0`);
+  if (!/SAFE MODE:/.test(result.stdout)) gugur("the agent never printed a SAFE MODE line");
+  if (!/memory gate: mode=safe\b/.test(result.stdout)) gugur("the gate did not report mode=safe");
+  if (!/local memory is missing .* -> memory was wiped/.test(result.stdout)) {
+    gugur("safe mode was not triggered by rule (a) 'file missing' — ADR-024 decision 2 branch 2");
   }
-  if (/(postVerdict|finalize|setProviderCap) terkirim/.test(result.stdout)) {
-    gugur("ada transaksi yang terkirim");
+  if (/(postVerdict|finalize|setProviderCap) sent/.test(result.stdout)) {
+    gugur("a transaction was sent");
   }
-  if (nonceAfter !== nonceBefore) gugur(`nonce agen berubah ${nonceBefore} -> ${nonceAfter}`);
+  if (nonceAfter !== nonceBefore) gugur(`the agent nonce changed ${nonceBefore} -> ${nonceAfter}`);
 
   return { nonceBefore, nonceAfter, onchainRoot, agentAddress, exit: result.code };
 }
@@ -741,15 +741,15 @@ async function main(): Promise<void> {
       .find((l) => parseLogLine(l, "scenario", "onchain")?.step === id);
     const step = stepLine ? parseLogLine(stepLine, "scenario", "step") : null;
     const onchain = onchainLine ? parseLogLine(onchainLine, "scenario", "onchain") : null;
-    if (!step || !onchain) throw new Error(`baris skenario untuk langkah ${id} tidak ditemukan`);
+    if (!step || !onchain) throw new Error(`no scenario line found for step ${id}`);
     return { id, step, onchain };
   });
 
   const rows: StepRow[] = [];
   const notes: Record<string, string> = {
-    A: "§7 langkah 1 — cek deterministik gagal → REJECT, insiden 1",
-    B: "§7 langkah 2 — insiden 2 → cap turun",
-    C: "§7 langkah 3 — budget melebihi cap → gerbang menolak saat Funded",
+    A: "§7 step 1 — deterministic check fails -> REJECT, incident 1",
+    B: "§7 step 2 — incident 2 -> cap drops",
+    C: "§7 step 3 — budget exceeds the cap -> the gate rejects while Funded",
   };
   for (const { id, step, onchain } of steps) {
     const jobId = Number(onchain.jobId);
@@ -777,10 +777,10 @@ async function main(): Promise<void> {
   // DITOLAK. Menjalankan D saja berarti mementaskan varian yang dijamin menang.
   const agentAddress = wallet("agent").address;
   const nonceLocalBefore = await nonceOf(RPC_URL, agentAddress);
-  log("varianA.begin", {
+  log("variantA.begin", {
     agent: agentAddress,
     nonce: nonceLocalBefore,
-    note: '"VARIAN A — vault segar (root nol) + memori dihapus"',
+    note: '"VARIANT A — fresh vault (zero root) + memory wiped"',
   });
   const vault2 = await forgeCreate(
     "src/EvaluatorVault.sol:EvaluatorVault",
@@ -788,7 +788,7 @@ async function main(): Promise<void> {
     deployer,
   );
   for (const suffix of MEMORY_DB_SUFFIXES) rmSync(`${DB_PATH}${suffix}`, { force: true });
-  log("varianA.memory.wiped", { db: DB_PATH, files: MEMORY_DB_SUFFIXES.length, vault: vault2 });
+  log("variantA.memory.wiped", { db: DB_PATH, files: MEMORY_DB_SUFFIXES.length, vault: vault2 });
 
   const env4 = baseEnv(deployment, vault2);
   // Job D BERJALAN SAMPAI `submit`, tidak berhenti di `fund` seperti job C. Sebabnya bukan
@@ -807,7 +807,7 @@ async function main(): Promise<void> {
     .split("\n")
     .map((l) => parseLogLine(l, "client_min", "summary"))
     .find((f) => f !== null);
-  if (!summary4) throw new Error("baris summary client_min untuk langkah 4 tidak ditemukan");
+  if (!summary4) throw new Error("no client_min summary line found for step 4");
   const jobId4 = Number(summary4.jobId);
   // `--kind complete` di sini adalah PERMINTAAN, bukan jaminan: `required_verdict_kind` tetap
   // memaksa REJECT bila cek deterministik gagal atau gerbang cap menolak. Kalau langkah 4
@@ -817,7 +817,7 @@ async function main(): Promise<void> {
     job4.stdout.match(/sha_keccak=(0x[0-9a-f]{64})/)?.[1] ?? "-";
   rows.push({
     id: "D",
-    note: "VARIAN A — memori dihapus, root nol: budget yang sama LOLOS gerbang, cacat HALUS lolos",
+    note: "VARIANT A — memory wiped, zero root: the SAME budget PASSES the gate, the SUBTLE defect slips through",
     jobId: String(jobId4),
     budgetRaw: STEP4_BUDGET_RAW,
     deliverableSha: deliverableSha4,
@@ -836,7 +836,7 @@ async function main(): Promise<void> {
     deployer,
   );
   for (const suffix of MEMORY_DB_SUFFIXES) rmSync(`${DB_PATH}${suffix}`, { force: true });
-  log("varianA.memory.wiped", { db: DB_PATH, files: MEMORY_DB_SUFFIXES.length, vault: vault3 });
+  log("variantA.memory.wiped", { db: DB_PATH, files: MEMORY_DB_SUFFIXES.length, vault: vault3 });
 
   const env5 = baseEnv(deployment, vault3);
   const job5 = await runTs("client_min.ts", [], {
@@ -850,14 +850,14 @@ async function main(): Promise<void> {
     .split("\n")
     .map((l) => parseLogLine(l, "client_min", "summary"))
     .find((f) => f !== null);
-  if (!summary5) throw new Error("baris summary client_min untuk job E tidak ditemukan");
+  if (!summary5) throw new Error("no client_min summary line found for job E");
   const jobId5 = Number(summary5.jobId);
   // `--kind complete` DIMINTA di sini juga — persis seperti job D. Kalau job E berakhir
   // REJECT, yang menolaknya adalah cek deterministik agen sendiri, bukan baris perintah.
   const outcome5 = await runAgent(jobId5, "complete", env5);
   rows.push({
     id: "E",
-    note: "VARIAN A — keadaan SAMA dengan D, cacat KASAR di bagian pertama: TETAP DITOLAK",
+    note: "VARIANT A — SAME state as D, COARSE defect in the first section: STILL REJECTED",
     jobId: String(jobId5),
     budgetRaw: STEP4_BUDGET_RAW,
     deliverableSha: job5.stdout.match(/sha_keccak=(0x[0-9a-f]{64})/)?.[1] ?? "-",
@@ -890,7 +890,7 @@ async function main(): Promise<void> {
       depth: row.outcome.plan.depth ?? "?",
       cap: row.outcome.plan.cap ?? "?",
       gate: `"${row.outcome.plan.gate ?? "?"}"`,
-      evaluasi: `"${row.outcome.plan.evaluasi ?? "?"}"`,
+      evaluation: `"${row.outcome.plan.evaluation ?? "?"}"`,
       capSet: `"${row.outcome.cap}"`,
       memoryRoot: row.outcome.memoryRoot,
       reasonHash: row.outcome.reasonHash,
@@ -904,48 +904,48 @@ async function main(): Promise<void> {
     budgetRaw: STEP4_BUDGET_RAW,
     gateWithMemory: `"${rows[2]?.outcome.plan.gate ?? "?"}"`,
     gateWithoutMemory: `"${rows[3]?.outcome.plan.gate ?? "?"}"`,
-    note: '"budget IDENTIK, yang berbeda hanya memori — itulah capnya"',
+    note: '"IDENTICAL budget, only the memory differs — that is the cap"',
   });
   log("claim", {
     step: "D-vs-E",
     depth: `"${rows[3]?.outcome.plan.depth ?? "?"}"`,
-    halus: `"${rows[3]?.outcome.plan.evaluasi ?? "?"}"`,
-    kasar: `"${rows[4]?.outcome.plan.evaluasi ?? "?"}"`,
-    note: '"memori dihapus menurunkan KEDALAMAN, tidak mematikan evaluator"',
+    subtle: `"${rows[3]?.outcome.plan.evaluation ?? "?"}"`,
+    coarse: `"${rows[4]?.outcome.plan.evaluation ?? "?"}"`,
+    note: '"wiping memory lowers the DEPTH, it does not switch the evaluator off"',
   });
 
   // --- DUA VARIAN DESTRUKTIF -----------------------------------------------------------
   // Kedua baris di bawah adalah klimaks naskah dan dicetak APA ADANYA. Jumlah transaksinya
   // BERBEDA, dan keduanya diukur dari nonce wallet agen — bukan dari kalimat.
-  log("varianA", {
+  log("variantA", {
     vaultD: vault2,
     vaultE: vault3,
-    onchainRoot: "0x0 (vault segar)",
+    onchainRoot: "0x0 (fresh vault)",
     depth: rows[3]?.outcome.plan.depth ?? "?",
     cap: `"${rows[3]?.outcome.plan.cap ?? "?"}"`,
-    txBaru: nonceLocalAfter - nonceLocalBefore,
+    newTx: nonceLocalAfter - nonceLocalBefore,
     nonce: `${nonceLocalBefore} -> ${nonceLocalAfter}`,
   });
   console.log(
-    `VARIAN A: ROOT ONCHAIN DIRESET, cap hilang (${rows[3]?.outcome.plan.cap ?? "?"}), ` +
+    `VARIANT A: ONCHAIN ROOT RESET, cap gone (${rows[3]?.outcome.plan.cap ?? "?"}), ` +
       `mode ${rows[3]?.outcome.plan.depth ?? "?"}, ` +
-      `cacat halus LOLOS (job ${rows[3]?.jobId ?? "?"}: ${rows[3]?.outcome.plan.evaluasi ?? "?"}), ` +
-      `cacat kasar DITOLAK (job ${rows[4]?.jobId ?? "?"}: ${rows[4]?.outcome.plan.evaluasi ?? "?"}), ` +
-      `${nonceLocalAfter - nonceLocalBefore} tx baru, nonce ${nonceLocalBefore} -> ${nonceLocalAfter}`,
+      `subtle defect PASSES (job ${rows[3]?.jobId ?? "?"}: ${rows[3]?.outcome.plan.evaluation ?? "?"}), ` +
+      `coarse defect REJECTED (job ${rows[4]?.jobId ?? "?"}: ${rows[4]?.outcome.plan.evaluation ?? "?"}), ` +
+      `${nonceLocalAfter - nonceLocalBefore} new tx, nonce ${nonceLocalBefore} -> ${nonceLocalAfter}`,
   );
-  log("varianB", {
+  log("variantB", {
     vault: FROZEN_VAULT,
     rpc: SEPOLIA_RPC,
     jobId: FROZEN_JOB_ID,
     onchainRoot: varianB.onchainRoot,
     agent: varianB.agentAddress,
     agentExit: varianB.exit,
-    txBaru: varianB.nonceAfter - varianB.nonceBefore,
-    aturan: '"(a) memori lokal HILANG (ADR-024 kep. 2 cabang 2), bukan (b)"',
+    newTx: varianB.nonceAfter - varianB.nonceBefore,
+    rule: '"(a) local memory MISSING (ADR-024 dec. 2 branch 2), not (b)"',
   });
   console.log(
-    `VARIAN B: MODE AMAN, 0 tx baru, nonce ${varianB.nonceBefore} -> ${varianB.nonceAfter}, ` +
-      "job menggantung sampai expiredAt, pulih dengan memory.db dari backup",
+    `VARIANT B: SAFE MODE, 0 new tx, nonce ${varianB.nonceBefore} -> ${varianB.nonceAfter}, ` +
+      "job hangs until expiredAt, recover with memory.db from backup",
   );
 
   // Baris yang MEMANG berbeda tiap eksekusi.
@@ -984,7 +984,7 @@ if (isEntrypoint) {
     .catch((err: unknown) => {
       stopAnvil();
       const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-      console.error(`[demo] GAGAL ${message}`);
+      console.error(`[demo] FAILED ${message}`);
       process.exitCode = 1;
     });
 }

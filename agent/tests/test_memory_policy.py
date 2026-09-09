@@ -792,7 +792,7 @@ def test_unreadable_onchain_root_is_safe_mode_when_memory_is_missing(onchain):
     assert keputusan.mode == mp.MODE_SAFE
     assert keputusan.allow_finalize is False
     assert keputusan.allow_post_verdict is False
-    assert "tidak terbaca" in keputusan.reason
+    assert "unreadable" in keputusan.reason
 
 
 @pytest.mark.parametrize("onchain", [None, "", "0x", 32, b"\x01" * 31, "0x" + "zz" * 32, 0, []])
@@ -863,7 +863,7 @@ def test_safe_mode_halts_every_transaction_and_says_so_plainly():
         False, False, False
     )
     assert mp.SAFE_MODE_CONSEQUENCE in aman.reason
-    for frasa in ("berhenti total", "MENGGANTUNG sampai expiredAt", "claimRefund", "refund penuh"):
+    for frasa in ("halts completely", "HANGS until expiredAt", "claimRefund", "full refund"):
         assert frasa in aman.reason
     for boleh in (NAIVE, mp.decide_mode(ROOT_A, BUKTI_ADA)):
         assert boleh.allow_set_provider_cap is True
@@ -921,7 +921,7 @@ def test_lock_failure_never_falls_into_naive_mode():
     for onchain in (mp.ZERO_ROOT, ROOT_ZERO_HEX, ROOT_A, None, "0x"):
         keputusan = mp.decide_mode(onchain, BUKTI_TERKUNCI)
         assert keputusan.mode == mp.MODE_SAFE, onchain
-        assert "kunci single-instance" in keputusan.reason
+        assert "single-instance memory.db lock" in keputusan.reason
     # Memori RUSAK juga tidak pernah jatuh ke NAIF.
     assert mp.decide_mode(mp.ZERO_ROOT, BUKTI_RUSAK).mode == mp.MODE_SAFE
 

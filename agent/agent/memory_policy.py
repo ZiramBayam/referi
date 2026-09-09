@@ -714,7 +714,7 @@ class LocalMemoryEvidence:
 
     @property
     def root_hex(self) -> str:
-        return "TIDAK TERBACA" if self.root is None else "0x" + self.root.hex()
+        return "UNREADABLE" if self.root is None else "0x" + self.root.hex()
 
 
 @dataclass(frozen=True)
@@ -1455,7 +1455,7 @@ def decide_mode(onchain_root: Any, local: LocalMemoryEvidence | None) -> ModeDec
             f"({type(local).__name__}) — perbandingan sepasang root sudah dicabut"
         )
 
-    evidence = local if local is not None else LocalMemoryEvidence.error("bukti tidak diberikan")
+    evidence = local if local is not None else LocalMemoryEvidence.error("no evidence supplied")
 
     # (1) Kunci gagal / pembacaan melempar → AMAN, mendahului SEGALANYA.
     #
@@ -1467,11 +1467,12 @@ def decide_mode(onchain_root: Any, local: LocalMemoryEvidence | None) -> ModeDec
     # kalibrasi yang hilang.
     if evidence.status == LOCAL_MEMORY_LOCK_FAILED:
         return _safe_decision(
-            f"kunci single-instance memory.db tidak didapat ({evidence.detail}) → ada instans "
-            "agen lain, dan dua instans yang menandatangani dari satu wallet tidak boleh terjadi"
+            f"the single-instance memory.db lock was not acquired ({evidence.detail}) -> "
+            "another agent instance exists, and two instances signing from one wallet must "
+            "never happen"
         )
     if evidence.status == LOCAL_MEMORY_ERROR:
-        return _safe_decision(f"memori lokal ada tetapi tidak bisa dibaca ({evidence.detail})")
+        return _safe_decision(f"local memory exists but cannot be read ({evidence.detail})")
 
     # (2) File memori HILANG. INILAH satu-satunya cabang yang membaca root on-chain, dan ia
     # membacanya untuk SATU pertanyaan saja: apakah vault ini sudah pernah hidup?
@@ -1492,15 +1493,15 @@ def decide_mode(onchain_root: Any, local: LocalMemoryEvidence | None) -> ModeDec
         onchain, onchain_ok = _read_root(onchain_root)
         if not onchain_ok:
             return _safe_decision(
-                f"memori lokal hilang ({evidence.detail}) dan root onchain tidak terbaca "
-                "(nilai tidak sah) → tidak boleh menebak mana yang hari pertama"
+                f"local memory is missing ({evidence.detail}) and the onchain root is "
+                "unreadable (invalid value) -> guessing which one is day one is not allowed"
             )
         if onchain == ZERO_ROOT:
             return ModeDecision(
                 mode=MODE_NAIVE,
                 reason=(
-                    f"memori lokal hilang ({evidence.detail}) tetapi vault belum pernah "
-                    "mengumumkan root (hari pertama) → evaluasi stateless"
+                    f"local memory is missing ({evidence.detail}) but the vault has never "
+                    "announced a root (day one) -> stateless evaluation"
                 ),
                 depth=DEPTH_SAMPLING,
                 forced_risk=None,
@@ -1509,8 +1510,8 @@ def decide_mode(onchain_root: Any, local: LocalMemoryEvidence | None) -> ModeDec
                 allow_set_provider_cap=True,
             )
         return _safe_decision(
-            f"memori lokal hilang ({evidence.detail}) padahal vault sudah pernah mengumumkan "
-            "root → memori dihapus"
+            f"local memory is missing ({evidence.detail}) even though the vault has already "
+            "announced a root -> memory was wiped"
         )
 
     # (3) Selebihnya NORMAL — TERMASUK memori kosong dengan nol job outcome (ADR-024
@@ -1522,8 +1523,8 @@ def decide_mode(onchain_root: Any, local: LocalMemoryEvidence | None) -> ModeDec
     return ModeDecision(
         mode=MODE_NORMAL,
         reason=(
-            f"memori lokal ada dan terbaca: {evidence.job_outcomes} job outcome tercatat "
-            f"({evidence.detail})"
+            f"local memory exists and is readable: {evidence.job_outcomes} job outcome(s) "
+            f"recorded ({evidence.detail})"
         ),
         depth=DEPTH_SAMPLING,
         forced_risk=None,
@@ -1536,9 +1537,9 @@ def decide_mode(onchain_root: Any, local: LocalMemoryEvidence | None) -> ModeDec
 # ADR-020 keputusan 8. Kalimat ini dibawa APA ADANYA ke `reason` mode aman: konsekuensinya
 # diucapkan, bukan diperhalus menjadi "ditolak dengan aman".
 SAFE_MODE_CONSEQUENCE: Final = (
-    "agen berhenti total: tidak ada postVerdict, tidak ada finalize, tidak ada setProviderCap; "
-    "job MENGGANTUNG sampai expiredAt, lalu siapa pun boleh claimRefund dan client menerima "
-    "refund penuh"
+    "the agent halts completely: no postVerdict, no finalize, no setProviderCap; "
+    "the job HANGS until expiredAt, after which anyone may call claimRefund and the client "
+    "receives a full refund"
 )
 
 

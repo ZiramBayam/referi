@@ -59,7 +59,7 @@ def test_loadVerifiedDeliverable_refuses_whenTextTampered(tmp_path, caplog):
         with pytest.raises(src.DeliverableUnverifiedError) as exc:
             src.load_verified_deliverable(7, onchain_hash(HONEST_TEXT), tmp_path)
     assert str(exc.value).startswith(src.REFUSAL_LINE)
-    assert "!= deliverable on-chain" in str(exc.value)
+    assert "!= on-chain deliverable" in str(exc.value)
     assert any(src.REFUSAL_LINE in r.getMessage() for r in caplog.records)
 
 
@@ -79,14 +79,14 @@ def test_loadVerifiedDeliverable_refuses_whenArtifactBelongsToAnotherJob(tmp_pat
     body = json.loads((tmp_path / "7.json").read_text(encoding="utf-8"))
     body["jobId"] = 8
     (tmp_path / "7.json").write_text(json.dumps(body), encoding="utf-8")
-    with pytest.raises(src.DeliverableUnverifiedError, match="bukan job 7"):
+    with pytest.raises(src.DeliverableUnverifiedError, match="is not job 7"):
         src.load_verified_deliverable(7, onchain_hash(HONEST_TEXT), tmp_path)
 
 
 def test_loadVerifiedDeliverable_refuses_whenOnchainValueIsZero(tmp_path):
     """bytes32 nol = belum submit. `kosong == kosong` tidak boleh pernah cocok."""
     write_artifact(tmp_path, 7, HONEST_TEXT)
-    with pytest.raises(src.DeliverableUnverifiedError, match="bytes32 nol"):
+    with pytest.raises(src.DeliverableUnverifiedError, match="zero bytes32"):
         src.load_verified_deliverable(7, "0x" + "00" * 32, tmp_path)
 
 
@@ -99,26 +99,26 @@ def test_loadVerifiedDeliverable_refuses_whenShaFieldContradictsText(tmp_path):
 
 def test_loadVerifiedDeliverable_refuses_whenExtraFieldsPresent(tmp_path):
     write_artifact(tmp_path, 7, HONEST_TEXT, verdict="complete")
-    with pytest.raises(src.DeliverableUnverifiedError, match="di luar ADR-019"):
+    with pytest.raises(src.DeliverableUnverifiedError, match="outside ADR-019"):
         src.load_verified_deliverable(7, onchain_hash(HONEST_TEXT), tmp_path)
 
 
 def test_loadVerifiedDeliverable_refuses_whenNotJson(tmp_path):
     (tmp_path / "7.json").write_text("bukan json", encoding="utf-8")
-    with pytest.raises(src.DeliverableUnverifiedError, match="bukan JSON"):
+    with pytest.raises(src.DeliverableUnverifiedError, match="not valid UTF-8 JSON"):
         src.load_verified_deliverable(7, onchain_hash(HONEST_TEXT), tmp_path)
 
 
 def test_loadVerifiedDeliverable_refuses_whenTextIsNotString(tmp_path):
     (tmp_path / "7.json").write_text(json.dumps({"jobId": 7, "text": 12}), encoding="utf-8")
-    with pytest.raises(src.DeliverableUnverifiedError, match="bukan string"):
+    with pytest.raises(src.DeliverableUnverifiedError, match="not string"):
         src.load_verified_deliverable(7, onchain_hash(HONEST_TEXT), tmp_path)
 
 
 def test_loadVerifiedDeliverable_refuses_whenFileTooLarge(tmp_path, monkeypatch):
     write_artifact(tmp_path, 7, HONEST_TEXT)
     monkeypatch.setattr(src, "MAX_DELIVERABLE_BYTES", 10)
-    with pytest.raises(src.DeliverableUnverifiedError, match="batas"):
+    with pytest.raises(src.DeliverableUnverifiedError, match="limit"):
         src.load_verified_deliverable(7, onchain_hash(HONEST_TEXT), tmp_path)
 
 

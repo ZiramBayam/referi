@@ -56,7 +56,7 @@ DEFAULT_DELIVERABLE_DIR: Final = "demo/deliverables"
 
 # Baris yang WAJIB tercetak saat menolak (ADR-019 keputusan 2). Sama seperti `MODE AMAN:`,
 # ia adalah BUKTI, jadi bentuknya tidak boleh diringkas/diterjemahkan pemanggil.
-REFUSAL_LINE: Final = "DELIVERABLE TIDAK TERVERIFIKASI"
+REFUSAL_LINE: Final = "DELIVERABLE NOT VERIFIED"
 
 # Batas ukuran file. Deliverable demo berukuran kilobyte; 256 KiB memberi ruang lebar
 # tanpa mengizinkan file lokal 2 GB menghabiskan memori agen sebelum satu hash pun dihitung.
@@ -117,19 +117,19 @@ def _parse_onchain(value: bytes | bytearray | str) -> bytes:
             raw = bytes.fromhex(text)
         except ValueError as exc:
             raise DeliverableUnverifiedError(
-                f"{REFUSAL_LINE}: nilai deliverable on-chain bukan hex 32 byte"
+                f"{REFUSAL_LINE}: the on-chain deliverable value is not 32-byte hex"
             ) from exc
     else:
         raise DeliverableUnverifiedError(
-            f"{REFUSAL_LINE}: nilai deliverable on-chain bertipe {type(value).__name__}"
+            f"{REFUSAL_LINE}: the on-chain deliverable value has type {type(value).__name__}"
         )
     if len(raw) != 32:
         raise DeliverableUnverifiedError(
-            f"{REFUSAL_LINE}: nilai deliverable on-chain {len(raw)} byte, bukan 32"
+            f"{REFUSAL_LINE}: the on-chain deliverable value is {len(raw)} bytes, not 32"
         )
     if raw == bytes(32):
         raise DeliverableUnverifiedError(
-            f"{REFUSAL_LINE}: deliverable on-chain masih bytes32 nol (job belum submit)"
+            f"{REFUSAL_LINE}: the on-chain deliverable is still zero bytes32 (job not submitted yet)"
         )
     return raw
 
@@ -145,15 +145,15 @@ def _artifact_path(job_id: int, directory: Path) -> Path:
     """
     if isinstance(job_id, bool) or not isinstance(job_id, int):
         raise DeliverableUnverifiedError(
-            f"{REFUSAL_LINE}: job_id harus int, dapat {type(job_id).__name__}"
+            f"{REFUSAL_LINE}: job_id must be an int, got {type(job_id).__name__}"
         )
     if job_id < 0:
-        raise DeliverableUnverifiedError(f"{REFUSAL_LINE}: job_id negatif ({job_id})")
+        raise DeliverableUnverifiedError(f"{REFUSAL_LINE}: negative job_id ({job_id})")
     path = directory / f"{job_id}.json"
     if path.is_symlink():
-        raise DeliverableUnverifiedError(f"{REFUSAL_LINE}: {path} adalah symlink")
+        raise DeliverableUnverifiedError(f"{REFUSAL_LINE}: {path} is a symlink")
     if path.parent.resolve() != directory.resolve():
-        raise DeliverableUnverifiedError(f"{REFUSAL_LINE}: {path} di luar {directory}")
+        raise DeliverableUnverifiedError(f"{REFUSAL_LINE}: {path} is outside {directory}")
     return path
 
 
@@ -198,56 +198,56 @@ def load_verified_deliverable(
         return DeliverableUnverifiedError(message)
 
     if not path.is_file():
-        raise refuse(f"berkas {path} tidak ada")
+        raise refuse(f"file {path} does not exist")
     size = path.stat().st_size
     if size > MAX_DELIVERABLE_BYTES:
-        raise refuse(f"berkas {path} {size} byte > batas {MAX_DELIVERABLE_BYTES}")
+        raise refuse(f"file {path} is {size} bytes > limit {MAX_DELIVERABLE_BYTES}")
 
     raw = path.read_bytes()
     try:
         obj = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise refuse(f"{path} bukan JSON UTF-8 yang sah ({type(exc).__name__})") from exc
+        raise refuse(f"{path} is not valid UTF-8 JSON ({type(exc).__name__})") from exc
     if not isinstance(obj, dict):
-        raise refuse(f"{path} bukan objek JSON")
+        raise refuse(f"{path} is not a JSON object")
     unknown = set(obj) - _ARTIFACT_FIELDS
     if unknown:
-        raise refuse(f"{path} memuat field di luar ADR-019: {sorted(unknown)}")
+        raise refuse(f"{path} carries fields outside ADR-019: {sorted(unknown)}")
 
     claimed_id = obj.get("jobId")
     if isinstance(claimed_id, bool) or not isinstance(claimed_id, (int, str)):
-        raise refuse(f"{path}: jobId bertipe {type(claimed_id).__name__}")
+        raise refuse(f"{path}: jobId has type {type(claimed_id).__name__}")
     try:
         if int(claimed_id) != job_id:
-            raise refuse(f"{path}: jobId {claimed_id!r} bukan job {job_id}")
+            raise refuse(f"{path}: jobId {claimed_id!r} is not job {job_id}")
     except ValueError as exc:
-        raise refuse(f"{path}: jobId {claimed_id!r} bukan bilangan") from exc
+        raise refuse(f"{path}: jobId {claimed_id!r} is not a number") from exc
 
     text = obj.get("text")
     if not isinstance(text, str):
-        raise refuse(f"{path}: field text bertipe {type(text).__name__}, bukan string")
+        raise refuse(f"{path}: the text field has type {type(text).__name__}, not string")
     try:
         text.encode("utf-8")
     except UnicodeEncodeError as exc:  # surrogate yatim — Python melempar, Node menambal
-        raise refuse(f"{path}: text tidak bisa di-encode UTF-8") from exc
+        raise refuse(f"{path}: text cannot be encoded as UTF-8") from exc
 
     actual = keccak_text(text)
     if actual != expected:
         raise refuse(
-            f"keccak256(text) = 0x{actual.hex()} != deliverable on-chain 0x{expected.hex()}"
+            f"keccak256(text) = 0x{actual.hex()} != on-chain deliverable 0x{expected.hex()}"
         )
 
     claimed_hash = obj.get("sha_keccak")
     if claimed_hash is not None:
         if not isinstance(claimed_hash, str):
-            raise refuse(f"{path}: sha_keccak bertipe {type(claimed_hash).__name__}")
+            raise refuse(f"{path}: sha_keccak has type {type(claimed_hash).__name__}")
         normalized = claimed_hash.strip().lower()
         normalized = normalized[2:] if normalized.startswith("0x") else normalized
         if normalized != actual.hex():
             raise refuse(f"{path}: sha_keccak {claimed_hash!r} != 0x{actual.hex()}")
 
     log.info(
-        "deliverable terverifikasi: job=%s hash=0x%s sumber=%s (%d byte teks)",
+        "deliverable verified: job=%s hash=0x%s source=%s (%d bytes of text)",
         job_id,
         actual.hex(),
         path,

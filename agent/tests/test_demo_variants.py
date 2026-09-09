@@ -26,8 +26,18 @@ DEMO_TS = REPO_ROOT / "sim" / "src" / "demo.ts"
 # Apa adanya, sampai tanda baca. Placeholder nonce sengaja dibiarkan sebagai ekspresi
 # template supaya tes ini menjaga KALIMATNYA, bukan angkanya.
 LOCKED_VARIANT_B_LINE = (
-    "`VARIAN B: MODE AMAN, 0 tx baru, nonce ${varianB.nonceBefore} -> ${varianB.nonceAfter}, ` +\n"
-    '      "job menggantung sampai expiredAt, pulih dengan memory.db dari backup"'
+    "`VARIANT B: SAFE MODE, 0 new tx, nonce ${varianB.nonceBefore} -> ${varianB.nonceAfter}, ` +\n"
+    '      "job hangs until expiredAt, recover with memory.db from backup"'
+)
+
+# Unsur yang DILARANG hilang dari baris itu (ADR-020 keputusan 8 + ADR-024 konsekuensi
+# terakhir). Terjemahan BUKAN peringkasan: kelimanya wajib tetap ada dalam bahasa Inggris.
+LOCKED_VARIANT_B_ELEMENTS = (
+    "VARIANT B: SAFE MODE",
+    "0 new tx",
+    "nonce ${varianB.nonceBefore} -> ${varianB.nonceAfter}",
+    "job hangs until expiredAt",
+    "recover with memory.db from backup",
 )
 
 
@@ -38,14 +48,17 @@ def demo_source() -> str:
 def test_variantB_line_isPrintedVerbatim_notSummarized():
     source = demo_source()
     assert LOCKED_VARIANT_B_LINE in source
-    # Peringkasan yang DILARANG ADR-020 keputusan 8.
+    for unsur in LOCKED_VARIANT_B_ELEMENTS:
+        assert unsur in source
+    # Peringkasan yang DILARANG ADR-020 keputusan 8, dalam dua bahasa.
     assert "ditolak dengan aman" not in source.lower()
+    assert "safely rejected" not in source.lower()
 
 
 def test_bothVariantsArePrinted_withDifferentTransactionCounts():
     source = demo_source()
-    assert "VARIAN A:" in source
-    assert "VARIAN B:" in source
+    assert "VARIANT A:" in source
+    assert "VARIANT B:" in source
     # Varian A menghitung tx dari nonce agen di rantai lokal; varian B dari nonce Sepolia.
     assert "nonceLocalAfter - nonceLocalBefore" in source
     assert "varianB.nonceAfter - varianB.nonceBefore" in source
@@ -53,8 +66,8 @@ def test_bothVariantsArePrinted_withDifferentTransactionCounts():
 
 def test_variantB_isTriggeredByTheMissingFileRule_notTheRevokedOne():
     source = demo_source()
-    assert "memori lokal hilang .* → memori dihapus" in source
-    assert "gerbang memori: mode=safe" in source
+    assert "local memory is missing .* -> memory was wiped" in source
+    assert "memory gate: mode=safe" in source
 
 
 def test_memoryWipeCoversAllThreeFiles():
@@ -122,11 +135,11 @@ def test_preflightFailsHard_neverFailsOpen():
 def test_preflightMessageNamesExactlyWhatIsNeeded():
     body = preflight_body()
     assert "https://sepolia.base.org" in demo_source()
-    assert "akses jaringan keluar ke ${SEPOLIA_RPC}" in body
-    assert "NOL dana, NOL transaksi, NOL kunci privat" in body
+    assert "outbound network access to ${SEPOLIA_RPC}" in body
+    assert "ZERO funds, ZERO transactions, ZERO private keys" in body
     # Alasannya, bukan hanya syaratnya: varian B membaca vault beku (amandemen ADR-023).
-    assert "VARIAN B membaca vault BEKU" in body
-    assert "amandemen ADR-023" in body
+    assert "VARIANT B reads the FROZEN vault" in body
+    assert "ADR-023 amendment" in body
 
 
 def test_preflightSendsNoTransaction():

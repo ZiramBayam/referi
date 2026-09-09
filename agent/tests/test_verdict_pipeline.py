@@ -339,8 +339,8 @@ def test_a_funded_job_over_cap_is_actually_announced_as_reject(db, caplog):
     assert client.w3.eth.built == ["postVerdict", "finalize"]
     assert len(client.sent_transactions) == 2
     # `--kind complete` TIDAK boleh menang atas gating (spec §5 langkah 2).
-    assert "GERBANG MENOLAK" in caplog.text
-    assert "gate=DITOLAK" in caplog.text
+    assert "GATE REJECTS" in caplog.text
+    assert "gate=REJECTED" in caplog.text
 
 
 def test_the_gate_rejection_bundle_names_the_cap_and_both_incident_jobs(db):
@@ -401,7 +401,7 @@ def test_a_gate_rejection_bundle_can_never_ride_along_with_a_complete_verdict(db
 
     with pytest.raises(vc.MemoryRootMismatch) as exc:
         vc.run_live(client, JOB_C, vc.KIND_COMPLETE, plan=plan)
-    assert "BUKTI PENOLAKAN GERBANG TIDAK COCOK" in str(exc.value)
+    assert "GATE-REJECTION EVIDENCE DOES NOT MATCH" in str(exc.value)
     assert_nothing_was_sent(client)
 
 
@@ -560,7 +560,7 @@ def test_a_mode_that_changes_between_plan_and_send_stops_the_pipeline(db, artifa
 
     with pytest.raises(vc.MemoryRootMismatch) as exc:
         vc.run_live(client, JOB_B, vc.KIND_REJECT, plan=plan)
-    assert "MODE BERUBAH DI TENGAH PIPA" in str(exc.value)
+    assert "MODE CHANGED MID-PIPELINE" in str(exc.value)
     assert_nothing_was_sent(client)
 
 
@@ -581,7 +581,7 @@ def test_an_empty_root_is_never_announced_after_a_real_memory_was_read(db):
 
     with pytest.raises(vc.MemoryRootMismatch) as exc:
         client.derived_memory_root()
-    assert "ROOT KOSONG DITOLAK" in str(exc.value)
+    assert "EMPTY ROOT REFUSED" in str(exc.value)
     with pytest.raises(vc.MemoryRootMismatch):
         client.post_verdict(JOB_C, vc.KIND_REJECT, b"\x01" * 32, mp.empty_memory_root())
     assert_nothing_was_sent(client)
@@ -614,7 +614,7 @@ def test_main_reports_a_refusal_with_its_own_exit_code_not_zero(db, monkeypatch,
     client = build_client(db=db, job_id=JOB_C, status=1, budget=2_000_000)
 
     def tolak(client_, job_id, kind, plan=None):
-        raise vc.MemoryRootMismatch("ROOT BUKAN TURUNAN MEMORI: tes")
+        raise vc.MemoryRootMismatch("ROOT IS NOT DERIVED FROM MEMORY: tes")
 
     monkeypatch.setattr(vc, "run_live", tolak)
     with caplog.at_level(logging.INFO, logger="vault_client"):
@@ -635,7 +635,7 @@ def test_safe_mode_at_start_is_still_a_clean_exit_zero(tmp_path, monkeypatch, ca
 
     with caplog.at_level(logging.INFO, logger="vault_client"):
         assert vc.main(["--job-id", str(JOB_C), "--kind", "reject"]) == 0
-    assert "MODE AMAN" in caplog.text
+    assert "SAFE MODE" in caplog.text
     assert vc.EXIT_REFUSED_MESSAGE not in caplog.text
 
 
@@ -694,7 +694,7 @@ def test_a_submitted_job_over_cap_is_still_forced_to_reject(db, artifacts, caplo
 
     assert kode == 0
     assert terekam["kind"] == vc.KIND_REJECT, "flag operator tidak boleh menang atas gating cap"
-    assert "GERBANG MENOLAK" in caplog.text
+    assert "GATE REJECTS" in caplog.text
     assert client.w3.eth.built == ["postVerdict", "setProviderCap", "finalize"]
 
 
@@ -729,7 +729,7 @@ def test_a_submitted_over_cap_bundle_can_never_ride_with_a_complete_verdict(db, 
 
     with pytest.raises(vc.MemoryRootMismatch) as exc:
         vc.run_live(client, JOB_C, vc.KIND_COMPLETE, plan=plan)
-    assert "BUKTI PENOLAKAN GERBANG TIDAK COCOK" in str(exc.value)
+    assert "GATE-REJECTION EVIDENCE DOES NOT MATCH" in str(exc.value)
     assert_nothing_was_sent(client)
 
 
@@ -768,7 +768,7 @@ def test_a_failed_deterministic_check_forces_reject_without_any_flag(db, artifac
         assert vc.run_job(client, JOB_A, vc.KIND_COMPLETE, deliverable_dir=artifacts) == 0
 
     assert terekam["kind"] == vc.KIND_REJECT
-    assert "CEK DETERMINISTIK GAGAL" in caplog.text
+    assert "DETERMINISTIC CHECKS FAILED" in caplog.text
     # Verdict dan bundel yang di-hash menyatakan hal yang SAMA.
     bundel = vc.verdict_evidence(plan, plan.memory_root, vc.KIND_REJECT)
     assert bundel["verdict"] == vc.KIND_REJECT
@@ -783,7 +783,7 @@ def test_a_failing_evaluation_can_never_ride_with_a_complete_verdict(db, artifac
 
     with pytest.raises(vc.VerdictMismatch) as exc:
         vc.run_live(client, JOB_A, vc.KIND_COMPLETE, plan=plan)
-    assert "BUKTI CEK GAGAL TIDAK COCOK DENGAN VERDICT" in str(exc.value)
+    assert "FAILED-CHECK EVIDENCE DOES NOT MATCH THE VERDICT" in str(exc.value)
     assert_nothing_was_sent(client)
 
 
@@ -806,7 +806,7 @@ def test_the_cli_has_no_default_verdict(db, artifacts, monkeypatch, caplog):
         kode = run_main_with(monkeypatch, client, ["--job-id", str(JOB_A)])
 
     assert kode == 2
-    assert "--kind WAJIB" in caplog.text
+    assert "--kind IS REQUIRED" in caplog.text
     assert_nothing_was_sent(client)
 
 
@@ -823,7 +823,7 @@ def test_run_live_refuses_a_plan_that_belongs_to_another_job(db):
 
     with pytest.raises(vc.VerdictMismatch) as exc:
         vc.run_live(client, 777, vc.KIND_REJECT, plan=plan)
-    assert "RENCANA MILIK JOB LAIN" in str(exc.value)
+    assert "PLAN BELONGS TO ANOTHER JOB" in str(exc.value)
     assert_nothing_was_sent(client)
 
 
@@ -861,7 +861,7 @@ def test_memory_written_after_the_plan_stops_the_pipeline(db):
 
     with pytest.raises(vc.VerdictMismatch) as exc:
         vc.run_live(client, JOB_C, vc.KIND_REJECT, plan=plan)
-    assert "MEMORI BERUBAH DI TENGAH PIPA" in str(exc.value)
+    assert "MEMORY CHANGED MID-PIPELINE" in str(exc.value)
     assert_nothing_was_sent(client)
 
 
@@ -881,7 +881,7 @@ def test_a_plan_that_carries_no_root_can_never_produce_a_transaction(db):
 
     with pytest.raises(vc.VerdictMismatch) as exc:
         vc.run_live(client, JOB_C, vc.KIND_REJECT, plan=tanpa_root)
-    assert "RENCANA TIDAK TERIKAT ROOT" in str(exc.value)
+    assert "PLAN IS NOT BOUND TO A ROOT" in str(exc.value)
     assert_nothing_was_sent(client)
 
 
@@ -902,8 +902,8 @@ def test_an_existing_complete_verdict_is_not_finalized_when_the_gate_now_rejects
         kode = run_main_with(monkeypatch, client, ["--job-id", str(JOB_C), "--kind", "complete"])
 
     assert kode == vc.EXIT_REFUSED
-    assert "VERDICT ON-CHAIN BERBEDA DARI HITUNGAN SEKARANG" in caplog.text
-    assert "PIPA HIDUP SELESAI" not in caplog.text
+    assert "ON-CHAIN VERDICT DIFFERS FROM TODAY'S COMPUTATION" in caplog.text
+    assert "LIVE PIPELINE COMPLETE" not in caplog.text
     assert_nothing_was_sent(client)
 
 
@@ -916,7 +916,7 @@ def test_a_foreign_reason_hash_on_chain_is_never_finalized(db):
 
     with pytest.raises(vc.VerdictMismatch) as exc:
         vc.run_job(client, JOB_C, vc.KIND_REJECT)
-    assert "BUKTI ON-CHAIN TIDAK BISA DIREPRODUKSI" in str(exc.value)
+    assert "ON-CHAIN EVIDENCE CANNOT BE REPRODUCED" in str(exc.value)
     assert "0x" + dede.hex() in str(exc.value)
     assert_nothing_was_sent(client)
 
@@ -978,7 +978,7 @@ def test_set_provider_cap_refuses_the_unlimited_value(db):
     client = build_client(db=db, job_id=JOB_C)
     with pytest.raises(vc.UnlimitedCapRefused) as exc:
         client.set_provider_cap(PROVIDER, 0)
-    assert "CAP TANPA BATAS DITOLAK" in str(exc.value)
+    assert "UNLIMITED CAP REFUSED" in str(exc.value)
     assert_nothing_was_sent(client)
 
 
@@ -1017,7 +1017,7 @@ def test_a_negative_cap_is_refused_before_it_reaches_the_encoder(db):
     client = build_client(db=db, job_id=JOB_C)
     with pytest.raises(vc.UnlimitedCapRefused) as exc:
         client.set_provider_cap(PROVIDER, -1)
-    assert "CAP NEGATIF DITOLAK" in str(exc.value)
+    assert "NEGATIVE CAP REFUSED" in str(exc.value)
     assert_nothing_was_sent(client)
 
 
@@ -1108,7 +1108,7 @@ def test_a_rerun_while_the_rpc_node_lags_can_never_overwrite_the_announced_bundl
         assert vc.run_live(ketiga, JOB_B, vc.KIND_REJECT, plan=rencana3) == 0
     # Sama seperti di atas: vault palsu tidak menyimpan cap, jadi ia dikirim ulang.
     assert ketiga.w3.eth.built == ["setProviderCap", "finalize"]
-    assert "DIREPRODUKSI" in caplog.text
+    assert "REPRODUCED" in caplog.text
 
 
 def test_two_bundles_of_one_job_never_share_a_file(db, artifacts, tmp_path):
@@ -1143,7 +1143,7 @@ def test_a_hand_edited_bundle_is_never_silently_overwritten(db, artifacts, tmp_p
 
     with pytest.raises(vc.VerdictMismatch) as exc:
         vc.store_verdict_bundle(direktori, JOB_B, bundel)
-    assert "TOKO BUKTI TIDAK KONSISTEN" in str(exc.value)
+    assert "EVIDENCE STORE IS INCONSISTENT" in str(exc.value)
     assert path.read_text(encoding="utf-8") == "{}"
 
 
@@ -1213,7 +1213,7 @@ def test_only_the_keccak_condition_is_wrong_and_that_alone_stops_the_finalize(db
     assert vc.bundle_reproduces_onchain(teks, JOB_C, onchain) is False
     with pytest.raises(vc.VerdictMismatch) as exc:
         vc.run_live(client, JOB_C, vc.KIND_REJECT, plan=plan)
-    assert "BUKTI ON-CHAIN TIDAK BISA DIREPRODUKSI" in str(exc.value)
+    assert "ON-CHAIN EVIDENCE CANNOT BE REPRODUCED" in str(exc.value)
     assert_nothing_was_sent(client)
 
 
@@ -1363,8 +1363,8 @@ def test_the_first_invocation_on_a_fresh_vault_refuses_and_only_creates_the_memo
         kode = run_main_with(monkeypatch, client, ["--job-id", str(JOB_C), "--kind", "complete"])
 
     assert kode == vc.EXIT_REFUSED
-    assert "MODE NAIF" in caplog.text
-    assert "MODE BERUBAH DI TENGAH PIPA" in caplog.text
+    assert "NAIVE MODE" in caplog.text
+    assert "MODE CHANGED MID-PIPELINE" in caplog.text
     assert_nothing_was_sent(client)
     assert db.exists() is True, "justru pembuatan file inilah yang menggeser modenya"
 
@@ -1456,6 +1456,6 @@ def test_safe_mode_still_never_touches_the_memory_path(tmp_path, artifacts, monk
     with caplog.at_level(logging.INFO, logger="vault_client"):
         assert vc.main(["--job-id", str(JOB_C), "--kind", "complete"]) == 0
 
-    assert "MODE AMAN" in caplog.text
+    assert "SAFE MODE" in caplog.text
     assert_nothing_was_sent(client)
     assert db.exists() is False, "mode aman DILARANG melahirkan memory.db"

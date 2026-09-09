@@ -501,11 +501,11 @@ def evaluate_job(
         results=results,
     )
     log.info(
-        "evaluasi job=%s kategori=%s depth=%s → %s (gagal=%s, tak-terperiksa=%s)",
+        "evaluation job=%s category=%s depth=%s -> %s (failed=%s, unverified=%s)",
         job_id,
         resolved,
         depth,
-        "LOLOS" if evaluation.passed else "DITOLAK",
+        "PASS" if evaluation.passed else "REJECTED",
         list(evaluation.failed_checks),
         list(evaluation.unverified_criteria),
     )

@@ -281,9 +281,9 @@ def test_memory_with_job_outcomes_runs_normally_even_though_roots_differ(db):
     assert gate.local.root is not None and gate.local.root != ROOT_ONCHAIN
     assert gate.decision.mode == mp.MODE_NORMAL
     assert gate.is_safe is False
-    assert gate.line.startswith("MODE NORMAL: ")
-    assert "(konteks saja)" in gate.line
-    assert "memori lokal 1 job" in gate.line
+    assert gate.line.startswith("NORMAL MODE: ")
+    assert "(context only)" in gate.line
+    assert "local memory 1 job" in gate.line
 
 
 # ----------------------------------------------------------------------
@@ -298,7 +298,7 @@ def test_zero_onchain_root_is_naive_mode_and_actually_sends(db):
 
     assert gate.decision.mode == mp.MODE_NAIVE
     assert gate.is_safe is False
-    assert gate.line.startswith("MODE NAIF: ")
+    assert gate.line.startswith("NAIVE MODE: ")
 
     # Mode naif TIDAK punya `memory.db`, jadi rootnya adalah root memori KOSONG —
     # dihitung dari encoding beku, bukan konstanta (task 2.4b). Root lain DITOLAK.
@@ -405,7 +405,7 @@ def test_lock_failure_is_safe_mode_even_on_a_fresh_vault(db, monkeypatch):
     gate = vc.evaluate_memory_gate(client, db)
 
     assert gate.decision.mode == mp.MODE_SAFE, "kegagalan kunci TIDAK boleh jadi NAIF"
-    assert "kunci single-instance" in gate.decision.reason
+    assert "single-instance memory.db lock" in gate.decision.reason
     attempt_all_three(client)
     assert_nothing_was_sent(client)
 
@@ -430,7 +430,7 @@ def test_unreadable_onchain_root_is_safe_mode(db):
     client.vault.functions = _FunctionsThatFail(_gagal)
     gate = vc.evaluate_memory_gate(client, db)
 
-    assert gate.onchain_hex == "TIDAK TERBACA"
+    assert gate.onchain_hex == "UNREADABLE"
     assert gate.is_safe
     attempt_all_three(client)
     assert client.w3.eth.sent == []
@@ -466,7 +466,7 @@ def test_send_refuses_when_the_client_has_no_memory_path(db):
     assert client.db_path is None
     with pytest.raises(vc.SafeModeStop) as exc:
         client.post_verdict(1, vc.KIND_COMPLETE, b"\x01" * 32, b"\x02" * 32)
-    assert "tanpa path memori" in str(exc.value)
+    assert "without a memory path" in str(exc.value)
     assert_nothing_was_sent(client)
 
 
@@ -566,22 +566,23 @@ def test_a_stale_gate_object_cannot_authorize_a_transaction(db):
 def test_safe_mode_line_states_the_consequence_verbatim(db):
     baris = vc.evaluate_memory_gate(build_client(db=db), db).line
 
-    assert baris.startswith("MODE AMAN: ")
+    assert baris.startswith("SAFE MODE: ")
     # AC (a4) ADR-024: jalur PEMULIHAN disebut, bukan hanya akibatnya. Tanpa ini operator
     # membaca mode aman sebagai "agennya rusak", bukan "agennya sedang menolak".
-    assert "pulihkan memory.db dari backup" in baris
+    assert "restore memory.db from backup" in baris
     # Path memori ABSOLUT: tanpa ini tidak ada yang bisa membuktikan FILE MANA yang menahan.
     assert str(db) in baris and db.is_absolute()
-    assert f"root onchain=0x{ROOT_ONCHAIN.hex()}" in baris
+    assert f"onchain root=0x{ROOT_ONCHAIN.hex()}" in baris
     # ADR-023 keputusan 1: root on-chain hanya konteks, dan barisnya mengatakannya.
-    assert "(konteks saja)" in baris
-    assert f"memori lokal {vc.MISSING_LOCAL_MEMORY}" in baris
+    assert "(context only)" in baris
+    assert f"local memory {vc.MISSING_LOCAL_MEMORY}" in baris
     # AC (f): KETIGANYA disebut, bukan hanya postVerdict/finalize.
-    assert "menolak postVerdict/finalize/setProviderCap" in baris
+    assert "refusing postVerdict/finalize/setProviderCap" in baris
     # AC (g) + ADR-020 keputusan 8: akibatnya apa adanya, DILARANG diperhalus.
-    assert "job menggantung sampai expiredAt" in baris
-    assert "refund lewat claimRefund publik" in baris
+    assert "job hangs until expiredAt" in baris
+    assert "refund via the public claimRefund" in baris
     assert "ditolak dengan aman" not in baris
+    assert "safely rejected" not in baris
     # `decide_mode` membawa konsekuensi yang sama di `reason` (ADR-020 keputusan 8).
     assert "claimRefund" in vc.evaluate_memory_gate(build_client(db=db), db).decision.reason
 
@@ -623,8 +624,8 @@ def test_cli_prints_safe_mode_and_sends_nothing(db, monkeypatch, caplog):
     keluaran = caplog.text
 
     assert kode == 0
-    assert "MODE AMAN: " in keluaran
-    assert "job menggantung sampai expiredAt, refund lewat claimRefund publik" in keluaran
+    assert "SAFE MODE: " in keluaran
+    assert "job hangs until expiredAt, refund via the public claimRefund" in keluaran
     assert "VERDICT DIANULIR" not in keluaran
     client = dibangun["client"]
     assert client.w3.eth.sent == []
@@ -722,7 +723,7 @@ def test_main_exits_nonzero_when_the_gate_stops_a_half_finished_pipeline(db, mon
 
     assert kode == vc.EXIT_STOPPED_MIDWAY != 0
     assert vc.EXIT_STOPPED_MIDWAY_MESSAGE in caplog.text
-    assert "MENGGANTUNG sampai expiredAt" in caplog.text
+    assert "HANGS until expiredAt" in caplog.text
     client = dibangun["client"]
     assert client.w3.eth.built == ["postVerdict"]
     assert client.sent_transactions and len(client.sent_transactions) == 1
@@ -787,7 +788,7 @@ def test_main_treats_a_memory_integrity_error_as_a_safe_mode_stop(db, monkeypatc
     assert vc.EXIT_REFUSED_MESSAGE in caplog.text
     assert "body entity provider rusak" in caplog.text
     # Bukan handler generik: itu yang dulu menangkapnya, dan bunyinya "GAGAL: <tipe>".
-    assert "GAGAL: MemoryIntegrityError" not in caplog.text
+    assert "FAILED: MemoryIntegrityError" not in caplog.text
     assert dibangun["client"].sent_transactions == []
 
 
@@ -798,7 +799,7 @@ def test_a_raw_valueerror_still_falls_to_the_generic_handler(db, monkeypatch, ca
         kode, _ = _main_with_failing_run_job(db, monkeypatch, ValueError("argumen salah ketik"))
 
     assert kode == 1
-    assert "GAGAL: ValueError" in caplog.text
+    assert "FAILED: ValueError" in caplog.text
     assert vc.EXIT_REFUSED_MESSAGE not in caplog.text
 
 
@@ -813,13 +814,13 @@ def test_the_safe_mode_handler_redacts_the_private_key(db, monkeypatch, caplog):
         kode, _ = _main_with_failing_run_job(
             db,
             monkeypatch,
-            vc.SafeModeStop(f"MODE AMAN: sesuatu membocorkan {kunci} ke pesan"),
+            vc.SafeModeStop(f"SAFE MODE: sesuatu membocorkan {kunci} ke pesan"),
             kunci=kunci,
         )
 
     assert kode == vc.EXIT_REFUSED
     assert kunci not in caplog.text and "7d" * 32 not in caplog.text
-    assert "MODE AMAN: sesuatu membocorkan [REDACTED] ke pesan" in caplog.text
+    assert "SAFE MODE: sesuatu membocorkan [REDACTED] ke pesan" in caplog.text
 
 
 def test_the_gate_closes_the_memory_handle_it_opened(db):
