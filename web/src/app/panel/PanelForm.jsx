@@ -61,7 +61,11 @@ export default function PanelForm({ samples }) {
         </label>
       </div>
 
+      {/* Placeholder BUKAN label: ia hilang begitu juri mengetik, dan pembaca layar
+          tidak mengumumkannya sebagai nama field (WCAG 3.3.2). */}
+      <label htmlFor="deliverable">Deliverable text to evaluate</label>
       <textarea
+        id="deliverable"
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder="# Summary&#10;… paste deliverable text here …"
@@ -82,6 +86,9 @@ export default function PanelForm({ samples }) {
         <button onClick={() => { setText(""); setResult(null); setError(""); }}>Clear</button>
       </div>
 
+      {/* Hasil dan galat muncul jauh dari tombol; tanpa live region, pengguna pembaca
+          layar menekan "Run checks" lalu tidak mendengar apa pun. */}
+      <div aria-live="polite">
       {error ? <div className="card warn">{error}</div> : null}
 
       {result ? (
@@ -120,6 +127,7 @@ export default function PanelForm({ samples }) {
           <Checks checks={result.checks} criteria={result.criteria} />
         </div>
       ) : null}
+      </div>
     </div>
   );
 }

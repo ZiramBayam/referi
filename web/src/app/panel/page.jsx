@@ -29,7 +29,7 @@ export default async function PanelPage() {
 
   return (
     <div>
-      <h2>Judge panel — try it yourself</h2>
+      <h1>Judge panel — try it yourself</h1>
       <p className="lead">
         Paste any deliverable text (or load one of the samples), pick a depth, then run the
         checks. Here YOU choose the depth; on the real path that depth is derived from the

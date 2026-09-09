@@ -8,6 +8,9 @@
 // di `web/src`; AC task ini menuntut grep atas nama prop itu mengembalikan hasil KOSONG,
 // jadi namanya sengaja tidak ditulis di sini juga.
 
+import Icon from "./Icon.jsx";
+import { gloss } from "../lib/gloss.js";
+
 /**
  * @param {{ checks: { check: string, criterion: string, status: string, detail: string,
  *   proof: string, pattern: string, section: number | null, depth: string }[],
@@ -32,11 +35,20 @@ export default function Checks({ checks, criteria }) {
         <div className="card" key={c.criterion + ":" + i}>
           <div className="row" style={{ margin: 0, justifyContent: "space-between" }}>
             <strong className="mono">{c.criterion}</strong>
-            <span className={"tag " + c.status}>{c.status}</span>
+            <span className={"tag " + c.status}>
+              <Icon name={c.status === "pass" ? "check" : c.status === "fail" ? "x" : "triangle-alert"} size={11} />
+              {c.status}
+            </span>
           </div>
           {criterionText[c.criterion] ? (
             <p className="lead" style={{ margin: "6px 0" }}>
               {criterionText[c.criterion]}
+              {gloss(criterionText[c.criterion]) ? (
+                <span className="gloss">
+                  <span>EN</span>
+                  {gloss(criterionText[c.criterion])}
+                </span>
+              ) : null}
             </p>
           ) : null}
           <dl className="kv" style={{ marginTop: 6 }}>
@@ -57,7 +69,15 @@ export default function Checks({ checks, criteria }) {
             <dt>pattern id</dt>
             <dd className="mono">{c.pattern ? c.pattern : <span className="none">none</span>}</dd>
             <dt>reason</dt>
-            <dd>{c.detail}</dd>
+            <dd>
+              {c.detail}
+              {gloss(c.detail) ? (
+                <span className="gloss">
+                  <span>EN</span>
+                  {gloss(c.detail)}
+                </span>
+              ) : null}
+            </dd>
           </dl>
           <h3 style={{ marginBottom: 0 }}>evidence (proof)</h3>
           {c.proof ? (

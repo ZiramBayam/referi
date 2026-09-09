@@ -1,7 +1,7 @@
 ---
 title: "Why an escrow referee needs memory, not just a single-job scorer"
 date: 2026-09-08
-project: The Evaluator (Sibyl hackathon, Base Sepolia)
+project: REFERI (Sibyl hackathon, Base Sepolia)
 repo: EvaluatorVault 0x5c6EE4586ACABcb6326069c229E58091B21ef384
 ---
 

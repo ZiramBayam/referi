@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Icon from "../../components/Icon.jsx";
 
 /**
  * Kontrol demo "hapus memori". Hanya dirender bila `DEMO_MODE=1` dibaca di server
@@ -50,6 +51,7 @@ export default function MemoryControl({ enabled, resetApi }) {
 
       <div className="card warn">
         <p style={{ marginTop: 0 }}>
+          <Icon name="triangle-alert" size={15} />{" "}
           <strong>Read the limits first.</strong> The button below deletes the{" "}
           <strong>DEMO memory</strong>: <code>agent/data/demo/memory.db</code> together with its{" "}
           <code>-wal</code> and <code>-shm</code> files (leaving the WAL behind would let SQLite
@@ -69,6 +71,7 @@ export default function MemoryControl({ enabled, resetApi }) {
       <div className="card">
         <div className="row" style={{ marginTop: 0 }}>
           <button className="danger" onClick={run} disabled={busy}>
+            <Icon name="trash" size={14} />
             {busy ? "deleting…" : "Wipe demo memory now"}
           </button>
           <span className="lead" style={{ margin: 0 }}>
@@ -86,8 +89,11 @@ export default function MemoryControl({ enabled, resetApi }) {
         </p>
       </div>
 
-      {result ? <ResetResult data={result} /> : null}
-      {failure ? <ResetFailure failure={failure} command={serveCommand} /> : null}
+      {/* Aksi merusak: hasilnya wajib terdengar, bukan hanya terlihat. */}
+      <div aria-live="polite">
+        {result ? <ResetResult data={result} /> : null}
+        {failure ? <ResetFailure failure={failure} command={serveCommand} /> : null}
+      </div>
 
       <div className="card note">
         <p style={{ marginTop: 0 }}>

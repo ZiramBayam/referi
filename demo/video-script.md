@@ -39,7 +39,7 @@ makes this argument for you in English, at `web/src/app/verdict/[jobId]/page.jsx
 | A3b | **Determinism check** (already done twice): run it a second time and diff the deterministic block | the 32-line deterministic diff is **empty** — same summary, same numbers | if the diff is not empty, stop: Plan B in section G assumes the pre-recorded run and the narrated run agree |
 | A4 | `pnpm --filter web build` | build finishes without errors | — |
 | A5 | Terminal B: `DEMO_MODE=1 pnpm --filter web start` | server on `http://127.0.0.1:3000` (`-H 127.0.0.1` is pinned in `web/package.json:9`) | — |
-| A6 | Open 4 browser tabs, ordered left→right: (1) `http://127.0.0.1:3000/`, (2) `http://127.0.0.1:3000/verdict/420`, (3) `http://127.0.0.1:3000/verdict/422`, (4) `https://base-sepolia.blockscout.com/address/0x5c6EE4586ACABcb6326069c229E58091B21ef384?tab=logs` | all four fully loaded before recording starts; **Blockscout**, not BaseScan — that is where event names are decoded (see the Section 4 note) | a tab still loading eats seconds you do not have |
+| A6 | Open 5 browser tabs, ordered left→right: (1) `http://127.0.0.1:3000/` (landing), (2) `http://127.0.0.1:3000/timeline`, (3) `http://127.0.0.1:3000/verdict/420`, (4) `http://127.0.0.1:3000/verdict/422`, (5) `https://base-sepolia.blockscout.com/address/0x5c6EE4586ACABcb6326069c229E58091B21ef384?tab=logs` | all five fully loaded before recording starts; **Blockscout**, not BaseScan — that is where event names are decoded (see the Section 4 note) | a tab still loading eats seconds you do not have |
 | A7 | Terminal A: `cd /home/zirambayam/referi && clear`, large font (≥ 16pt), width ≥ 120 columns | clean prompt | — |
 | A8 | Close notifications, personal tabs, and wallet extensions | clean screen | — |
 | A9 | **Rehearse section 5 first**: `/panel` → button "deliverable job 422" → run `sampling`, then `full` | `sampling` → `format.no-placeholder` **pass**; `full` → **fail** | if that is not the result, cut section 5 from the script and move its 30 seconds into section 6 — do not narrate a result that does not appear |
@@ -79,20 +79,20 @@ you do not need the gate at all, run A5 without `DEMO_MODE=1` — the entire scr
 | Time | Action (type/click) | Screen | Spoken |
 |---|---|---|---|
 | 0:00 | Nothing; Terminal A is clean | empty prompt inside the repo | "ERC-8183 gives one role total power: the evaluator. It decides whether a job is paid in full or refunded in full — there is no partial payment. And a standard evaluator has no memory: the same provider can repeat the same trick tomorrow, and the referee will not know." |
-| 0:20 | Type and run: `make demo 2>&1 \| tee /tmp/take1-demo.log` | lines `[demo] start …`, `[demo] anvil.up …` start scrolling | "This is The Evaluator: an ERC-8183 referee whose memory of each provider can be recomputed from files. This single command builds the chain from scratch on local Anvil, then reads one frozen vault on Base Sepolia — only two `eth_call` view calls: **no funds, no transactions**. While it runs, let me show you what already landed on chain." |
+| 0:20 | Type and run: `make demo 2>&1 \| tee /tmp/take1-demo.log` | lines `[demo] start …`, `[demo] anvil.up …` start scrolling | "This is REFERI: an ERC-8183 referee whose memory of each provider can be recomputed from files. This single command builds the chain from scratch on local Anvil, then reads one frozen vault on Base Sepolia — only two `eth_call` view calls: **no funds, no transactions**. While it runs, let me show you what already landed on chain." |
 
 > On-screen evidence: `Makefile:62-63`; internet requirement `Makefile:50-54`; `sim/src/demo.ts:610-611`
 > ("only two `eth_call` view calls").
 
-### Section 2 — Job timeline 418–422 (0:40 – 1:25, 45 s)
+### Section 2 — The record on chain (0:40 – 1:25, 45 s)
 
 | Time | Action | Screen | Spoken |
 |---|---|---|---|
-| 0:40 | Switch to tab 1 (`/`) | heading "Job timeline 418–422 (Base Sepolia)" | "Five jobs that really landed on Base Sepolia. Jobs 418 and 419: the same provider, the deterministic `format` check failed twice — two incidents from two different jobs." |
+| 0:40 | Switch to tab 2 (`/timeline`) | heading "Five jobs that really landed on chain" | "Five jobs that really landed on Base Sepolia. Jobs 418 and 419: the same provider, the deterministic `format` check failed twice — two incidents from two different jobs." |
 | 1:00 | Move the cursor over rows 418, 419, then 420 | the "Verdict" column reads `reject`; the "VerdictPosted tx" column holds Blockscout links | "Job 420 is the interesting one: it was rejected **while still `Funded`** — before the provider had submitted anything at all. Its bundle shape is `gate-rejection`." |
-| 1:15 | In the "Evidence" column of row **420**, click **open evidence** (or switch to tab 2) | page `/verdict/420` loads | "Why? The full evidence is on this page." |
+| 1:15 | In the "Evidence" column of row **420**, click **open evidence** (or switch to tab 3) | page `/verdict/420` loads | "Why? The full evidence is on this page." |
 
-> On-screen evidence: `web/src/app/page.jsx:13` (heading), `:63` ("open evidence"); data from
+> On-screen evidence: `web/src/app/timeline/page.jsx` (heading and the "open evidence" link); data from
 > `web/public/jobs.json`; this page makes zero RPC calls — it only renders repo artifacts.
 
 ### Section 3 — The cap gate: what memory decided (1:25 – 2:05, 40 s)
@@ -113,10 +113,10 @@ you do not need the gate at all, run A5 without `DEMO_MODE=1` — the entire scr
 
 | Time | Action | Screen | Spoken |
 |---|---|---|---|
-| 2:05 | Switch to tab 3 (`/verdict/422`) | heading "Verdict for job 422 — reject", `check depth full`, `deliverable hash 0x246071b3…0a51` | "Jobs 421 and 422 use the **byte-for-byte same** deliverable — identical keccak hash, same budget. Job 421 passed. Job 422 was rejected." |
+| 2:05 | Switch to tab 4 (`/verdict/422`) | heading "Verdict for job 422 — reject", `check depth full`, `deliverable hash 0x246071b3…0a51` | "Jobs 421 and 422 use the **byte-for-byte same** deliverable — identical keccak hash, same budget. Job 421 passed. Job 422 was rejected." |
 | 2:18 | Scroll to **"Per-criterion evidence"** | check `format.no-placeholder` **fail**, `section 2`, `depth full`; the `reason`/`proof` lines are Indonesian bundle text | "The only difference is the provider: one is clean, the other has two incidents. That history raised the check depth from `sampling` to `full`, and the defect — a `TODO` in the third section — is only visible at `full`. The reason and the proof excerpt are again quoted from the hashed bundle, so they stay in the agent's own words." |
 | 2:30 | Scroll slightly to the yellow card **"Criteria that were NOT scored"** | `qualitative.0` + the `unscored_reason` line | "I should say this plainly: there is no qualitative scoring and no LLM anywhere in the path. Qualitative criteria are recorded as `unscored`, as-is." |
-| 2:37 | Switch to tab 4 (Blockscout, the vault's **Logs** page); point at the top entry: `MemoryRootUpdated` with root `0x999a9570…9b7d` (tx `0xe95910d2…5830`) | the vault log list with **decoded event names**: `MemoryRootUpdated`, `VerdictPosted`, `Finalized`, `ProviderCapSet` | "And here is the on-chain trail. The event name is readable — `MemoryRootUpdated` — because the contract is verified on Sourcify, `exact_match`, from commit `8d3e596`. This is the root that was announced **before** execution." |
+| 2:37 | Switch to tab 5 (Blockscout, the vault's **Logs** page); point at the top entry: `MemoryRootUpdated` with root `0x999a9570…9b7d` (tx `0xe95910d2…5830`) | the vault log list with **decoded event names**: `MemoryRootUpdated`, `VerdictPosted`, `Finalized`, `ProviderCapSet` | "And here is the on-chain trail. The event name is readable — `MemoryRootUpdated` — because the contract is verified on Sourcify, `exact_match`, from commit `8d3e596`. This is the root that was announced **before** execution." |
 
 > On-screen evidence: `docs/limitations.md` item 25 (the 421 vs 422 table plus four tx hashes), item 33
 > (`unscored`), item 7 (the `MemoryRootUpdated` history), item 15 (Sourcify `exact_match` from commit

@@ -1,4 +1,7 @@
 import Link from "next/link";
+import Icon from "../../../components/Icon.jsx";
+import { gloss, glossSection } from "../../../lib/gloss.js";
+import { parseDocument } from "../../../lib/checks.js";
 import { notFound } from "next/navigation";
 import { loadJobs, loadJob, loadBundle, loadDeliverable } from "../../../lib/data.js";
 import { readSmallInt, readUint, readSectionIndex, formatUsdc6 } from "../../../lib/canonical.js";
@@ -36,39 +39,34 @@ export default async function VerdictPage({ params }) {
   return (
     <div>
       <p className="lead">
-        <Link href="/">← job timeline</Link>
+        <Link href="/" className="backlink">
+          <Icon name="arrow-left" size={14} />
+          job timeline
+        </Link>
       </p>
-      <h2>
+      <h1>
         Verdict for job <span className="mono">{jobId}</span> —{" "}
         {verdictKindLabel(readSmallInt(bundle.verdict))}
-      </h2>
+      </h1>
       <p className="lead">
         Why it was decided this way, and what the evidence is. Everything on this page is the
         evidence bundle that is keccak-hashed into the <code>reasonHash</code> of the{" "}
         <code>VerdictPosted</code> transaction — not a rewritten summary.
       </p>
       <p className="lead">
-        <strong>Bundle strings are quoted, not translated.</strong> The gate <code>reason</code>,
-        each criterion&apos;s text, and every <code>reason</code>/<code>proof</code> line below are
-        the agent&apos;s own output, copied out of the bundle byte for byte. They are written in
-        Indonesian and stay that way on purpose: the bundle is what gets hashed into{" "}
-        <code>reasonHash</code>, so rewording it here would stop matching the chain.
+        <strong>Bundle strings are quoted, never rewritten.</strong> The gate{" "}
+        <code>reason</code>, each criterion&apos;s text, and every <code>reason</code>/
+        <code>proof</code> line below are the agent&apos;s own output, copied out of the bundle
+        byte for byte. They are written in Indonesian and stay that way on purpose: the bundle
+        is what gets hashed into <code>reasonHash</code>, so rewording it here would stop
+        matching the chain. Where a line carries an <strong>EN</strong> marker, that is an
+        English translation shown beside the original for reading — it is never what was
+        hashed.
       </p>
 
       <div className="card">
+        <h2 className="grouplabel">The job</h2>
         <dl className="kv">
-          <dt>bundle version</dt>
-          <dd className="mono">{bundle.version}</dd>
-          <dt>bundle shape</dt>
-          <dd className="mono">{bundle.kind}</dd>
-          <dt>memory mode</dt>
-          <dd className="mono">{bundle.mode}</dd>
-          <dt>memory_root (from the agent)</dt>
-          <dd>
-            <Hash value={bundle.memory_root} />
-          </dd>
-          <dt>check depth</dt>
-          <dd className="mono">{evaluation?.depth ?? gate?.depth ?? "—"}</dd>
           <dt>provider</dt>
           <dd>
             <AddressLink address={job.provider} /> ({job.providerLabel})
@@ -78,12 +76,16 @@ export default async function VerdictPage({ params }) {
             {formatUsdc6(job.budgetUsdc6) ?? <span className="none">not available</span>} units of
             the escrow token (6 decimals)
           </dd>
-          <dt>last ACP status</dt>
-          <dd>{acpStatusLabel(job.acpStatus)}</dd>
           <dt>deliverable hash</dt>
           <dd>
             <Hash value={evaluation?.deliverable} />
           </dd>
+        </dl>
+
+        <h2 className="grouplabel">Announced on chain</h2>
+        <dl className="kv">
+          <dt>last ACP status</dt>
+          <dd>{acpStatusLabel(job.acpStatus)}</dd>
           <dt>VerdictPosted tx</dt>
           <dd>
             <TxLink hash={job.verdictTxHash} />
@@ -92,6 +94,26 @@ export default async function VerdictPage({ params }) {
           <dd>
             <TxLink hash={job.finalizeTxHash} />
           </dd>
+        </dl>
+
+        <h2 className="grouplabel">The memory behind the decision</h2>
+        <dl className="kv">
+          <dt>memory_root (from the agent)</dt>
+          <dd>
+            <Hash value={bundle.memory_root} />
+          </dd>
+          <dt>memory mode</dt>
+          <dd className="mono">{bundle.mode}</dd>
+          <dt>check depth</dt>
+          <dd className="mono">{evaluation?.depth ?? gate?.depth ?? "—"}</dd>
+        </dl>
+
+        <h2 className="grouplabel">This bundle</h2>
+        <dl className="kv">
+          <dt>bundle version</dt>
+          <dd className="mono">{bundle.version}</dd>
+          <dt>bundle shape</dt>
+          <dd className="mono">{bundle.kind}</dd>
           <dt>bundle file</dt>
           <dd className="mono">
             agent/data/chain-abc/verdicts/{job.bundleFile}
@@ -125,7 +147,15 @@ export default async function VerdictPage({ params }) {
                 </span>
               </dd>
               <dt>reason</dt>
-              <dd>{gate.reason}</dd>
+              <dd>
+                {gate.reason}
+                {gloss(gate.reason) ? (
+                  <span className="gloss">
+                    <span>EN</span>
+                    {gloss(gate.reason)}
+                  </span>
+                ) : null}
+              </dd>
               <dt>budget</dt>
               <dd className="mono">{readUint(gate.budget) ?? "not available"}</dd>
               <dt>provider cap</dt>
@@ -176,7 +206,15 @@ export default async function VerdictPage({ params }) {
             <div className="card warn">
               <h3 style={{ marginTop: 0 }}>Criteria that were NOT scored</h3>
               <p className="mono">{evaluation.unscored.join(", ")}</p>
-              <p style={{ marginBottom: 0 }}>{evaluation.unscored_reason}</p>
+              <p style={{ marginBottom: 0 }}>
+                {evaluation.unscored_reason}
+                {gloss(evaluation.unscored_reason) ? (
+                  <span className="gloss">
+                    <span>EN</span>
+                    {gloss(evaluation.unscored_reason)}
+                  </span>
+                ) : null}
+              </p>
             </div>
           ) : null}
         </div>
@@ -192,6 +230,16 @@ export default async function VerdictPage({ params }) {
             </dd>
           </dl>
           <pre className="doc">{deliverable.text}</pre>
+          <div className="doc-gloss">
+            {parseDocument(deliverable.text).sections.map((s) =>
+              glossSection(s.heading) ? (
+                <p className="gloss" key={s.index}>
+                  <span>EN</span>
+                  {glossSection(s.heading)}
+                </p>
+              ) : null
+            )}
+          </div>
         </div>
       ) : (
         <p className="none">

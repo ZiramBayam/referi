@@ -9,7 +9,7 @@ ERC-8183 puts all trust in the evaluator and gives it no reason to be honest: th
 trusted", `evaluatorFeeBP` is only paid out when a job is **Completed** so the referee gets paid when it
 passes work, there is no partial payment (Completed = 100% to the provider, Rejected/Expired = 100%
 refund), and a standard evaluator is stateless — the same provider can repeat the same trick on the next
-job without leaving a trace (`docs/spec.md` §1). The Evaluator adds three things on top of the spec:
+job without leaving a trace (`docs/spec.md` §1). REFERI adds three things on top of the spec:
 **provider memory anchored on chain** (every `postVerdict` announces a `memoryRoot`; the **current**
 state's root can be recomputed from the memory files, intermediate states cannot — items 7 and 16),
 **budget gating through the `reject()` right during `Funded`**, which already exists in the spec and so

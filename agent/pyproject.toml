@@ -1,7 +1,7 @@
 [project]
 name = "evaluator-agent"
 version = "0.1.0"
-description = "The Evaluator — agen evaluator ERC-8183 dengan memori provider yang bisa diaudit"
+description = "REFERI — agen evaluator ERC-8183 dengan memori provider yang bisa diaudit"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "web3==7.16.0",

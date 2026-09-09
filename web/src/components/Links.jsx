@@ -1,4 +1,5 @@
 import { txUrl, addressUrl } from "../lib/chain.js";
+import Icon from "./Icon.jsx";
 
 /**
  * Tautan transaksi. Bila hash BELUM ADA, yang ditampilkan adalah kata "not available" —
@@ -8,8 +9,15 @@ import { txUrl, addressUrl } from "../lib/chain.js";
 export function TxLink({ hash, label }) {
   if (!hash) return <span className="none">not available</span>;
   return (
-    <a className="mono" href={txUrl(hash)} target="_blank" rel="noreferrer">
+    <a
+      className="mono"
+      href={txUrl(hash)}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={`Transaction ${hash} on the block explorer (opens in a new tab)`}
+    >
       {label ?? hash}
+      <Icon name="external-link" size={12} />
     </a>
   );
 }
@@ -18,8 +26,15 @@ export function TxLink({ hash, label }) {
 export function AddressLink({ address, label }) {
   if (!address) return <span className="none">not available</span>;
   return (
-    <a className="mono" href={addressUrl(address)} target="_blank" rel="noreferrer">
+    <a
+      className="mono"
+      href={addressUrl(address)}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={`Address ${address} on the block explorer (opens in a new tab)`}
+    >
       {label ?? address}
+      <Icon name="external-link" size={12} />
     </a>
   );
 }
