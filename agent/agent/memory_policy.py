@@ -638,7 +638,9 @@ class FailurePattern:
             self, "trigger_signature", _failure_pattern_text("trigger_signature", self.trigger_signature)
         )
         object.__setattr__(
-            self, "failure_description", _failure_pattern_text("failure_description", self.failure_description)
+            self,
+            "failure_description",
+            _failure_pattern_text("failure_description", self.failure_description),
         )
         object.__setattr__(
             self,
@@ -646,7 +648,12 @@ class FailurePattern:
             _failure_pattern_text("recommended_countermeasure", self.recommended_countermeasure),
         )
         evidence = tuple(
-            sorted({_failure_pattern_text("evidence_required", item, maximum=128) for item in self.evidence_required})
+            sorted(
+                {
+                    _failure_pattern_text("evidence_required", item, maximum=128)
+                    for item in self.evidence_required
+                }
+            )
         )
         if not evidence or len(evidence) > 16:
             raise ValueError("evidence_required harus berisi 1 sampai 16 item unik")
@@ -1232,6 +1239,39 @@ def save_failure_pattern(client: MemoryClient, pattern: FailurePattern) -> Failu
         raise TypeError("pattern harus FailurePattern")
     client.set_reference(f"{REFERENCE_PATTERN_PREFIX}{pattern.pattern_id}", pattern.to_body())
     return pattern
+
+
+@under_memory_lock
+def record_failure_observation(
+    client: MemoryClient, pattern: FailurePattern, *, job_id: int
+) -> FailurePattern:
+    """Simpan observasi kegagalan yang telah dipetakan dari bukti deterministik.
+
+    Tidak ada jalur untuk membuat pola dari sebuah label reject umum: pemanggil wajib
+    menyediakan `FailurePattern` yang sudah lolos ekstraktor deterministik.
+    """
+    if isinstance(job_id, bool) or int(job_id) < 0:
+        raise ValueError("job_id harus integer tidak negatif")
+    existing_body = _read_reference_body(client, f"{REFERENCE_PATTERN_PREFIX}{pattern.pattern_id}")
+    if existing_body is None:
+        observed = replace(pattern, observed_jobs=tuple((*pattern.observed_jobs, int(job_id))))
+    else:
+        existing = FailurePattern.from_body(existing_body)
+        if existing.pattern_id != pattern.pattern_id:
+            raise MemoryIntegrityError("ID failure pattern tidak cocok dengan reference key")
+        observed = replace(existing, observed_jobs=tuple((*existing.observed_jobs, int(job_id))))
+    client.set_reference(f"{REFERENCE_PATTERN_PREFIX}{observed.pattern_id}", observed.to_body())
+    write_journal(
+        client,
+        (
+            {
+                "action": "escrow-firewall-failure-observed",
+                "pattern_id": observed.pattern_id,
+                "job_id": int(job_id),
+            },
+        ),
+    )
+    return observed
 
 
 @under_memory_lock

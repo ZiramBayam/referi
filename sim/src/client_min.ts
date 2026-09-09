@@ -217,6 +217,15 @@ const JOB_DESCRIPTION =
   "the-evaluator smoke job: provider menyerahkan satu deliverable, EvaluatorVault yang menilai.";
 
 /**
+ * Keccak JSON terms kanonik dari `agent.escrow_firewall`. ACP tidak punya field termsHash,
+ * tetapi `description` bersifat immutable sesudah `createJob`, sehingga suffix ini adalah
+ * komitmen pre-funding yang kompatibel dengan ACP yang sudah deployed.
+ */
+const TERMS_COMMITMENT_ENV = "TERMS_COMMITMENT";
+const TERMS_COMMITMENT_PREFIX = "\n\n[escrow-firewall-terms:";
+const TERMS_COMMITMENT_SUFFIX = "]";
+
+/**
  * Teks deliverable yang benar-benar diserahkan.
  *
  * ADR-019 keputusan 1: yang dikirim on-chain adalah `keccak256` dari byte UTF-8 teks INI
@@ -347,6 +356,21 @@ function configValue(name: string, fallback: string): string {
   if (fromEnv && fromEnv.trim()) return fromEnv.trim();
   const fromFile = envFileValues()[name];
   return fromFile && fromFile.trim() ? fromFile.trim() : fallback;
+}
+
+function termsCommitmentConfig(): Hex | null {
+  const value = configValue(TERMS_COMMITMENT_ENV, "");
+  if (!value) return null;
+  if (!/^0x[0-9a-fA-F]{64}$/.test(value)) {
+    throw new Error(`${TERMS_COMMITMENT_ENV} harus keccak256 32-byte (0x + 64 hex)`);
+  }
+  return value as Hex;
+}
+
+function committedDescription(description: string, commitment: Hex | null): string {
+  return commitment === null
+    ? description
+    : `${description}${TERMS_COMMITMENT_PREFIX}${commitment}${TERMS_COMMITMENT_SUFFIX}`;
 }
 
 /**
@@ -740,6 +764,8 @@ async function main(): Promise<void> {
     process.env[DELIVERABLE_FILE_ENV],
   );
   const providerSlot = parseProviderSlot(process.env[PROVIDER_SLOT_ENV]);
+  const termsCommitment = termsCommitmentConfig();
+  const jobDescription = committedDescription(JOB_DESCRIPTION, termsCommitment);
 
   const rpcUrl = configValue("RPC_URL", DEFAULT_RPC_URL);
   const acpAddress = addressConfig("ACP_ADDRESS", DEFAULT_ACP_ADDRESS);
@@ -840,6 +866,7 @@ async function main(): Promise<void> {
     deliverableTextFrom: deliverable.source,
     deliverableTextBytes: new TextEncoder().encode(deliverable.text).length,
     expiredAt,
+    termsCommitment: termsCommitment ?? "generic-terms-no-commitment",
   });
 
   // 0) preflight saldo — sebelum satu wei gas pun terbakar.
@@ -852,7 +879,7 @@ async function main(): Promise<void> {
     providerAddress: provider.address,
     evaluatorAddress: vaultAddress, // eksplisit: alamat nol = evaluasi DILEWATI
     expiredAt,
-    description: JOB_DESCRIPTION,
+    description: jobDescription,
   });
   const createHash = newHashes(client.provider, markCreate)[0];
   log("createJob.ok", { jobId, tx: createHash });

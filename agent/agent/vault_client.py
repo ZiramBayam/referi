@@ -118,7 +118,13 @@ from agent.checks.source import (
     REFUSAL_LINE,
     DeliverableUnverifiedError,
 )
-from agent.criteria import Evaluation, evaluate_job
+from agent.criteria import Evaluation, evaluate_job, resolve_rubric_category
+from agent.escrow_firewall import (
+    PolicyProposal,
+    extract_failure_patterns,
+    propose_policy_from_memory,
+    terms_commitment,
+)
 from agent.memory_lock import MemoryLockError
 from agent.memory_policy import (
     MODE_NAIVE,
@@ -141,6 +147,7 @@ from agent.memory_policy import (
     local_memory_evidence,
     normalize_address,
     promote_suspicions,
+    record_failure_observation,
     record_job_outcome,
     record_suspicion,
     store_provider_cap,
@@ -1651,6 +1658,9 @@ class JobPlan:
     # root BARU pada `gate`/`cap`/`incident_jobs` yang lahir dari DB LAMA. `None` berarti
     # rencana ini tidak terikat root sama sekali — `run_live` menolaknya.
     memory_root: bytes | None = None
+    # Proposal terms lahir sebelum funding dari FailurePattern Sibyl. `None` hanya untuk
+    # legacy/test plan; `plan_job()` produksi selalu mengisinya atau berhenti fail-closed.
+    terms: PolicyProposal | None = None
 
     @property
     def line(self) -> str:
@@ -1751,6 +1761,13 @@ def verdict_evidence(plan: JobPlan, memory_root: bytes, kind: int) -> dict:
         "memory_root": "0x" + bytes(memory_root).hex(),
         "verdict": int(kind),
     }
+    if plan.terms is not None:
+        dasar["escrow_firewall_terms"] = {
+            "policy": plan.terms.policy.to_body(),
+            "commitment": "0x" + terms_commitment(plan.terms.policy).hex(),
+            "proposal_status": plan.terms.status,
+            "requires_client_approval": plan.terms.requires_client_approval,
+        }
     if not plan.gate.accept:
         # Penolakan gerbang mendahului bentuk `evaluation`, dan tidak pernah MENGGANTIKANnya:
         # bila keduanya ada, keduanya ikut. Urutan `if` inilah temuan TINGGI-A.
@@ -1977,6 +1994,13 @@ def plan_job(
             gate.decision,
             onchain_cap=onchain_cap,
         )
+        terms = propose_policy_from_memory(
+            memori,
+            task_category=resolve_rubric_category(job.description),
+        )
+    except (MemoryIntegrityError, ValueError) as exc:
+        client.refuse(f"Escrow Firewall terms tidak dapat diturunkan dari memori: {exc}")
+        raise SafeModeStop("Escrow Firewall terms unreadable or ambiguous; client review required") from exc
     finally:
         close_memory_client(memori)
 
@@ -2006,6 +2030,7 @@ def plan_job(
         evaluation=evaluation,
         deliverable=onchain,
         memory_root=root_rencana,
+        terms=terms,
     )
 
 
@@ -2058,6 +2083,21 @@ def record_outcome(client: VaultClient, plan: JobPlan) -> ProviderProfile | None
     provider = plan.job.provider
     memori = MemoryClient.local(str(client.db_path))
     try:
+        # Escrow Firewall menyimpan pola LINTAS provider dari bukti evaluator yang sama.
+        # `extract_failure_patterns` mengembalikan kosong untuk reject umum atau cek yang
+        # belum punya pemetaan aman, jadi tidak ada reputasi/provider score yang diam-diam
+        # berubah menjadi "failure pattern".
+        for pattern in extract_failure_patterns(
+            job_id=plan.job.job_id,
+            task_category=plan.evaluation.category,
+            failed_checks=plan.evaluation.failed_checks,
+        ):
+            recorded = record_failure_observation(memori, pattern, job_id=plan.job.job_id)
+            log.info(
+                "escrow firewall pattern observed: pattern=%s jobs=%s",
+                recorded.pattern_id,
+                list(recorded.observed_jobs),
+            )
         for incident in plan.evaluation.incidents():
             body = record_suspicion(memori, provider, incident.pattern_id, incident.evidence)
             log.info(

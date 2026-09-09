@@ -55,6 +55,33 @@ CLIENT ──createJob(evaluator = VAULT)──► ACP (Base Sepolia) ◄──s
 Why those three pieces sit outside the ERC-8183 spec, and which ADR decided each:
 [`docs/design.md`](docs/design.md).
 
+## Escrow Firewall: terms before funding
+
+Escrow Firewall adds a second, cross-provider memory loop. When deterministic evidence shows
+*how* a delivery failed, Sibyl stores a structured failure pattern. For a later, similar job,
+the agent recalls that pattern and creates stricter acceptance criteria before the client funds
+escrow — for example a commit hash, test command, test output, and environment version after a
+previous claim could not be reproduced. The pattern is not a provider score: a different provider
+receives the same safeguard when the task has the same failure mechanism.
+
+Create the immutable terms artifact first, then pass its printed commitment to the ACP simulator:
+
+```sh
+cd agent
+TERMS_COMMITMENT="$(uv run python -m agent.escrow_firewall \
+  --memory-db ./data/memory.db \
+  --task-category general \
+  --output ./data/terms/job-next.json)"
+cd ../sim
+TERMS_COMMITMENT="$TERMS_COMMITMENT" bun run job:min
+```
+
+The simulator appends the hash to ACP's immutable `description` at `createJob`; it is therefore
+committed before `fund`, without changing the deployed ACP ABI. The evaluator includes the exact
+terms policy, applied patterns, and commitment in its verdict evidence bundle. A fresh process
+with the same Sibyl database recalls the safeguard; deleting the database produces explicit
+generic terms instead. The terms CLI refuses to overwrite a different artifact at the same path.
+
 ## How to run
 
 ```
