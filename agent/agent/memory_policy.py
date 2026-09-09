@@ -120,6 +120,17 @@ CATEGORY_JOB: Final = "job"
 STATE_KEY_PREFIX: Final = "job:"
 REFERENCE_RUBRIC_PREFIX: Final = "rubric:"
 REFERENCE_PATTERN_PREFIX: Final = "pattern:"
+# Failure pattern milik Escrow Firewall tetap memakai tier/reference `pattern:` yang
+# sudah masuk cakupan root dan jalur keputusan. Menambah seksi root baru akan mengubah
+# encoding beku ADR-020 bahkan saat kosong; namespace ini menghindari perubahan itu.
+FIREWALL_PATTERN_PREFIX: Final = "firewall."
+
+COUNTERMEASURE_WORKED: Final = "worked"
+COUNTERMEASURE_FAILED: Final = "failed"
+COUNTERMEASURE_INCONCLUSIVE: Final = "inconclusive"
+COUNTERMEASURE_OUTCOMES: Final[frozenset[str]] = frozenset(
+    {COUNTERMEASURE_WORKED, COUNTERMEASURE_FAILED, COUNTERMEASURE_INCONCLUSIVE}
+)
 
 QUARANTINE_STATUS_PENDING: Final = "pending"
 QUARANTINE_STATUS_PROMOTED: Final = "promoted"
@@ -573,6 +584,126 @@ class Evidence:
             check_id=str(body.get("check", "")),
             proof=str(body.get("proof", "")),
         )
+
+
+def _failure_pattern_text(name: str, value: str, *, maximum: int = 512) -> str:
+    """Validasi teks policy yang akan masuk reference dan `memory_root`.
+
+    Nilai ini adalah data terstruktur dari template/detektor kita, bukan prompt atau
+    instruksi deliverable. Batas panjang membatasi pertumbuhan root dan menolak karakter
+    kontrol sebelum ia mencapai JSON kanonik.
+    """
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{name} harus string tidak kosong")
+    if len(value) > maximum:
+        raise ValueError(f"{name} melebihi batas {maximum} karakter")
+    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in value):
+        raise ValueError(f"{name} tidak boleh memuat karakter kontrol")
+    return value.strip()
+
+
+def validate_failure_pattern_id(pattern_id: str) -> str:
+    """ID pattern Escrow Firewall yang aman dan terpisah dari pattern cek lama."""
+    checked = validate_pattern_id(pattern_id)
+    if not checked.startswith(FIREWALL_PATTERN_PREFIX):
+        raise ValueError(f"failure pattern harus berawalan {FIREWALL_PATTERN_PREFIX!r}: {pattern_id!r}")
+    return checked
+
+
+@dataclass(frozen=True)
+class FailurePattern:
+    """Pengetahuan lintas-job: kegagalan, safeguard, dan hasil safeguard itu sendiri.
+
+    Angka confidence memakai basis points, bukan float, karena seluruh reference ini
+    masuk preimage `memory_root` yang melarang float demi paritas lintas bahasa.
+    """
+
+    pattern_id: str
+    task_category: str
+    trigger_signature: str
+    failure_description: str
+    evidence_required: tuple[str, ...]
+    recommended_countermeasure: str
+    confidence_bps: int = 5_000
+    observed_jobs: tuple[int, ...] = ()
+    successful_mitigations: int = 0
+    failed_mitigations: int = 0
+    inconclusive_mitigations: int = 0
+    status: str = "active"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "pattern_id", validate_failure_pattern_id(self.pattern_id))
+        object.__setattr__(self, "task_category", validate_pattern_id(self.task_category))
+        object.__setattr__(
+            self, "trigger_signature", _failure_pattern_text("trigger_signature", self.trigger_signature)
+        )
+        object.__setattr__(
+            self, "failure_description", _failure_pattern_text("failure_description", self.failure_description)
+        )
+        object.__setattr__(
+            self,
+            "recommended_countermeasure",
+            _failure_pattern_text("recommended_countermeasure", self.recommended_countermeasure),
+        )
+        evidence = tuple(
+            sorted({_failure_pattern_text("evidence_required", item, maximum=128) for item in self.evidence_required})
+        )
+        if not evidence or len(evidence) > 16:
+            raise ValueError("evidence_required harus berisi 1 sampai 16 item unik")
+        object.__setattr__(self, "evidence_required", evidence)
+        if isinstance(self.confidence_bps, bool) or not 0 <= int(self.confidence_bps) <= 10_000:
+            raise ValueError("confidence_bps harus 0..10000")
+        object.__setattr__(self, "confidence_bps", int(self.confidence_bps))
+        jobs = tuple(sorted({int(job) for job in self.observed_jobs}))
+        if any(job < 0 for job in jobs):
+            raise ValueError("observed_jobs tidak boleh negatif")
+        object.__setattr__(self, "observed_jobs", jobs)
+        for name in ("successful_mitigations", "failed_mitigations", "inconclusive_mitigations"):
+            value = int(getattr(self, name))
+            if value < 0:
+                raise ValueError(f"{name} tidak boleh negatif")
+            object.__setattr__(self, name, value)
+        if self.status not in {"active", "retired"}:
+            raise ValueError("status failure pattern harus 'active' atau 'retired'")
+
+    def to_body(self) -> dict[str, Any]:
+        return {
+            "kind": "escrow-firewall/failure-pattern/v1",
+            "pattern_id": self.pattern_id,
+            "task_category": self.task_category,
+            "trigger_signature": self.trigger_signature,
+            "failure_description": self.failure_description,
+            "evidence_required": list(self.evidence_required),
+            "recommended_countermeasure": self.recommended_countermeasure,
+            "confidence_bps": self.confidence_bps,
+            "observed_jobs": list(self.observed_jobs),
+            "successful_mitigations": self.successful_mitigations,
+            "failed_mitigations": self.failed_mitigations,
+            "inconclusive_mitigations": self.inconclusive_mitigations,
+            "status": self.status,
+        }
+
+    @classmethod
+    def from_body(cls, body: Mapping[str, Any]) -> FailurePattern:
+        try:
+            if body.get("kind") != "escrow-firewall/failure-pattern/v1":
+                raise MemoryIntegrityError("reference bukan failure pattern Escrow Firewall v1")
+            return cls(
+                pattern_id=str(body["pattern_id"]),
+                task_category=str(body["task_category"]),
+                trigger_signature=str(body["trigger_signature"]),
+                failure_description=str(body["failure_description"]),
+                evidence_required=tuple(body["evidence_required"]),
+                recommended_countermeasure=str(body["recommended_countermeasure"]),
+                confidence_bps=int(body.get("confidence_bps", 0)),
+                observed_jobs=tuple(body.get("observed_jobs", ())),
+                successful_mitigations=int(body.get("successful_mitigations", 0)),
+                failed_mitigations=int(body.get("failed_mitigations", 0)),
+                inconclusive_mitigations=int(body.get("inconclusive_mitigations", 0)),
+                status=str(body.get("status", "active")),
+            )
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            raise MemoryIntegrityError(f"failure pattern body rusak: {exc}") from exc
 
 
 @dataclass(frozen=True)
@@ -1053,6 +1184,90 @@ def get_rubric(client: MemoryClient, category: str) -> dict[str, Any] | None:
     return _read_reference_body(
         client, f"{REFERENCE_RUBRIC_PREFIX}{validate_rubric_category(category)}"
     )
+
+
+@under_memory_lock
+def save_failure_pattern(client: MemoryClient, pattern: FailurePattern) -> FailurePattern:
+    """Simpan pola Escrow Firewall sebagai reference yang ikut `memory_root`.
+
+    Pola sengaja bukan entity provider: ia harus dapat dipanggil untuk provider lain
+    pada pekerjaan berikutnya. Namespace `pattern:firewall.*` membuatnya tetap berada
+    dalam himpunan reference yang sudah dijangkar dan boleh dibaca jalur keputusan.
+    """
+    if not isinstance(pattern, FailurePattern):
+        raise TypeError("pattern harus FailurePattern")
+    client.set_reference(f"{REFERENCE_PATTERN_PREFIX}{pattern.pattern_id}", pattern.to_body())
+    return pattern
+
+
+@under_memory_lock
+def load_failure_patterns(
+    client: MemoryClient, *, task_category: str | None = None
+) -> tuple[FailurePattern, ...]:
+    """Ambil pola aktif yang relevan, tanpa memasukkan reputasi provider sebagai input."""
+    category = None if task_category is None else validate_pattern_id(task_category)
+    references = DecisionMemoryView(client).raw_references(REFERENCE_PATTERN_PREFIX)
+    patterns: list[FailurePattern] = []
+    for key, raw_body in references.items():
+        if not key.startswith(f"{REFERENCE_PATTERN_PREFIX}{FIREWALL_PATTERN_PREFIX}"):
+            continue
+        try:
+            body = json.loads(raw_body) if isinstance(raw_body, str) else raw_body
+            pattern = FailurePattern.from_body(body)
+        except (TypeError, json.JSONDecodeError, MemoryIntegrityError) as exc:
+            raise MemoryIntegrityError(f"failure pattern {key!r} tidak dapat dibaca: {exc}") from exc
+        if pattern.status == "active" and (category is None or pattern.task_category == category):
+            patterns.append(pattern)
+    return tuple(sorted(patterns, key=lambda item: item.pattern_id))
+
+
+@under_memory_lock
+def record_countermeasure_outcome(
+    client: MemoryClient, pattern_id: str, *, job_id: int, outcome: str
+) -> FailurePattern:
+    """Kalibrasi pattern dari hasil safeguard secara deterministik dan dapat diaudit."""
+    checked_id = validate_failure_pattern_id(pattern_id)
+    if outcome not in COUNTERMEASURE_OUTCOMES:
+        raise ValueError(f"outcome tidak sah: {outcome!r}")
+    if isinstance(job_id, bool) or int(job_id) < 0:
+        raise ValueError("job_id harus integer tidak negatif")
+
+    body = _read_reference_body(client, f"{REFERENCE_PATTERN_PREFIX}{checked_id}")
+    if body is None:
+        raise MemoryIntegrityError(f"failure pattern {checked_id!r} tidak ditemukan")
+    pattern = FailurePattern.from_body(body)
+    if pattern.pattern_id != checked_id:
+        raise MemoryIntegrityError("ID failure pattern tidak cocok dengan reference key")
+
+    successful = pattern.successful_mitigations + (outcome == COUNTERMEASURE_WORKED)
+    failed = pattern.failed_mitigations + (outcome == COUNTERMEASURE_FAILED)
+    inconclusive = pattern.inconclusive_mitigations + (outcome == COUNTERMEASURE_INCONCLUSIVE)
+    confidence_delta = (
+        1_000
+        if outcome == COUNTERMEASURE_WORKED
+        else -1_000 if outcome == COUNTERMEASURE_FAILED else 0
+    )
+    updated = replace(
+        pattern,
+        confidence_bps=max(0, min(10_000, pattern.confidence_bps + confidence_delta)),
+        observed_jobs=tuple((*pattern.observed_jobs, int(job_id))),
+        successful_mitigations=successful,
+        failed_mitigations=failed,
+        inconclusive_mitigations=inconclusive,
+    )
+    client.set_reference(f"{REFERENCE_PATTERN_PREFIX}{checked_id}", updated.to_body())
+    write_journal(
+        client,
+        (
+            {
+                "action": "escrow-firewall-countermeasure-outcome",
+                "pattern_id": checked_id,
+                "job_id": int(job_id),
+                "outcome": outcome,
+            },
+        ),
+    )
+    return updated
 
 
 @under_memory_lock
