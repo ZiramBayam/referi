@@ -60,19 +60,8 @@ export default async function VerdictPage({ params }) {
       </p>
 
       <div className="card">
+        <h3>The job</h3>
         <dl className="kv">
-          <dt>bundle version</dt>
-          <dd className="mono">{bundle.version}</dd>
-          <dt>bundle shape</dt>
-          <dd className="mono">{bundle.kind}</dd>
-          <dt>memory mode</dt>
-          <dd className="mono">{bundle.mode}</dd>
-          <dt>memory_root (from the agent)</dt>
-          <dd>
-            <Hash value={bundle.memory_root} />
-          </dd>
-          <dt>check depth</dt>
-          <dd className="mono">{evaluation?.depth ?? gate?.depth ?? "—"}</dd>
           <dt>provider</dt>
           <dd>
             <AddressLink address={job.provider} /> ({job.providerLabel})
@@ -82,12 +71,16 @@ export default async function VerdictPage({ params }) {
             {formatUsdc6(job.budgetUsdc6) ?? <span className="none">not available</span>} units of
             the escrow token (6 decimals)
           </dd>
-          <dt>last ACP status</dt>
-          <dd>{acpStatusLabel(job.acpStatus)}</dd>
           <dt>deliverable hash</dt>
           <dd>
             <Hash value={evaluation?.deliverable} />
           </dd>
+        </dl>
+
+        <h3>Announced on chain</h3>
+        <dl className="kv">
+          <dt>last ACP status</dt>
+          <dd>{acpStatusLabel(job.acpStatus)}</dd>
           <dt>VerdictPosted tx</dt>
           <dd>
             <TxLink hash={job.verdictTxHash} />
@@ -96,6 +89,26 @@ export default async function VerdictPage({ params }) {
           <dd>
             <TxLink hash={job.finalizeTxHash} />
           </dd>
+        </dl>
+
+        <h3>The memory behind the decision</h3>
+        <dl className="kv">
+          <dt>memory_root (from the agent)</dt>
+          <dd>
+            <Hash value={bundle.memory_root} />
+          </dd>
+          <dt>memory mode</dt>
+          <dd className="mono">{bundle.mode}</dd>
+          <dt>check depth</dt>
+          <dd className="mono">{evaluation?.depth ?? gate?.depth ?? "—"}</dd>
+        </dl>
+
+        <h3>This bundle</h3>
+        <dl className="kv">
+          <dt>bundle version</dt>
+          <dd className="mono">{bundle.version}</dd>
+          <dt>bundle shape</dt>
+          <dd className="mono">{bundle.kind}</dd>
           <dt>bundle file</dt>
           <dd className="mono">
             agent/data/chain-abc/verdicts/{job.bundleFile}

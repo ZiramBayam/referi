@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import { loadIndex } from "../lib/data.js";
 import { formatUsdc6 } from "../lib/canonical.js";
@@ -94,6 +95,45 @@ export default async function TimelinePage() {
         </section>
       ) : null}
 
+      <h2>How that difference is produced</h2>
+      <p className="lead">
+        Three steps, in this order. Nothing here is a judgement call by a model — every step is
+        a deterministic rule you can read in the repository.
+      </p>
+
+      <ol className="steps">
+        <li>
+          <span className="n">1</span>
+          <h3>Memory accrues</h3>
+          <p>
+            Every deterministic check failure is quarantined against the provider that caused
+            it. A pattern that fails on <strong>two different jobs</strong> is promoted to a
+            confirmed pattern on that provider&apos;s record.
+          </p>
+          <span className="src">agent/agent/memory_policy.py</span>
+        </li>
+        <li>
+          <span className="n">2</span>
+          <h3>Memory sets the reading depth</h3>
+          <p>
+            A provider with a clean record is <strong>sampled</strong> — only the first two
+            sections are read. A provider carrying confirmed incidents is read in{" "}
+            <strong>full</strong>. Same checks either way; different amount of the work seen.
+          </p>
+          <span className="src">SAMPLING_SECTION_LIMIT = 2</span>
+        </li>
+        <li>
+          <span className="n">3</span>
+          <h3>The verdict carries its own root</h3>
+          <p>
+            <code>postVerdict</code> announces the reason hash together with the{" "}
+            <code>memoryRoot</code> the decision was made against, so the verdict can be checked
+            later against the memory that produced it.
+          </p>
+          <span className="src">contracts/src/EvaluatorVault.sol</span>
+        </li>
+      </ol>
+
       <h2>Five jobs that really landed on chain</h2>
       <p className="lead">
         Ordered by jobId. The &quot;verdict&quot; column is the <code>kind</code> announced by{" "}
@@ -123,7 +163,8 @@ export default async function TimelinePage() {
           </thead>
           <tbody>
             {jobs.map((/** @type {any} */ job) => (
-              <tr key={job.jobId}>
+              <Fragment key={job.jobId}>
+              <tr>
                 <td className="mono">
                   <strong>{job.jobId}</strong>
                 </td>
@@ -153,19 +194,17 @@ export default async function TimelinePage() {
                   <Link href={"/verdict/" + job.jobId}>open evidence</Link>
                 </td>
               </tr>
+              {/* Catatan per job dulu hidup sebagai daftar terpisah di bawah tabel,
+                  mengulang kelima job yang sama. Ia milik barisnya. */}
+              <tr className="note-row">
+                <td />
+                <td colSpan={7}>{job.note}</td>
+              </tr>
+              </Fragment>
             ))}
           </tbody>
         </table>
       </div>
-
-      <h2>What happened, in order</h2>
-      <ul className="lead">
-        {jobs.map((/** @type {any} */ job) => (
-          <li key={job.jobId}>
-            <strong className="mono">job {job.jobId}</strong> — {job.note}
-          </li>
-        ))}
-      </ul>
 
       <h2>Where these numbers come from</h2>
       <div className="card note">

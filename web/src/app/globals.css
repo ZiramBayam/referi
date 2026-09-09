@@ -450,6 +450,63 @@ strong {
   font-weight: 400;
 }
 
+/* ---------------------------------------------------------------- langkah --
+   Rantai sebab, bukan tiga kartu seragam. Nomornya BEKERJA di sini: urutannya
+   sendiri yang membawa informasi — langkah 2 mustahil tanpa langkah 1. */
+
+.steps {
+  list-style: none;
+  margin: var(--s5) 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  border-top: 1px solid var(--hair);
+}
+
+.steps li {
+  position: relative;
+  padding: var(--s5) var(--s5) var(--s5) 0;
+  border-right: 1px solid var(--hair);
+}
+
+.steps li:last-child {
+  border-right: none;
+}
+
+.steps li + li {
+  padding-left: var(--s5);
+}
+
+.steps .n {
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  color: var(--amber);
+  letter-spacing: 0.1em;
+}
+
+.steps h3 {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  text-transform: none;
+  color: var(--bone);
+  margin: var(--s2) 0 var(--s3);
+}
+
+.steps p {
+  color: var(--bone-2);
+  font-size: 14.5px;
+  margin: 0 0 var(--s4);
+}
+
+.steps .src {
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  color: var(--dim);
+}
+
 /* ----------------------------------------------------------------- tabel -- */
 
 .table-wrap {
@@ -492,6 +549,24 @@ tbody tr {
 
 tbody tr:hover {
   background: var(--raised);
+}
+
+/* Catatan job menempel pada barisnya: satu garis di bawah data, bukan daftar
+   terpisah yang mengulang kelima job yang sama. */
+.note-row td {
+  border-bottom: none;
+  padding-top: 0;
+  padding-bottom: var(--s4);
+  color: var(--dim);
+  font-size: 13px;
+}
+
+.note-row:not(:last-child) td {
+  border-bottom: 1px solid var(--hair);
+}
+
+.note-row:hover {
+  background: none;
 }
 
 caption {
@@ -763,6 +838,62 @@ ul.lead li {
   margin-bottom: var(--s2);
 }
 
+/* ---------------------------------------------------------------- footer -- */
+
+footer.site {
+  border-top: 1px solid var(--hair);
+  background: var(--surface);
+  margin-top: var(--s8);
+}
+
+footer.site .wrap {
+  padding: var(--s6) var(--s5);
+}
+
+footer.site .cols {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--s5);
+}
+
+footer.site .k {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: var(--s2);
+}
+
+footer.site .cols a,
+footer.site .cols .mono {
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+footer.site .disclaimer {
+  margin: var(--s6) 0 0;
+  padding-top: var(--s4);
+  border-top: 1px solid var(--hair);
+  color: var(--dim);
+  font-size: 13px;
+  max-width: var(--measure);
+}
+
+/* Halaman verdict mengelompokkan fieldnya; judul kelompok tidak boleh menempel
+   pada kelompok sebelumnya. */
+.card h3 + .kv {
+  margin-bottom: var(--s5);
+}
+
+.card .kv + h3 {
+  margin-top: var(--s5);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--hair);
+}
+
 /* ----------------------------------------------------------------- gerak --
    Satu momen: hero naik bertahap, lalu baris tabel menyusul. Tidak ada
    entrance identik di setiap seksi. */
@@ -847,6 +978,22 @@ ul.lead li {
 @media (max-width: 860px) {
   .plates {
     grid-template-columns: 1fr;
+  }
+
+  .steps,
+  footer.site .cols {
+    grid-template-columns: 1fr;
+  }
+
+  .steps li,
+  .steps li + li {
+    border-right: none;
+    border-bottom: 1px solid var(--hair);
+    padding: var(--s4) 0;
+  }
+
+  .steps li:last-child {
+    border-bottom: none;
   }
 
   .plate-split {
