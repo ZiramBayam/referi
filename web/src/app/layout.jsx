@@ -18,6 +18,7 @@ export default function RootLayout({ children }) {
             <h1>The Evaluator</h1>
             <nav>
               <Link href="/">Job timeline</Link>
+              <Link href="/firewall">Escrow Firewall</Link>
               <Link href="/panel">Judge panel</Link>
             </nav>
             <span className="net">

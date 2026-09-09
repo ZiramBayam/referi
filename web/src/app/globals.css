@@ -28,6 +28,14 @@ a {
   color: var(--link);
 }
 
+a:focus-visible,
+button:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid var(--link);
+  outline-offset: 2px;
+}
+
 code,
 .mono {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -58,7 +66,9 @@ header.top h1 {
 }
 
 header.top nav a {
+  display: inline-block;
   margin-right: 14px;
+  padding: 10px 0;
   text-decoration: none;
 }
 
@@ -216,4 +226,74 @@ button.danger {
 .note {
   border-left: 3px solid var(--muted);
   background: #f2f5f8;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.firewall-context p:not(.eyebrow),
+.firewall-commitment p:not(.eyebrow) {
+  margin: 0;
+}
+
+.terms-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.terms-column {
+  background: var(--card);
+  border: 1px solid var(--line);
+  padding: 14px;
+}
+
+.terms-column.terms-recalled {
+  border-left: 3px solid var(--pass);
+}
+
+.terms-column h3 {
+  margin-top: 0;
+  font-size: 15px;
+}
+
+.terms-list {
+  margin: 0;
+}
+
+.terms-list > div {
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+}
+
+.terms-list dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.terms-list dd {
+  margin: 3px 0 0;
+}
+
+.terms-list ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.firewall-commitment {
+  border-left: 3px solid var(--link);
+}
+
+@media (max-width: 700px) {
+  .terms-grid {
+    grid-template-columns: 1fr;
+  }
 }

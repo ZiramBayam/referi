@@ -30,7 +30,7 @@ The scope is the deterministic MVP: pre-funding safeguards from persistent failu
 - [x] Implement cross-provider retrieval by task category, requirement/evidence signature, and pattern ID.
 - [x] Implement confidence and outcome updates (`worked`, `failed`, `inconclusive`).
 - [x] Ensure generic rejects cannot create a pattern without deterministic evidence.
-- [-] Add tests for fresh-process recall, irrelevant-pattern exclusion, false-positive handling, and deletion behavior (all except false-positive handling covered).
+- [x] Add tests for fresh-process recall, irrelevant-pattern exclusion, false-positive handling, and deletion behavior.
 
 ## 3. Pre-funding policy and terms
 
@@ -56,10 +56,10 @@ The scope is the deterministic MVP: pre-funding safeguards from persistent failu
 
 ## 5. Judge-facing web experience
 
-- [ ] Add a terms comparison view: generic terms vs memory-informed terms.
-- [ ] Show recalled pattern, confidence, evidence, countermeasure, and terms hash.
-- [ ] Keep all content safe to render and distinguish recommendations from enforced policy.
-- [ ] Add API/UI tests for canonical display and deletion control.
+- [x] Add a terms comparison view: generic terms vs memory-informed terms.
+- [x] Show recalled pattern, confidence, evidence, countermeasure, and terms hash.
+- [x] Keep all content safe to render and distinguish recommendations from enforced policy.
+- [-] Add API/UI tests for canonical display and deletion control (static comparison display covered; live API/deletion control pending end-to-end demo artifacts).
 
 ## 6. Verification and handoff
 

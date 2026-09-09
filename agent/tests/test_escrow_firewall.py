@@ -88,6 +88,21 @@ def test_failure_pattern_rejects_untrusted_outcome_value(tmp_path):
         )
 
 
+def test_failed_countermeasure_lowers_confidence_for_false_positive_review(tmp_path):
+    client = MemoryClient.local(str(tmp_path / "memory.db"))
+    mp.save_failure_pattern(client, pattern())
+
+    updated = mp.record_countermeasure_outcome(
+        client,
+        "firewall.missing-reproducible-evidence",
+        job_id=419,
+        outcome=mp.COUNTERMEASURE_FAILED,
+    )
+
+    assert updated.failed_mitigations == 1
+    assert updated.confidence_bps < pattern().confidence_bps
+
+
 def test_mvp_templates_are_deterministic_and_cover_the_three_failure_modes():
     templates = mp.mvp_failure_pattern_templates()
 
