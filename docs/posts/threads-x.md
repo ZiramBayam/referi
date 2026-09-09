@@ -1,7 +1,7 @@
 ---
 title: "X (Twitter) threads — paste-ready"
 date: 2026-09-09
-project: The Evaluator (Sibyl hackathon, Base Sepolia)
+project: REFERI (Sibyl hackathon, Base Sepolia)
 repo: https://github.com/ZiramBayam/referi
 source: docs/posts/01-2026-09-08-*.md and docs/posts/02-2026-09-08-*.md
 ---

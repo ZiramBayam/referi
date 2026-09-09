@@ -79,7 +79,7 @@ you do not need the gate at all, run A5 without `DEMO_MODE=1` — the entire scr
 | Time | Action (type/click) | Screen | Spoken |
 |---|---|---|---|
 | 0:00 | Nothing; Terminal A is clean | empty prompt inside the repo | "ERC-8183 gives one role total power: the evaluator. It decides whether a job is paid in full or refunded in full — there is no partial payment. And a standard evaluator has no memory: the same provider can repeat the same trick tomorrow, and the referee will not know." |
-| 0:20 | Type and run: `make demo 2>&1 \| tee /tmp/take1-demo.log` | lines `[demo] start …`, `[demo] anvil.up …` start scrolling | "This is The Evaluator: an ERC-8183 referee whose memory of each provider can be recomputed from files. This single command builds the chain from scratch on local Anvil, then reads one frozen vault on Base Sepolia — only two `eth_call` view calls: **no funds, no transactions**. While it runs, let me show you what already landed on chain." |
+| 0:20 | Type and run: `make demo 2>&1 \| tee /tmp/take1-demo.log` | lines `[demo] start …`, `[demo] anvil.up …` start scrolling | "This is REFERI: an ERC-8183 referee whose memory of each provider can be recomputed from files. This single command builds the chain from scratch on local Anvil, then reads one frozen vault on Base Sepolia — only two `eth_call` view calls: **no funds, no transactions**. While it runs, let me show you what already landed on chain." |
 
 > On-screen evidence: `Makefile:62-63`; internet requirement `Makefile:50-54`; `sim/src/demo.ts:610-611`
 > ("only two `eth_call` view calls").

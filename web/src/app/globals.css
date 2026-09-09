@@ -216,11 +216,13 @@ header.top .wrap {
   gap: var(--s5);
 }
 
+/* Wordmark. Huruf besar pada serif display butuh spasi POSITIF — tracking rapat
+   yang benar untuk "The Evaluator" membuat "REFERI" saling menempel. */
 header.top h1 {
   font-family: var(--font-display), Georgia, serif;
-  font-size: 21px;
+  font-size: 22px;
   font-weight: 400;
-  letter-spacing: -0.01em;
+  letter-spacing: 0.08em;
   margin: 0;
   white-space: nowrap;
 }

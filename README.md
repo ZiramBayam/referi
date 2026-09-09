@@ -1,4 +1,4 @@
-# The Evaluator
+# REFERI
 
 An ERC-8183 escrow referee whose memory of each provider can be **recomputed from files**. A standard
 ERC-8183 evaluator is stateless and "fully trusted": the same provider can repeat the same trick on the

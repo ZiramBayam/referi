@@ -1,6 +1,6 @@
 # Limitations & trust assumptions
 
-The complete list of The Evaluator's limitations. The numbering **does not change** from earlier README
+The complete list of REFERI's limitations. The numbering **does not change** from earlier README
 versions — `demo/video-script.md` and `docs/posts/` refer to these items by
 the same numbers. A summary of the eight most important ones is in [`README.md`](../README.md).
 

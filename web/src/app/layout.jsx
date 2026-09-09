@@ -9,7 +9,7 @@ import { display, sans, mono } from "../fonts/fonts.js";
 const REPO_URL = "https://github.com/ZiramBayam/referi";
 
 export const metadata = {
-  title: "The Evaluator — verdict evidence",
+  title: "REFERI — verdict evidence",
   description:
     "Job timeline, per-criterion evidence, and a judge panel for an ERC-8183 escrow referee with auditable provider memory.",
 };
@@ -32,7 +32,7 @@ export default async function RootLayout({ children }) {
         </a>
         <header className="top">
           <div className="wrap">
-            <h1>The Evaluator</h1>
+            <h1>REFERI</h1>
             <nav aria-label="Main">
               <Link href="/">Timeline</Link>
               <Link href="/panel">Judge panel</Link>
