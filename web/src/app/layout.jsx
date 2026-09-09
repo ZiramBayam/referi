@@ -1,6 +1,7 @@
 import "./globals.css";
 import Link from "next/link";
 import { CHAIN_ID, CHAIN_NAME } from "../lib/chain.js";
+import { display, sans, mono } from "../fonts/fonts.js";
 
 export const metadata = {
   title: "The Evaluator — verdict evidence",
@@ -11,7 +12,10 @@ export const metadata = {
 /** @param {{ children: unknown }} props */
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html
+      lang="en"
+      className={`${display.variable} ${sans.variable} ${mono.variable}`}
+    >
       <body>
         <a className="skip" href="#content">
           Skip to content
@@ -20,11 +24,11 @@ export default function RootLayout({ children }) {
           <div className="wrap">
             <h1>The Evaluator</h1>
             <nav aria-label="Main">
-              <Link href="/">Job timeline</Link>
+              <Link href="/">Timeline</Link>
               <Link href="/panel">Judge panel</Link>
             </nav>
             <span className="net">
-              {CHAIN_NAME} (chainId {CHAIN_ID}) — data from static artifacts, no RPC in the browser
+              {CHAIN_NAME} · {CHAIN_ID} · static artifacts, no RPC
             </span>
           </div>
         </header>
