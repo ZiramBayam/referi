@@ -114,7 +114,7 @@ export default async function TimelinePage() {
         a deterministic rule you can read in the repository.
       </p>
 
-      <ol className="steps">
+      <ol className="steps" data-reveal>
         <li>
           <span className="n">1</span>
           <h3>Memory accrues</h3>
@@ -155,7 +155,9 @@ export default async function TimelinePage() {
             the on-chain bundles. Move the depth and watch the third section — and the verdict
             — change.
           </p>
-          <ReadWindow text={twinText.text} hash={twinText.sha_keccak} />
+          <div data-reveal>
+            <ReadWindow text={twinText.text} hash={twinText.sha_keccak} />
+          </div>
         </>
       ) : null}
 
@@ -169,7 +171,7 @@ export default async function TimelinePage() {
         instead of as raw topics.
       </p>
 
-      <div className="table-wrap">
+      <div className="table-wrap" data-reveal>
         <table>
           <caption>
             Jobs 418–422: provider, budget, on-chain status, and the verdict announced for each.

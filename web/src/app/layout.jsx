@@ -4,6 +4,7 @@ import { CHAIN_ID, CHAIN_NAME } from "../lib/chain.js";
 import { loadDeployment } from "../lib/data.js";
 import { AddressLink } from "../components/Links.jsx";
 import Icon from "../components/Icon.jsx";
+import Reveal from "../components/Reveal.jsx";
 import { display, sans, mono } from "../fonts/fonts.js";
 
 const REPO_URL = "https://github.com/ZiramBayam/referi";
@@ -27,6 +28,7 @@ export default async function RootLayout({ children }) {
       className={`${display.variable} ${sans.variable} ${mono.variable}`}
     >
       <body>
+        <Reveal />
         <a className="skip" href="#content">
           Skip to content
         </a>

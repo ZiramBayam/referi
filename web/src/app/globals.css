@@ -406,7 +406,10 @@ strong {
   display: inline-flex;
   align-items: center;
   gap: 0.5em;
-  padding: var(--s2) var(--s4);
+  /* CTA hero lebih besar dari tombol biasa: ia satu-satunya hal di layar
+     pertama yang meminta ditekan. */
+  padding: var(--s3) var(--s5);
+  font-size: 15px;
   border-radius: 999px;
   background: var(--amber);
   color: var(--bone);
@@ -421,9 +424,26 @@ strong {
   color: #fff;
 }
 
+.hero .actions .go {
+  transition: background 0.16s var(--ease), color 0.16s var(--ease),
+    transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+
 .hero .actions .go .icon {
   margin-left: 0;
   opacity: 1;
+  transition: transform 0.22s var(--ease);
+}
+
+.hero .actions .go:hover .icon {
+  transform: translateX(3px);
+}
+
+/* Blok tinta ikut tertekan saat diklik — di dunia kertas ini itu satu-satunya
+   umpan balik tekan yang masuk akal. */
+.hero .actions .go:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--bone);
 }
 
 .hero .actions .quiet {
@@ -1037,24 +1057,6 @@ footer.site .disclaimer {
     --dir: -14px;
   }
 
-  tbody tr {
-    animation: rise 0.5s var(--ease) both;
-  }
-  tbody tr:nth-child(1) {
-    animation-delay: 0.04s;
-  }
-  tbody tr:nth-child(2) {
-    animation-delay: 0.08s;
-  }
-  tbody tr:nth-child(3) {
-    animation-delay: 0.12s;
-  }
-  tbody tr:nth-child(4) {
-    animation-delay: 0.16s;
-  }
-  tbody tr:nth-child(5) {
-    animation-delay: 0.2s;
-  }
 
   @keyframes rise {
     from {
@@ -1480,4 +1482,76 @@ footer.site .disclaimer {
   color: var(--dim);
   border-left: 2px solid var(--hair);
   padding-left: var(--s3);
+}
+
+/* ------------------------------------------------ dibuka saat digulir ------
+   Hanya berlaku ketika `Reveal` sudah memasang `js-reveal` di <html>. Tanpa JS,
+   tanpa IntersectionObserver, atau dengan gerak dikurangi, seluruh blok ini
+   tidak pernah menyala dan isinya tampil biasa.
+
+   Gerakannya TIDAK seragam di tiap seksi. Langkah dibuka BERURUTAN karena
+   urutannya memang membawa arti — langkah 2 mustahil tanpa langkah 1. Baris
+   tabel dibuka berurutan karena ia catatan yang bertambah. Jendela membaca
+   dibuka utuh, sekali, karena ia satu alat. */
+
+@media (prefers-reduced-motion: no-preference) {
+  .js-reveal [data-reveal] {
+    opacity: 0;
+    transform: translateY(18px);
+    transition: opacity 0.6s var(--ease), transform 0.6s var(--ease);
+  }
+
+  .js-reveal [data-reveal].is-in {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* rantai sebab: satu per satu */
+  .js-reveal .steps li {
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 0.5s var(--ease), transform 0.5s var(--ease);
+  }
+
+  .js-reveal .steps.is-in li {
+    opacity: 1;
+    transform: none;
+  }
+
+  .js-reveal .steps.is-in li:nth-child(2) {
+    transition-delay: 0.12s;
+  }
+
+  .js-reveal .steps.is-in li:nth-child(3) {
+    transition-delay: 0.24s;
+  }
+
+  /* catatan yang bertambah */
+  .js-reveal .table-wrap tbody tr {
+    opacity: 0;
+    transition: opacity 0.4s var(--ease);
+  }
+
+  .js-reveal .table-wrap.is-in tbody tr {
+    opacity: 1;
+  }
+
+  .js-reveal .table-wrap.is-in tbody tr:nth-child(2) { transition-delay: 0.06s; }
+  .js-reveal .table-wrap.is-in tbody tr:nth-child(4) { transition-delay: 0.12s; }
+  .js-reveal .table-wrap.is-in tbody tr:nth-child(6) { transition-delay: 0.18s; }
+  .js-reveal .table-wrap.is-in tbody tr:nth-child(8) { transition-delay: 0.24s; }
+  .js-reveal .table-wrap.is-in tbody tr:nth-child(10) { transition-delay: 0.3s; }
+
+  /* batang kedalaman terisi sesudah barisnya muncul — perbedaan sampling vs
+     full itulah yang ingin dilihat mata, jadi ia yang bergerak terakhir. */
+  .js-reveal .table-wrap .depthbar i {
+    transform: scaleY(0.25);
+    transform-origin: bottom;
+    transition: transform 0.35s var(--ease), background 0.35s var(--ease);
+  }
+
+  .js-reveal .table-wrap.is-in .depthbar i {
+    transform: none;
+    transition-delay: 0.34s;
+  }
 }
