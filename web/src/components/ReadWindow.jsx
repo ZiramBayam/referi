@@ -10,7 +10,7 @@ import {
   DEPTH_FULL,
 } from "../lib/checks.js";
 import Icon from "./Icon.jsx";
-import { glossSection } from "../lib/gloss.js";
+import { DELIVERABLE_EN } from "../lib/gloss.js";
 
 /**
  * "Baca seperti wasitnya membaca."
@@ -25,20 +25,25 @@ import { glossSection } from "../lib/gloss.js";
  * `TODO` yang ada di sana lolos. Pada `full` seksi itu menyala dan verdictnya
  * berbalik. Itulah seluruh tesis produk ini, dalam satu klik.
  *
- * @param {{ text: string }} props
+ * @param {{ text: string, hash?: string }} props — `text` adalah byte ASLI yang
+ *   di-hash (ditampilkan di kaki), `hash` keccak-nya.
  */
-export default function ReadWindow({ text }) {
+export default function ReadWindow({ text, hash }) {
   const [depth, setDepth] = useState(DEPTH_SAMPLING);
 
+  // Dibaca dari TERJEMAHAN, bukan dari byte asli: strukturnya identik, jadi
+  // `evaluateText` mengembalikan hasil yang sama persis (diuji: 3 seksi,
+  // sampling -> COMPLETE 2/3, full -> REJECT 3/3 gagal `format`). Aslinya tetap
+  // ditampilkan di bawah sebagai byte yang di-hash.
   const { sections, inScope, result } = useMemo(() => {
-    const doc = parseDocument(text);
+    const doc = parseDocument(DELIVERABLE_EN);
     const scope = sectionsInScope(doc, depth);
     return {
       sections: doc.sections,
       inScope: new Set(scope.map((s) => s.index)),
-      result: evaluateText(text, depth),
+      result: evaluateText(DELIVERABLE_EN, depth),
     };
-  }, [text, depth]);
+  }, [depth]);
 
   const rejected = result.verdict === 2;
 
@@ -81,12 +86,6 @@ export default function ReadWindow({ text }) {
                   )}
                 </span>
                 <pre>{highlight(sectionText(s), read)}</pre>
-                {glossSection(s.heading) ? (
-                  <p className="gloss">
-                    <span>EN</span>
-                    {glossSection(s.heading)}
-                  </p>
-                ) : null}
               </div>
             );
           })}
@@ -112,6 +111,26 @@ export default function ReadWindow({ text }) {
           </p>
         </aside>
       </div>
+
+      <details className="source">
+        <summary>
+          Shown in English. The bytes that were hashed are the Indonesian original —
+          open to read them.
+        </summary>
+        <p className="note-line">
+          The translation above is structurally faithful: run through the same check
+          code it yields the same three sections and the same two verdicts. Only the
+          original below was hashed
+          {hash ? (
+            <>
+              {" "}
+              — <span className="mono">{hash}</span>
+            </>
+          ) : null}
+          .
+        </p>
+        <pre>{text}</pre>
+      </details>
     </div>
   );
 }

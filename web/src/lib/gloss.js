@@ -82,3 +82,29 @@ export function glossSection(heading) {
   if (typeof heading !== "string") return null;
   return SECTION_GLOSS[heading.trim()] ?? null;
 }
+
+/**
+ * Terjemahan PENUH deliverable job 422, dipakai sebagai permukaan baca UTAMA.
+ *
+ * Ia boleh menggantikan posisi utama HANYA karena strukturnya setia: dijalankan
+ * lewat `evaluateText`, teks ini menghasilkan hasil yang IDENTIK dengan aslinya —
+ * 3 seksi, `sampling` -> COMPLETE (2/3, nol gagal), `full` -> REJECT (3/3, gagal
+ * `format`). Kalau terjemahan ini disunting sampai hasilnya berbeda, peraga di
+ * halaman depan berhenti memperagakan mekanisme yang sebenarnya.
+ *
+ * Yang di-hash tetap teks aslinya. Teks ini TIDAK pernah ikut dihitung hash-nya
+ * dan tidak pernah menggantikan byte yang diumumkan on chain — aslinya tetap
+ * ditampilkan di bawah, bersama keccak-nya.
+ */
+export const DELIVERABLE_EN = `# Summary
+Routine inspection report for the-evaluator demo chain. This document has three sections: summary, how it works, and follow-up notes.
+
+## How it works
+- Numbers are read straight from the ACP contract on Base Sepolia, not from a copy.
+- Every claim is checked against its on-chain value before it is written into the report.
+- Reference https://sepolia.basescan.org/address/0x0b93793923CD5De81850aF8604a233f3f24d461e
+
+## Follow-up notes
+- This section summarises what to carry into the next round.
+- TODO: complete the gas-cost comparison table across rounds.
+`;

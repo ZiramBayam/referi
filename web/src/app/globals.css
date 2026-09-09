@@ -1431,3 +1431,40 @@ footer.site .disclaimer {
 .doc-gloss .gloss + .gloss {
   margin-top: var(--s2);
 }
+
+/* Byte asli yang di-hash, dilipat di kaki jendela membaca. Ia tidak
+   disembunyikan — ia diletakkan sesudah bacaan, bukan menggantikannya. */
+.readwin .source {
+  border-top: 2px solid var(--bone);
+  padding: var(--s4) var(--s5);
+  background: var(--raised);
+}
+
+.readwin .source summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--bone-2);
+}
+
+.readwin .source summary::marker {
+  color: var(--amber);
+}
+
+.readwin .source .note-line {
+  margin: var(--s3) 0 0;
+  font-size: 12.5px;
+  color: var(--dim);
+  max-width: 78ch;
+}
+
+.readwin .source pre {
+  margin: var(--s3) 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dim);
+  border-left: 2px solid var(--hair);
+  padding-left: var(--s3);
+}

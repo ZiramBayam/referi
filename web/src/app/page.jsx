@@ -151,11 +151,11 @@ export default async function TimelinePage() {
         <>
           <h2>Read it the way the referee did</h2>
           <p className="lead">
-            This is the actual deliverable from job 422, and the control below runs the same
-            check code that produced the on-chain bundles. Move the depth and watch the third
-            section — and the verdict — change.
+            This is the deliverable from job 422, read by the same check code that produced
+            the on-chain bundles. Move the depth and watch the third section — and the verdict
+            — change.
           </p>
-          <ReadWindow text={twinText.text} />
+          <ReadWindow text={twinText.text} hash={twinText.sha_keccak} />
         </>
       ) : null}
 
