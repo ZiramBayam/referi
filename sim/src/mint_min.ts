@@ -271,6 +271,6 @@ async function main(): Promise<void> {
 
 main().catch((err: unknown) => {
   const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-  console.error(scrub(`[mint_min] GAGAL ${message}`));
+  console.error(scrub(`[mint_min] FAILED ${message}`));
   process.exitCode = 1;
 });

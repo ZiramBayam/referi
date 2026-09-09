@@ -101,9 +101,9 @@ type Step = {
 const STEPS: readonly Step[] = [
   {
     id: "A",
-    note: "§7 langkah 1 — job rapi tapi cacat deterministik; REJECT, suspicion count=1",
+    note: "§7 step 1 — tidy job but a deterministic defect; REJECT, suspicion count=1",
     expectStatus: "SUBMITTED",
-    expectVerdict: "REJECT (cek deterministik gagal)",
+    expectVerdict: "REJECT (deterministic check failed)",
     env: {
       PROVIDER_SLOT: "alpha",
       BUDGET_RAW: "250000",
@@ -113,9 +113,9 @@ const STEPS: readonly Step[] = [
   },
   {
     id: "B",
-    note: "§7 langkah 2 — pola sama, job berbeda; REJECT kedua → count=2 → promosi pattern, risk=2",
+    note: "§7 step 2 — same pattern, different job; second REJECT -> count=2 -> pattern promoted, risk=2",
     expectStatus: "SUBMITTED",
-    expectVerdict: "REJECT (cek deterministik gagal) + setProviderCap",
+    expectVerdict: "REJECT (deterministic check failed) + setProviderCap",
     env: {
       PROVIDER_SLOT: "alpha",
       BUDGET_RAW: "250000",
@@ -125,9 +125,9 @@ const STEPS: readonly Step[] = [
   },
   {
     id: "C",
-    note: "§7 langkah 3 — budget 2 USDC melebihi cap 0,25 USDC; gerbang menolak saat Funded",
+    note: "§7 step 3 — budget 2 USDC exceeds the 0.25 USDC cap; the gate rejects while Funded",
     expectStatus: "FUNDED",
-    expectVerdict: "REJECT saat Funded (melebihi cap; 2 insiden terkonfirmasi)",
+    expectVerdict: "REJECT while Funded (over cap; 2 confirmed incidents)",
     env: {
       PROVIDER_SLOT: "alpha",
       BUDGET_RAW: "2000000",
@@ -265,7 +265,7 @@ async function main(): Promise<void> {
     const status = result.summary.status ?? "?";
     if (status !== step.expectStatus) {
       throw new Error(
-        `langkah ${step.id}: status akhir ${status}, seharusnya ${step.expectStatus} — rantai dihentikan`,
+        `step ${step.id}: final status ${status}, expected ${step.expectStatus} — chain halted`,
       );
     }
     results.push({ step, result });
@@ -303,18 +303,18 @@ async function main(): Promise<void> {
   log("done", {
     scenario: name,
     jobIds: results.map(({ result }) => result.summary.jobId ?? "?").join(","),
-    next: '"jalankan agent/ atas tiap jobId untuk verdictnya — skrip ini menyiapkan job, bukan verdict"',
+    next: '"run agent/ over each jobId for its verdict — this script prepares jobs, not verdicts"',
   });
 }
 
 main().catch((err: unknown) => {
   if (err instanceof UsageError) {
-    console.error(`[scenario] PEMAKAIAN ${err.message}`);
-    console.error("[scenario] contoh: pnpm sim:run --scenario alpha-x3");
+    console.error(`[scenario] USAGE ${err.message}`);
+    console.error("[scenario] example: pnpm sim:run --scenario alpha-x3");
     process.exitCode = 2;
     return;
   }
   const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-  console.error(`[scenario] GAGAL ${message}`);
+  console.error(`[scenario] FAILED ${message}`);
   process.exitCode = 1;
 });

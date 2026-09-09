@@ -618,7 +618,7 @@ class OnChainJobApi implements AcpJobApi {
     // Salinan off-chain deliverable butuh wallet terdaftar di registry Virtuals (lihat catatan
     // di atas). Yang di-hash ke on-chain oleh SDK adalah string LOKAL, jadi `submit` tetap benar;
     // hanya salinan teks penuh di API Virtuals yang tidak ada.
-    log("deliverable.offchain.skipped", { chainId, jobId, reason: "wallet-belum-terdaftar-di-registry" });
+    log("deliverable.offchain.skipped", { chainId, jobId, reason: "wallet-not-registered-in-registry" });
   }
 
   async browseAgents(): Promise<AcpAgentDetail[]> {
@@ -931,6 +931,6 @@ async function main(): Promise<void> {
 
 main().catch((err: unknown) => {
   const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-  console.error(scrub(`[client_min] GAGAL ${message}`));
+  console.error(scrub(`[client_min] FAILED ${message}`));
   process.exitCode = 1;
 });
