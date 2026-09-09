@@ -706,6 +706,40 @@ class FailurePattern:
             raise MemoryIntegrityError(f"failure pattern body rusak: {exc}") from exc
 
 
+def mvp_failure_pattern_templates() -> tuple[FailurePattern, ...]:
+    """Tiga pola awal yang boleh dipakai demo tanpa membuat sinyal palsu dari provider.
+
+    Ini adalah template kebijakan statis, bukan observasi. Ia baru menjadi memori
+    load-bearing setelah disimpan bersama bukti job yang benar-benar memicunya.
+    """
+    return (
+        FailurePattern(
+            pattern_id="firewall.incomplete-deliverable",
+            task_category="general",
+            trigger_signature="required-artifact-missing",
+            failure_description="deliverable tidak memuat artefak yang secara eksplisit diminta",
+            evidence_required=("artifact-inventory", "requirement-to-artifact-map"),
+            recommended_countermeasure="require-artifact-inventory-before-milestone",
+        ),
+        FailurePattern(
+            pattern_id="firewall.missing-reproducible-evidence",
+            task_category="general",
+            trigger_signature="claims-test-passed-without-artifact",
+            failure_description="klaim hasil tidak dapat dijalankan ulang dari artefak yang diserahkan",
+            evidence_required=("commit-hash", "environment-version", "test-command", "test-output"),
+            recommended_countermeasure="require-reproducible-evidence-before-milestone",
+        ),
+        FailurePattern(
+            pattern_id="firewall.requirement-ambiguity",
+            task_category="general",
+            trigger_signature="missing-client-acceptance-criteria",
+            failure_description="brief tidak memiliki kriteria penerimaan yang dapat diverifikasi",
+            evidence_required=("acceptance-criteria", "client-approval"),
+            recommended_countermeasure="require-client-approval-before-funding",
+        ),
+    )
+
+
 @dataclass(frozen=True)
 class ProviderProfile:
     """Isi entity WARM `provider` (spec §3 baris 100), sebagai struktur yang bisa diuji."""
@@ -1202,10 +1236,15 @@ def save_failure_pattern(client: MemoryClient, pattern: FailurePattern) -> Failu
 
 @under_memory_lock
 def load_failure_patterns(
-    client: MemoryClient, *, task_category: str | None = None
+    client: MemoryClient, *, task_category: str | None = None, trigger_signature: str | None = None
 ) -> tuple[FailurePattern, ...]:
     """Ambil pola aktif yang relevan, tanpa memasukkan reputasi provider sebagai input."""
     category = None if task_category is None else validate_pattern_id(task_category)
+    signature = (
+        None
+        if trigger_signature is None
+        else _failure_pattern_text("trigger_signature", trigger_signature)
+    )
     references = DecisionMemoryView(client).raw_references(REFERENCE_PATTERN_PREFIX)
     patterns: list[FailurePattern] = []
     for key, raw_body in references.items():
@@ -1216,7 +1255,9 @@ def load_failure_patterns(
             pattern = FailurePattern.from_body(body)
         except (TypeError, json.JSONDecodeError, MemoryIntegrityError) as exc:
             raise MemoryIntegrityError(f"failure pattern {key!r} tidak dapat dibaca: {exc}") from exc
-        if pattern.status == "active" and (category is None or pattern.task_category == category):
+        category_matches = category is None or pattern.task_category in {category, "general"}
+        signature_matches = signature is None or pattern.trigger_signature == signature
+        if pattern.status == "active" and category_matches and signature_matches:
             patterns.append(pattern)
     return tuple(sorted(patterns, key=lambda item: item.pattern_id))
 

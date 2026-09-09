@@ -86,3 +86,38 @@ def test_failure_pattern_rejects_untrusted_outcome_value(tmp_path):
             job_id=419,
             outcome="accept-anything",
         )
+
+
+def test_mvp_templates_are_deterministic_and_cover_the_three_failure_modes():
+    templates = mp.mvp_failure_pattern_templates()
+
+    assert tuple(item.pattern_id for item in templates) == (
+        "firewall.incomplete-deliverable",
+        "firewall.missing-reproducible-evidence",
+        "firewall.requirement-ambiguity",
+    )
+    assert all(item.status == "active" for item in templates)
+    assert all(item.evidence_required for item in templates)
+
+
+def test_retrieval_uses_category_and_trigger_signature(tmp_path):
+    client = MemoryClient.local(str(tmp_path / "memory.db"))
+    matching = pattern()
+    irrelevant = mp.FailurePattern(
+        pattern_id="firewall.requirement-ambiguity",
+        task_category="smart-contract-audit",
+        trigger_signature="missing-client-acceptance-criteria",
+        failure_description="kriteria penerimaan tidak dapat ditentukan dari brief",
+        evidence_required=("acceptance-criteria",),
+        recommended_countermeasure="require-client-approval-before-funding",
+    )
+    mp.save_failure_pattern(client, matching)
+    mp.save_failure_pattern(client, irrelevant)
+
+    recalled = mp.load_failure_patterns(
+        client,
+        task_category="smart-contract-audit",
+        trigger_signature="claims-test-passed-without-artifact",
+    )
+
+    assert recalled == (matching,)

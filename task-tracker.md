@@ -16,10 +16,10 @@ The scope is the deterministic MVP: pre-funding safeguards from persistent failu
 ## 1. Domain model: failure-pattern memory
 
 - [-] Define canonical `FailurePattern`, `Countermeasure`, `TermsPolicy`, and `PolicyProposal` models.
-- [ ] Add the three MVP pattern templates:
-  - [ ] `missing-reproducible-evidence`
-  - [ ] `incomplete-deliverable`
-  - [ ] `requirement-ambiguity`
+- [x] Add the three MVP pattern templates:
+  - [x] `missing-reproducible-evidence`
+  - [x] `incomplete-deliverable`
+  - [x] `requirement-ambiguity`
 - [x] Persist failure patterns, observations, mitigation outcomes, and confidence in Sibyl-backed memory.
 - [x] Include decision-relevant failure-pattern data in the canonical memory-root snapshot, via the compatible `pattern:firewall.*` reference namespace.
 - [-] Add unit tests for validation, serialization, migration-free reads, and root determinism.
@@ -27,7 +27,7 @@ The scope is the deterministic MVP: pre-funding safeguards from persistent failu
 ## 2. Pattern lifecycle
 
 - [ ] Implement deterministic extraction from existing evaluation evidence.
-- [-] Implement cross-provider retrieval by task category, requirement/evidence signature, and pattern ID.
+- [-] Implement cross-provider retrieval by task category, requirement/evidence signature, and pattern ID (category + trigger-signature complete; evidence signature pending).
 - [x] Implement confidence and outcome updates (`worked`, `failed`, `inconclusive`).
 - [ ] Ensure generic rejects cannot create a pattern without deterministic evidence.
 - [ ] Add tests for fresh-process recall, irrelevant-pattern exclusion, false-positive handling, and deletion behavior.
