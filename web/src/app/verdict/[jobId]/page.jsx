@@ -1,5 +1,7 @@
 import Link from "next/link";
 import Icon from "../../../components/Icon.jsx";
+import { gloss, glossSection } from "../../../lib/gloss.js";
+import { parseDocument } from "../../../lib/checks.js";
 import { notFound } from "next/navigation";
 import { loadJobs, loadJob, loadBundle, loadDeliverable } from "../../../lib/data.js";
 import { readSmallInt, readUint, readSectionIndex, formatUsdc6 } from "../../../lib/canonical.js";
@@ -52,11 +54,14 @@ export default async function VerdictPage({ params }) {
         <code>VerdictPosted</code> transaction — not a rewritten summary.
       </p>
       <p className="lead">
-        <strong>Bundle strings are quoted, not translated.</strong> The gate <code>reason</code>,
-        each criterion&apos;s text, and every <code>reason</code>/<code>proof</code> line below are
-        the agent&apos;s own output, copied out of the bundle byte for byte. They are written in
-        Indonesian and stay that way on purpose: the bundle is what gets hashed into{" "}
-        <code>reasonHash</code>, so rewording it here would stop matching the chain.
+        <strong>Bundle strings are quoted, never rewritten.</strong> The gate{" "}
+        <code>reason</code>, each criterion&apos;s text, and every <code>reason</code>/
+        <code>proof</code> line below are the agent&apos;s own output, copied out of the bundle
+        byte for byte. They are written in Indonesian and stay that way on purpose: the bundle
+        is what gets hashed into <code>reasonHash</code>, so rewording it here would stop
+        matching the chain. Where a line carries an <strong>EN</strong> marker, that is an
+        English translation shown beside the original for reading — it is never what was
+        hashed.
       </p>
 
       <div className="card">
@@ -142,7 +147,15 @@ export default async function VerdictPage({ params }) {
                 </span>
               </dd>
               <dt>reason</dt>
-              <dd>{gate.reason}</dd>
+              <dd>
+                {gate.reason}
+                {gloss(gate.reason) ? (
+                  <span className="gloss">
+                    <span>EN</span>
+                    {gloss(gate.reason)}
+                  </span>
+                ) : null}
+              </dd>
               <dt>budget</dt>
               <dd className="mono">{readUint(gate.budget) ?? "not available"}</dd>
               <dt>provider cap</dt>
@@ -193,7 +206,15 @@ export default async function VerdictPage({ params }) {
             <div className="card warn">
               <h3 style={{ marginTop: 0 }}>Criteria that were NOT scored</h3>
               <p className="mono">{evaluation.unscored.join(", ")}</p>
-              <p style={{ marginBottom: 0 }}>{evaluation.unscored_reason}</p>
+              <p style={{ marginBottom: 0 }}>
+                {evaluation.unscored_reason}
+                {gloss(evaluation.unscored_reason) ? (
+                  <span className="gloss">
+                    <span>EN</span>
+                    {gloss(evaluation.unscored_reason)}
+                  </span>
+                ) : null}
+              </p>
             </div>
           ) : null}
         </div>
@@ -209,6 +230,16 @@ export default async function VerdictPage({ params }) {
             </dd>
           </dl>
           <pre className="doc">{deliverable.text}</pre>
+          <div className="doc-gloss">
+            {parseDocument(deliverable.text).sections.map((s) =>
+              glossSection(s.heading) ? (
+                <p className="gloss" key={s.index}>
+                  <span>EN</span>
+                  {glossSection(s.heading)}
+                </p>
+              ) : null
+            )}
+          </div>
         </div>
       ) : (
         <p className="none">

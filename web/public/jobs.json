@@ -4,7 +4,7 @@
     "deliverables": "demo/deliverables/<jobId>.json (copied verbatim to /deliverables/<jobId>.json)",
     "verdictTxHash": "event VerdictPosted(uint256 indexed jobId,uint8,bytes32,bytes32,uint64) on EvaluatorVault 0x5c6EE4586ACABcb6326069c229E58091B21ef384, Base Sepolia; topic[1] = jobId",
     "finalizeTxHash": "docs/limitations.md item 25 (only jobs 421 & 422 are recorded)",
-    "budgetUsdc6": "docs/evidence.md section \"Rantai A → B → C\" (418/419/420) and docs/limitations.md item 25 (421/422); 6-decimal units",
+    "budgetUsdc6": "docs/evidence.md section \"Chain A → B → C\" (418/419/420) and docs/limitations.md item 25 (421/422); 6-decimal units",
     "acpStatus": "final ACP job status per docs/evidence.md; 3 = Completed, 4 = Rejected",
     "provider": "gate bundle of job 420 (Alpha) and docs/limitations.md item 25 (Beta)"
   },

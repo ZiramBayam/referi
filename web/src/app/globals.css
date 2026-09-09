@@ -1390,3 +1390,42 @@ footer.site .disclaimer {
     display: none;
   }
 }
+
+/* --------------------------------------------------------------- glosarium --
+   Terjemahan Inggris di samping byte yang di-hash. Ia sengaja terlihat SEKUNDER:
+   yang mengikat adalah teks aslinya, dan pembaca harus bisa melihat mana yang
+   mana dalam sekali pandang. */
+
+.gloss {
+  display: block;
+  margin: var(--s2) 0 0;
+  padding-left: var(--s3);
+  border-left: 2px solid var(--amber);
+  color: var(--dim);
+  font-family: var(--font-sans), sans-serif;
+  font-size: 12.5px;
+  line-height: 1.55;
+  font-style: normal;
+}
+
+.gloss > span:first-child {
+  display: inline-block;
+  margin-right: 0.5em;
+  padding: 0 5px;
+  background: var(--amber);
+  color: var(--bone);
+  font-family: var(--font-mono), monospace;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  vertical-align: 1px;
+}
+
+/* Glosarium di bawah kutipan deliverable utuh: satu blok, bukan sisipan. */
+.doc-gloss {
+  margin-top: var(--s3);
+}
+
+.doc-gloss .gloss + .gloss {
+  margin-top: var(--s2);
+}

@@ -10,6 +10,7 @@ import {
   DEPTH_FULL,
 } from "../lib/checks.js";
 import Icon from "./Icon.jsx";
+import { glossSection } from "../lib/gloss.js";
 
 /**
  * "Baca seperti wasitnya membaca."
@@ -80,6 +81,12 @@ export default function ReadWindow({ text }) {
                   )}
                 </span>
                 <pre>{highlight(sectionText(s), read)}</pre>
+                {glossSection(s.heading) ? (
+                  <p className="gloss">
+                    <span>EN</span>
+                    {glossSection(s.heading)}
+                  </p>
+                ) : null}
               </div>
             );
           })}
