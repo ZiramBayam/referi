@@ -46,16 +46,22 @@ export default async function TimelinePage() {
     <div>
       {passed && rejected ? (
         <section className="hero">
-          <p className="eyebrow">Evidence anchored on chain</p>
           <h1>
             Identical text. <em>Opposite verdicts.</em>
           </h1>
           <p className="sub">
-            Jobs {passed.jobId} and {rejected.jobId} carry byte-for-byte identical deliverables
-            at the same budget. One passed, one was rejected. The only thing that differed was
-            what this referee remembered about the provider — and that memory set how deeply
-            the work was read.
+            Two jobs, the same bytes, the same budget — one passed, one rejected. The only
+            difference was what this referee remembered about the provider.
           </p>
+          <div className="actions">
+            <Link className="go" href={"/verdict/" + rejected.jobId}>
+              Open the evidence for job {rejected.jobId}
+              <Icon name="arrow-right" size={14} />
+            </Link>
+            <a className="quiet" href="#record">
+              or read the record
+            </a>
+          </div>
 
           <div className="plates">
             <div className="plate is-pass">
@@ -134,7 +140,7 @@ export default async function TimelinePage() {
         </li>
       </ol>
 
-      <h2>Five jobs that really landed on chain</h2>
+      <h2 id="record">Five jobs that really landed on chain</h2>
       <p className="lead">
         Ordered by jobId. The &quot;verdict&quot; column is the <code>kind</code> announced by{" "}
         <code>EvaluatorVault.postVerdict</code>; the &quot;ACP status&quot; column is the

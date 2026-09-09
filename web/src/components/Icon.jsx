@@ -15,6 +15,7 @@
 /** @type {Record<string, string[]>} */
 const PATHS = {
   "arrow-left": ["m12 19-7-7 7-7", "M19 12H5"],
+  "arrow-right": ["M5 12h14", "m12 5 7 7-7 7"],
   check: ["M20 6 9 17l-5-5"],
   x: ["M18 6 6 18", "m6 6 12 12"],
   "external-link": [

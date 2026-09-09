@@ -297,40 +297,25 @@ strong {
    dua pelat bukti yang saling menjauh — kalimatnya dan gambarnya mengatakan
    hal yang sama. */
 
+/* Udara di atas judul adalah keputusan, bukan sisa. Linear dan Resend sama-sama
+   memulai judulnya sekitar seperempat viewport ke bawah, dan ruang kosong di
+   kanannya dibiarkan kosong — asimetri itu yang membuatnya terbaca percaya diri
+   alih-alih penuh sesak. */
 .hero {
-  padding: var(--s8) 0 var(--s7);
+  padding: clamp(var(--s7), 13vh, 160px) 0 var(--s7);
   border-bottom: 1px solid var(--hair);
-}
-
-.hero .eyebrow {
-  font-family: var(--font-mono), monospace;
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--amber);
-  margin: 0 0 var(--s5);
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-}
-
-.hero .eyebrow::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--amber);
-  box-shadow: 0 0 12px var(--amber);
 }
 
 .hero h1 {
   font-family: var(--font-display), Georgia, serif;
-  font-size: clamp(44px, 8.4vw, 104px);
+  font-size: clamp(46px, 9vw, 118px);
   font-weight: 400;
-  line-height: 0.96;
-  letter-spacing: -0.035em;
+  line-height: 0.94;
+  letter-spacing: -0.038em;
   margin: 0;
-  max-width: 14ch;
+  /* 11ch memecah "Opposite verdicts." jadi dua baris dan mematahkan kalimatnya;
+     13ch menahannya tetap dua baris utuh sampai lebar penuh. */
+  max-width: 13ch;
   text-wrap: balance;
 }
 
@@ -339,20 +324,68 @@ strong {
   color: var(--amber);
 }
 
+/* Sub-baris TIDAK boleh bersaing dengan judul: lebih kecil, lebih redup, dan
+   dipotong pendek. Versi sebelumnya empat baris pada 17px — itu paragraf kedua,
+   bukan sub-judul. */
 .hero .sub {
   margin: var(--s5) 0 0;
   color: var(--bone-2);
-  max-width: 54ch;
-  font-size: 17px;
+  max-width: 46ch;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.hero .actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s5);
+  margin-top: var(--s5);
+}
+
+.hero .actions .go {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: var(--s2) var(--s4);
+  border-radius: 999px;
+  background: var(--amber);
+  color: var(--void);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.16s var(--ease);
+}
+
+.hero .actions .go:hover {
+  background: color-mix(in srgb, var(--amber) 82%, #fff);
+  color: var(--void);
+}
+
+.hero .actions .go .icon {
+  margin-left: 0;
+  opacity: 1;
+}
+
+.hero .actions .quiet {
+  color: var(--dim);
+  font-size: 13.5px;
+  text-decoration: none;
+}
+
+.hero .actions .quiet:hover {
+  color: var(--amber);
 }
 
 /* dua pelat yang menjauh */
+/* Pelat bukti tidak melebar penuh: menyisakan kolom kosong di kanan menjaga
+   asimetri hero dan membuat keduanya terbaca sebagai spesimen, bukan panel. */
 .plates {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: stretch;
   gap: var(--s4);
-  margin-top: var(--s7);
+  margin-top: var(--s8);
+  max-width: 880px;
 }
 
 .plate {
@@ -435,6 +468,7 @@ strong {
 }
 
 .shared {
+  max-width: 880px;
   margin-top: var(--s4);
   padding: var(--s3) var(--s4);
   border: 1px dashed var(--hair-2);
