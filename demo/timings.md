@@ -28,7 +28,7 @@ Keduanya menambah waktu dinding. Angka lama sudah dicabut dari README.
 
 ## Akibatnya untuk perekaman
 
-Naskah (`demo/video-script.md`, `demo/video-script.en.md`) memicu tata letak layar panjang
+Naskah (`demo/video-script.md`) memicu tata letak layar panjang
 bila runtime melewati ± 3 menit. Dengan ketiga pengukuran di atas, tata letak itu adalah
 **jalur normal, bukan rencana darurat** — mulailah dengan asumsi tersebut, dan jalankan
 dry-run berwaktu di mesin perekam sebelum TAKE-1.

@@ -1,7 +1,7 @@
 # Limitations & trust assumptions
 
 The complete list of The Evaluator's limitations. The numbering **does not change** from earlier README
-versions — `demo/video-script.md`, `demo/video-script.en.md`, and `docs/posts/` refer to these items by
+versions — `demo/video-script.md` and `docs/posts/` refer to these items by
 the same numbers. A summary of the eight most important ones is in [`README.md`](../README.md).
 
 Items 1-13 were moved here as-is from the ADRs and the deploy artifacts; items 14-25 were added after a
@@ -480,9 +480,9 @@ REJECTED while memory existed, **passes** when memory is gone, at an IDENTICAL b
 runs give an identical summary. The mode label is `normal`, not `naive` — read item 34 before quoting it.
 
 **A "BLATANT" defect in variant A is NOT a scored severity.** Variant A's summary line distinguishes
-"cacat halus LOLOS" and "cacat kasar DITOLAK" (`sim/src/demo.ts:929-935`) *(gloss: the subtle defect
-PASSES, the blatant defect is REJECTED)*, and that is easy to read as if the evaluator knew two severity
-classes. It does not. The "blatant" defect is **exactly the SAME `TODO` token**, only **moved into the
+`subtle defect PASSES` and `coarse defect REJECTED` (`sim/src/demo.ts:929-935`), and that is easy to read
+as if the evaluator knew two severity
+classes. It does not. The "coarse" defect is **exactly the SAME `TODO` token**, only **moved into the
 FIRST section** of the document: `sim/scenarios/coarse-defect.md:3` vs `sim/scenarios/depth-demo.md:11`
 (third section) — two files with identical defects at different positions. Because
 `SAMPLING_SECTION_LIMIT = 2`, the first sits **inside** the `sampling` window and the second outside it.
@@ -494,10 +494,10 @@ qualitative criterion is scored at all (item 33).
 **Variant B — safe mode (commit `986fad6`).** It is **also automated now**, in the same command: non-zero
 on-chain root + `memory.db` deleted → **safe mode**, zero `postVerdict`, the job hangs until `expiredAt`.
 It is not staged on a chain of our own making but run against the **frozen Sepolia vault**, and it
-**aborts the whole run** if any of its evidence fails to appear — agent exit ≠ 0, the `MODE AMAN:` line
-not printed, `gerbang memori: mode=safe` not printed, the trigger not being rule (a) "file missing", any
+**aborts the whole run** if any of its evidence fails to appear — agent exit ≠ 0, the `SAFE MODE:` line
+not printed, `memory gate: mode=safe` not printed, the trigger not being rule (a) "file missing", any
 `postVerdict`/`finalize`/`setProviderCap` sent, or the agent wallet's nonce changing
-(`sim/src/demo.ts:672-685`, with messages of the form `VARIAN B GUGUR: …`). That is also why `make demo`
+(`sim/src/demo.ts:672-687`, with messages of the form `VARIANT B FAILED: …`). That is also why `make demo`
 needs internet (item 34).
 
 **What is STILL missing is the artifacts, not the automation.** `make demo` creates the directory
@@ -670,7 +670,7 @@ What it does **not** prove, and this must be read with it:
   planted through jobs 418/419, not independent third-party behaviour.
 - **The defect is one word.** `TODO` is matched by the placeholder regex
   (`agent/agent/checks/format.py:47-50`); this is not sophisticated cheat detection (item 10). The same
-  applies to "blatant" vs "subtle" in the `make demo` summary: that is the **position** of the same token
+  applies to `coarse defect` vs `subtle defect` in the `make demo` summary: that is the **position** of the same token
   inside or outside the sampling window, **not** two scored severity levels — full explanation in
   item 19.
 - **`sampling` vs `full` only differ if the document is longer than the sampling limit.** Deliverable
@@ -856,8 +856,8 @@ Two corrections to how the demo is easy to misunderstand.
 **frozen Sepolia vault** so that the non-zero `lastMemoryRoot()` triggering safe mode is a real state, not
 a staged one (`sim/src/demo.ts:125` `SEPOLIA_RPC = "https://sepolia.base.org"`; the variant B block at
 `:655-687`). The nature of that touch: **read only — no funds, no transactions**, and that is measured
-rather than asserted, via the agent wallet's nonce before vs after (`txBaru`, `demo.ts:943`; the
-`VARIAN B:` line at `:947`). The practical consequence: **without internet, `make demo` does not
+rather than asserted, via the agent wallet's nonce before vs after (`newTx`, `demo.ts:943`; the
+`VARIANT B:` line at `:947`). The practical consequence: **without internet, `make demo` does not
 finish** — and it stops in **PREFLIGHT within the first second, before Anvil starts**, with exit 1
 (`demo.ts:362` `preflight.ok`).
 
@@ -872,7 +872,7 @@ ZERO private keys, only two view reads)*, together with why its failure is hard 
 the first invocation creates `memory.db` and is then refused by `MODE_DRIFT`, and the invocation that
 produces the verdict is the second one, which already has a DB (ADR-026; `sim/src/demo.ts:461-489`). What
 shows the degradation is therefore **not** the mode label but two other columns in the summary line:
-**`depth=sampling`** and **`cap=TANPA CAP`** (`demo.ts:826-841`). Do not call variant A "naive mode": that
+**`depth=sampling`** and **`cap=NO CAP`** (`demo.ts:826-841`). Do not call variant A "naive mode": that
 word appears only in the first invocation's log line, which ends in zero transactions, and it is not a
 mode that has ever produced a verdict via the CLI.
 

@@ -122,8 +122,8 @@ cd agent && uv run python -m agent.vault_client --job-id <job C> --kind reject
 | Condition | Result |
 |---|---|
 | **No memory file, FIRST invocation** | the start gate reads `mode=naive`, then `plan_job` **CREATES** `memory.db` when it opens `MemoryClient.local()`; the gate re-read before the tx now sees that file EXISTS → `mode=normal`, while `plan.mode` is still `naive` → the **`MODE_DRIFT`** guard refuses. Result: **`EXIT_REFUSED` (exit code 4)**, `sent_transactions == []`, **zero `postVerdict`**, `cast logs JobRejected` EMPTY |
-| **No memory file, SECOND invocation** (same job) | runs to completion: `mode=normal`, `depth=sampling`, `cap=TANPA CAP gate=lolos`, `postVerdict` + `finalize` land, **exit 0** |
-| **Memory file restored** (same chain, same command) | `cap=250000 gate=DITOLAK` → `postVerdict(REJECT)` → `Finalized(kind=2)`, `JobRejected` APPEARS, the job moves to status 4, the client is fully refunded |
+| **No memory file, SECOND invocation** (same job) | runs to completion: `mode=normal`, `depth=sampling`, `cap=NO CAP gate=pass`, `postVerdict` + `finalize` land, **exit 0** |
+| **Memory file restored** (same chain, same command) | `cap=250000 gate=REJECTED` → `postVerdict(REJECT)` → `Finalized(kind=2)`, `JobRejected` APPEARS, the job moves to status 4, the client is fully refunded |
 
 **The first row is a REFUSAL, not an acceptance — and an earlier README version wrote it up as an
 acceptance.** What happens is not "the agent passed the job because its memory was gone"; what happens is
@@ -135,7 +135,7 @@ exit 4 as a malfunction. ADR-026 decision (e) also measures that the difference 
 chain**: `empty_memory_root()` and the root over a freshly created empty DB are exactly the same value
 (`0x4e2a1ca1…ff5a`), and the depth and cap are identical.
 
-A consequence that must be read alongside it: **`MODE NAIF` has never been the mode that produced a
+A consequence that must be read alongside it: **`NAIVE MODE` has never been the mode that produced a
 verdict via the CLI.** It only appears as a log line from the first invocation (ADR-026 decision 4 and
 consequences). The README, the video, and the build-in-public posts are **forbidden** from presenting it
 as a production path.
@@ -150,8 +150,8 @@ memory changes is **whether a gate exists at all**, not the size of the number.
 > **Delete our memory, and you get an ordinary stateless evaluator — exactly our competitors.**
 
 What does **not** change when memory is gone: the criteria layer and the deterministic checks still run,
-so blatant defects are still rejected. What is lost is calibration — check depth, learned cheating
-patterns, and cap gating (`docs/spec.md` §3 rule 6). Important note: a "blatant" defect is the
+so coarse defects are still rejected. What is lost is calibration — check depth, learned cheating
+patterns, and cap gating (`docs/spec.md` §3 rule 6). Important note: the `coarse defect` the demo prints is the
 **position** of the same `TODO` token inside the sampling window, not a scored severity — item 19.
 
 An honest note about the environment: the variant above runs on a **fresh** vault (on-chain root = 0). On

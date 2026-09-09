@@ -24,7 +24,7 @@ These are the three things we most want you to check. All three open without run
    [`web/public/verdicts/422.json`](web/public/verdicts/422.json) — it carries `memory_root`, `checks`,
    `incident_jobs`, and the criteria that were **not** scored. How to match it against the chain:
    **item 22**.
-3. **The `claim step=C-vs-D` line** printed by `make demo` (`sim/src/demo.ts:902-907`): the same cap gate,
+3. **The `claim step=C-vs-D` line** printed by `make demo` (`sim/src/demo.ts:902-908`): the same cap gate,
    with memory and without, at an identical budget. Context and limits: **item 19**.
 
 If you only want to know what does NOT work: [`docs/limitations.md`](docs/limitations.md).
@@ -81,8 +81,8 @@ code 4: [`docs/reproduce.md`](docs/reproduce.md).
 
 | Variant | Condition | What changes |
 |---|---|---|
-| **A — degradation** (local Anvil) | fresh vault, `lastMemoryRoot()` = 0, `SIBYL_DB_PATH` pointed at a path that never existed | job C, REJECTED while memory existed, now **passes** at an IDENTICAL budget: `depth=sampling`, `cap=TANPA CAP`. The mode label is `normal`, not `naive` (item 34) |
-| **B — safe mode** (reads the frozen Sepolia vault) | non-zero on-chain root + `memory.db` deleted | **safe mode**: zero `postVerdict`, zero `finalize`, zero `setProviderCap`; the job hangs until `expiredAt`. The run is aborted if the evidence does not appear (`sim/src/demo.ts:672-685`) |
+| **A — degradation** (local Anvil) | fresh vault, `lastMemoryRoot()` = 0, `SIBYL_DB_PATH` pointed at a path that never existed | job C, REJECTED while memory existed, now **passes** at an IDENTICAL budget: `depth=sampling`, `cap=NO CAP`. The mode label is `normal`, not `naive` (item 34) |
+| **B — safe mode** (reads the frozen Sepolia vault) | non-zero on-chain root + `memory.db` deleted | **safe mode**: zero `postVerdict`, zero `finalize`, zero `setProviderCap`; the job hangs until `expiredAt`. The run is aborted if the evidence does not appear (`sim/src/demo.ts:672-687`) |
 
 ```
 # variant A, run by hand (make demo uses the same form)
@@ -96,10 +96,10 @@ command leaves no log or fixture in the repo (item 19).
 
 > **Delete our memory, and you get an ordinary stateless evaluator — exactly our competitors.**
 
-What does **not** change when memory is gone: the deterministic checks still run, so blatant defects are
+What does **not** change when memory is gone: the deterministic checks still run, so coarse defects are
 still rejected. What is lost is calibration — check depth, learned patterns, and cap gating. Important
-note: a "blatant" defect is the **position** of a `TODO` token inside the sampling window, not a scored
-severity (item 19).
+note: the `coarse defect` the demo prints is the **position** of a `TODO` token inside the sampling
+window, not a scored severity (item 19).
 
 ## On-chain evidence (the strongest part)
 
@@ -186,7 +186,7 @@ docs/        spec.md, decisions.md (ADRs), api-facts.md, versions.md,
 | [`docs/reproduce.md`](docs/reproduce.md) | reproduction commands, destructive variants, troubleshooting |
 | [`docs/design.md`](docs/design.md) | problem → solution, day-one consumer, what sits outside ERC-8183 |
 | [`docs/decisions.md`](docs/decisions.md) | ADRs — where the spec and an ADR disagree, the ADR wins (ADR-025) |
-| [`demo/video-script.md`](demo/video-script.md) | demo video script (and `video-script.en.md`) |
+| [`demo/video-script.md`](demo/video-script.md) | the demo video script — one canonical script, in English |
 
 ## Licence
 

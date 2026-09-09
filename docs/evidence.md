@@ -68,7 +68,9 @@ data:            0x1618e7653959fcdbd11565a41e7688ce12e1a6abca3a12f1746ed5348262b
 ```
 
 [See the transaction on
-BaseScan](https://sepolia.basescan.org/tx/0x78a3a65db3160f199bddf8eb6e703c000ab322e7fa49dea2058fd93ea794989e).
+Blockscout](https://base-sepolia.blockscout.com/tx/0x78a3a65db3160f199bddf8eb6e703c000ab322e7fa49dea2058fd93ea794989e)
+— the same explorer used everywhere else here, because it is the one that decodes the vault's event
+names (see above).
 Two traps we already hit, so you do not have to: `rejector` is the **vault** address, not the agent EOA —
 evidence hunting for the agent address will fail spuriously; and `cast logs "<signature>" <jobId>` does
 **not** filter (cast 1.7.1 silently ignores arguments after the signature). The fix is **not** merely

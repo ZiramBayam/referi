@@ -24,15 +24,15 @@ one variant means picking the most flattering scene.
 
 Now `make demo` runs **both**, and the second variant is not a stage we built ourselves: it runs against
 the **frozen Base Sepolia vault**, so the non-zero `lastMemoryRoot()` is a real state. More importantly,
-it **aborts the whole run** if the evidence does not appear — agent exit ≠ 0, the `MODE AMAN:` line not
-printed, the gate not reporting `mode=safe`, the trigger not being the "file missing" rule, any
-transaction sent, or the agent wallet's nonce moving. All of them come out as `VARIAN B GUGUR: …` in
-`sim/src/demo.ts:672-685`. Its network touch is read-only, and that is **measured** through the nonce
+it **aborts the whole run** if the evidence does not appear — agent exit ≠ 0, the `SAFE MODE:` line not
+printed, the gate not reporting `memory gate: mode=safe`, the trigger not being the "file missing" rule,
+any transaction sent, or the agent wallet's nonce moving. All of them come out as `VARIANT B FAILED: …` in
+`sim/src/demo.ts:672-687`. Its network touch is read-only, and that is **measured** through the nonce
 before vs after, not asserted.
 
 One label correction we ask judges to note: in the first variant, the mode the agent reports is `normal`,
 **not** "naive mode". What shows the degradation is two other columns in the summary line — `depth=sampling`
-and `cap=TANPA CAP` (ADR-026).
+and `cap=NO CAP` (ADR-026).
 
 ## 2. Our root guard was blind to `importlib`, `sys.modules`, and re-binding
 
@@ -86,7 +86,8 @@ second invocation runs to completion. `make demo` prints `agent.retry … firstE
 ## 5. Judge panel: real checks in the browser — and a surface that just failed a security review
 
 Evidence that can only be read as a table in a README is easy to suspect of being pre-cooked. So `web/`
-has three routes: a timeline of jobs 418-422 with `VerdictPosted` tx links to BaseScan, a verdict +
+has three routes: a timeline of jobs 418-422 with `VerdictPosted` tx links to Blockscout — the only
+explorer that picked up our Sourcify verification, so event names render decoded — a verdict +
 per-criterion evidence page, and a **judge panel** where anyone can paste their own text, pick a depth, and
 run the checks. What runs there is not a replay: the deterministic `format` and `links` checks are
 **ported** from `agent/agent/checks/` to `web/src/lib/checks.js` and executed through `POST /api/evaluate`,

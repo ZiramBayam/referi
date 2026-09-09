@@ -996,3 +996,26 @@ Konsekuensi:
 (=) Nol scope bertambah; nol fakta berubah. Ini pengalihan bahasa, bukan perubahan perilaku.
 (!) Komentar dan docstring di dalam kode BELUM dialihkan pada ADR ini; itu pekerjaan pasca-submission,
     dengan `contracts/` dikecualikan selama verifikasi Sourcify hari ini masih dijadikan rujukan.
+
+### Pemetaan string keluaran, lama → baru
+
+ADR yang ditulis SEBELUM 9 Sep mengutip keluaran program dalam Bahasa Indonesia. ADR adalah catatan
+sejarah dan TIDAK disunting — kutipan di sana tetap apa adanya. Tabel ini yang menjembatani, supaya
+pembaca yang mencari string lama di kode hari ini tidak menyimpulkan sesuatu hilang.
+
+| ADR lama mengutip | Keluaran hari ini |
+|---|---|
+| `VARIAN A:` / `VARIAN B:` | `VARIANT A:` / `VARIANT B:` |
+| `VARIAN B GUGUR: …` | `VARIANT B FAILED: …` |
+| `MODE AMAN` / `MODE NORMAL` / `MODE NAIF` | `SAFE MODE` / `NORMAL MODE` / `NAIVE MODE` |
+| `cap=TANPA CAP` | `cap=NO CAP` |
+| `gerbang memori: mode=` | `memory gate: mode=` |
+| `RENCANA ` | `PLAN ` |
+| `memory_root TURUNAN` | `memory_root DERIVED` |
+| `postVerdict terkirim` / `finalize terkirim` | `postVerdict sent` / `finalize sent` |
+| `cacat halus` / `cacat kasar` | `subtle defect` / `coarse defect` |
+| `gate=lolos` | `gate="pass (…)"` |
+
+TIDAK berubah dan tidak akan berubah, karena terikat `reasonHash` on-chain: isi kurung pada `gate=`
+(`budget … melebihi cap milestone provider ini …`, `budget dalam batas cap`), seluruh `detail`/`proof`,
+teks kriteria, `unscored_reason`, dan teks deliverable.
