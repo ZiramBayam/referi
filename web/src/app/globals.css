@@ -42,6 +42,7 @@
   --unver-dim: #fbeecd;
 
   --sel: #ffe89a;
+  --on-action: #ffffff;
 
   /* Jarak */
   --s1: 4px;
@@ -55,6 +56,18 @@
 
   --r: 14px;
   --r-sm: 8px;
+
+  /* Skala tipe. Sebelum ini ada 14 ukuran statis berbeda (9,5 / 10 / 10,5 / 11
+     / 12 / 12,5 / 13 / 13,5 / 14 / 14,5 / 15 / 16 / 22 / 40) — itu bukan skala,
+     itu keputusan satu per satu. Tujuh langkah, dan tiap peran memilih salah
+     satunya. */
+  --t1: 10px;   /* label mikro, huruf besar */
+  --t2: 12px;   /* data mono, caption */
+  --t3: 13px;   /* antarmuka sekunder */
+  --t4: 14px;   /* kontrol, prosa kecil */
+  --t5: 16px;   /* prosa */
+  --t6: 22px;   /* sub-judul */
+  --t7: 40px;   /* judul dalam kartu */
 
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
   --measure: 62ch;
@@ -78,7 +91,7 @@ body {
   background: var(--void);
   color: var(--bone);
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
-  font-size: 16px;
+  font-size: var(--t5);
   line-height: 1.65;
   -webkit-font-smoothing: antialiased;
 
@@ -155,7 +168,7 @@ a:hover .icon {
   gap: 0;
   text-decoration: none;
   color: var(--dim);
-  font-size: 14px;
+  font-size: var(--t4);
 }
 
 .backlink .icon {
@@ -218,20 +231,22 @@ header.top .wrap {
 
 /* Wordmark. Huruf besar pada serif display butuh spasi POSITIF — tracking rapat
    yang benar untuk "The Evaluator" membuat "REFERI" saling menempel. */
-header.top h1 a {
+header.top .wordmark a {
   color: inherit;
   text-decoration: none;
 }
 
-header.top h1 a:hover {
+header.top .wordmark a:hover {
   color: var(--action);
 }
 
-header.top h1 {
+header.top .wordmark {
+  display: inline-block;
+  line-height: 1.2;
   font-family: var(--font-display), Georgia, serif;
   font-variation-settings: "opsz" 24;
   font-weight: 600;
-  font-size: 22px;
+  font-size: var(--t6);
   font-weight: 400;
   letter-spacing: 0.08em;
   margin: 0;
@@ -246,7 +261,7 @@ header.top nav {
 header.top nav a {
   text-decoration: none;
   color: var(--dim);
-  font-size: 13px;
+  font-size: var(--t3);
   font-weight: 500;
   letter-spacing: 0.01em;
 }
@@ -259,13 +274,16 @@ header.top .net {
   margin-left: auto;
   color: var(--dim);
   font-family: var(--font-mono), monospace;
-  font-size: 11px;
+  font-size: var(--t1);
   letter-spacing: 0.02em;
   text-align: right;
 }
 
 /* ------------------------------------------------------------------ type -- */
 
+/* Judul utama halaman dan judul seksi memakai potongan yang sama; yang
+   membedakan hanya perannya di pohon dokumen. */
+h1,
 h2 {
   font-family: var(--font-display), Georgia, serif;
   font-variation-settings: "opsz" 72;
@@ -280,17 +298,24 @@ h2 {
   text-wrap: balance;
 }
 
+h1:first-child,
 h2:first-child {
   margin-top: 0;
 }
 
+/* Hero punya ukurannya sendiri dan tidak boleh ikut aturan di atas. */
+.hero h1 {
+  margin: 0;
+}
+
 /* Judul yang menyusul tautan kembali tidak butuh jarak satu layar. */
+p.lead:first-child + h1,
 p.lead:first-child + h2 {
   margin-top: var(--s5);
 }
 
 h3 {
-  font-size: 11px;
+  font-size: var(--t1);
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -340,7 +365,7 @@ strong {
 .hero .more {
   margin: var(--s6) 0 0;
   font-family: var(--font-mono), monospace;
-  font-size: 10px;
+  font-size: var(--t1);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--dim);
@@ -398,7 +423,7 @@ strong {
   margin: var(--s5) 0 0;
   color: var(--bone-2);
   max-width: 46ch;
-  font-size: 15px;
+  font-size: var(--t4);
   line-height: 1.6;
 }
 
@@ -418,11 +443,11 @@ strong {
   /* CTA hero lebih besar dari tombol biasa: ia satu-satunya hal di layar
      pertama yang meminta ditekan. */
   padding: var(--s3) var(--s5);
-  font-size: 15px;
+  font-size: var(--t4);
   border-radius: 999px;
   background: var(--amber);
   color: var(--bone);
-  font-size: 13.5px;
+  font-size: var(--t3);
   font-weight: 600;
   text-decoration: none;
   transition: background 0.16s var(--ease);
@@ -430,7 +455,7 @@ strong {
 
 .hero .actions .go:hover {
   background: var(--action);
-  color: #fff;
+  color: var(--on-action);
 }
 
 .hero .actions .go {
@@ -457,7 +482,7 @@ strong {
 
 .hero .actions .quiet {
   color: var(--dim);
-  font-size: 13.5px;
+  font-size: var(--t3);
   text-decoration: none;
 }
 
@@ -487,7 +512,7 @@ strong {
 
 .plate .id {
   font-family: var(--font-mono), monospace;
-  font-size: 12px;
+  font-size: var(--t2);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--dim);
@@ -526,7 +551,7 @@ strong {
   grid-template-columns: auto 1fr;
   gap: var(--s1) var(--s4);
   margin: 0;
-  font-size: 13px;
+  font-size: var(--t3);
 }
 
 .plate dt {
@@ -547,7 +572,7 @@ strong {
   gap: var(--s3);
   color: var(--dim);
   font-family: var(--font-mono), monospace;
-  font-size: 11px;
+  font-size: var(--t1);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   padding: 0 var(--s2);
@@ -568,7 +593,7 @@ strong {
   border: 1px dashed var(--hair-2);
   border-radius: var(--r-sm);
   font-family: var(--font-mono), monospace;
-  font-size: 12px;
+  font-size: var(--t2);
   color: var(--bone-2);
   text-align: center;
 }
@@ -576,7 +601,7 @@ strong {
 .shared b {
   color: var(--bone);
   background: var(--amber);
-  padding: 1px 5px;
+  padding: 1px var(--s1);
   font-weight: 400;
 }
 
@@ -610,10 +635,10 @@ strong {
 
 .steps .n {
   font-family: var(--font-mono), monospace;
-  font-size: 11px;
+  font-size: var(--t1);
   color: var(--bone);
   background: var(--amber);
-  padding: 1px 7px;
+  padding: 1px var(--s2);
   border-radius: 999px;
   letter-spacing: 0.1em;
 }
@@ -621,7 +646,7 @@ strong {
 .steps h3 {
   font-family: var(--font-display), Georgia, serif;
   font-variation-settings: "opsz" 36;
-  font-size: 22px;
+  font-size: var(--t6);
   font-weight: 400;
   letter-spacing: -0.015em;
   text-transform: none;
@@ -631,13 +656,13 @@ strong {
 
 .steps p {
   color: var(--bone-2);
-  font-size: 14.5px;
+  font-size: var(--t4);
   margin: 0 0 var(--s4);
 }
 
 .steps .src {
   font-family: var(--font-mono), monospace;
-  font-size: 11px;
+  font-size: var(--t1);
   color: var(--dim);
 }
 
@@ -665,7 +690,7 @@ td {
 
 th {
   background: var(--raised);
-  font-size: 10px;
+  font-size: var(--t1);
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -692,7 +717,7 @@ tbody tr:hover {
   padding-top: 0;
   padding-bottom: var(--s4);
   color: var(--dim);
-  font-size: 13px;
+  font-size: var(--t3);
 }
 
 .note-row:not(:last-child) td {
@@ -709,7 +734,7 @@ caption {
   padding: var(--s3) var(--s4);
   border-bottom: 1px solid var(--hair);
   color: var(--dim);
-  font-size: 13px;
+  font-size: var(--t3);
 }
 
 /* Batang kedalaman: memori menentukan berapa banyak yang dibaca, jadi
@@ -758,7 +783,7 @@ caption {
 
 .kv dt {
   color: var(--dim);
-  font-size: 13px;
+  font-size: var(--t3);
 }
 
 .kv dd {
@@ -769,11 +794,11 @@ caption {
 /* --------------------------------------------------------------- verdict -- */
 
 .tag {
-  padding: 3px 11px;
+  padding: var(--s1) var(--s3);
   border-radius: 999px;
   border: 1px solid transparent;
   font-family: var(--font-mono), monospace;
-  font-size: 10.5px;
+  font-size: var(--t1);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -816,7 +841,7 @@ pre.doc {
   word-break: break-word;
   overflow-x: auto;
   font-family: var(--font-mono), monospace;
-  font-size: 12.5px;
+  font-size: var(--t2);
   line-height: 1.6;
   color: var(--bone-2);
 }
@@ -826,7 +851,7 @@ pre.doc {
 label {
   display: inline-block;
   color: var(--dim);
-  font-size: 13px;
+  font-size: var(--t3);
   margin-bottom: var(--s2);
 }
 
@@ -839,7 +864,7 @@ textarea {
   background: var(--void);
   color: var(--bone);
   font-family: var(--font-mono), monospace;
-  font-size: 12.5px;
+  font-size: var(--t2);
   line-height: 1.6;
   transition: border-color 0.16s var(--ease), box-shadow 0.16s var(--ease);
 }
@@ -859,13 +884,13 @@ textarea:focus {
 input[type="file"] {
   color: var(--dim);
   font-family: var(--font-mono), monospace;
-  font-size: 12px;
+  font-size: var(--t2);
   max-width: 100%;
 }
 
 input[type="file"]::file-selector-button {
   font-family: var(--font-sans), sans-serif;
-  font-size: 13px;
+  font-size: var(--t3);
   font-weight: 500;
   margin-right: var(--s3);
   padding: var(--s2) var(--s4);
@@ -891,7 +916,7 @@ button {
 button,
 select {
   font-family: inherit;
-  font-size: 13.5px;
+  font-size: var(--t3);
   font-weight: 500;
   padding: var(--s2) var(--s4);
   border: 1px solid var(--hair-2);
@@ -928,7 +953,7 @@ button.primary {
 button.primary:hover:not(:disabled) {
   background: var(--action);
   border-color: var(--action);
-  color: #fff;
+  color: var(--on-action);
 }
 
 button.danger {
@@ -993,7 +1018,7 @@ footer.site .cols {
 
 footer.site .k {
   display: block;
-  font-size: 10px;
+  font-size: var(--t1);
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1004,7 +1029,7 @@ footer.site .k {
 footer.site .cols a,
 footer.site .cols .mono {
   font-family: var(--font-mono), monospace;
-  font-size: 12px;
+  font-size: var(--t2);
   overflow-wrap: anywhere;
 }
 
@@ -1013,7 +1038,7 @@ footer.site .disclaimer {
   padding-top: var(--s4);
   border-top: 1px solid var(--hair);
   color: var(--dim);
-  font-size: 13px;
+  font-size: var(--t3);
   max-width: var(--measure);
 }
 
@@ -1128,7 +1153,7 @@ footer.site .disclaimer {
 
 @media (max-width: 720px) {
   body {
-    font-size: 15px;
+    font-size: var(--t4);
     background-size: 44px 44px;
   }
 
@@ -1207,7 +1232,7 @@ footer.site .disclaimer {
   background: var(--raised);
   color: var(--dim);
   padding: var(--s3) var(--s5);
-  font-size: 14px;
+  font-size: var(--t4);
   font-weight: 600;
   font-family: var(--font-mono), monospace;
 }
@@ -1220,7 +1245,7 @@ footer.site .disclaimer {
   display: block;
   font-family: var(--font-sans), sans-serif;
   font-style: normal;
-  font-size: 12px;
+  font-size: var(--t2);
   font-weight: 400;
   margin-top: 2px;
 }
@@ -1263,7 +1288,7 @@ footer.site .disclaimer {
   align-items: center;
   gap: 0.35em;
   font-family: var(--font-mono), monospace;
-  font-size: 10px;
+  font-size: var(--t1);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--dim);
@@ -1278,14 +1303,14 @@ footer.site .disclaimer {
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--font-mono), monospace;
-  font-size: 12.5px;
+  font-size: var(--t2);
   line-height: 1.6;
   color: var(--bone-2);
 }
 
 .readwin mark {
   background: var(--fail);
-  color: #fff;
+  color: var(--on-action);
   padding: 0 4px;
   font-weight: 600;
 }
@@ -1304,7 +1329,7 @@ footer.site .disclaimer {
 }
 
 .readwin .out .k {
-  font-size: 10px;
+  font-size: var(--t1);
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1313,7 +1338,7 @@ footer.site .disclaimer {
 
 .readwin .out .v {
   font-family: var(--font-display), Georgia, serif;
-  font-size: 40px;
+  font-size: var(--t7);
   line-height: 1;
   letter-spacing: -0.02em;
   margin: var(--s2) 0 var(--s4);
@@ -1332,7 +1357,7 @@ footer.site .disclaimer {
   grid-template-columns: auto 1fr;
   gap: var(--s1) var(--s3);
   margin: 0 0 var(--s4);
-  font-size: 12.5px;
+  font-size: var(--t2);
 }
 
 .readwin .out dt {
@@ -1346,7 +1371,7 @@ footer.site .disclaimer {
 
 .readwin .out .why {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--t3);
   color: var(--bone-2);
   border-top: 1px solid color-mix(in srgb, var(--bone) 18%, transparent);
   padding-top: var(--s3);
@@ -1429,7 +1454,7 @@ footer.site .disclaimer {
   border-left: 2px solid var(--amber);
   color: var(--dim);
   font-family: var(--font-sans), sans-serif;
-  font-size: 12.5px;
+  font-size: var(--t2);
   line-height: 1.55;
   font-style: normal;
 }
@@ -1437,11 +1462,11 @@ footer.site .disclaimer {
 .gloss > span:first-child {
   display: inline-block;
   margin-right: 0.5em;
-  padding: 0 5px;
+  padding: 0 var(--s1);
   background: var(--amber);
   color: var(--bone);
   font-family: var(--font-mono), monospace;
-  font-size: 9.5px;
+  font-size: var(--t1);
   font-weight: 600;
   letter-spacing: 0.1em;
   vertical-align: 1px;
@@ -1466,7 +1491,7 @@ footer.site .disclaimer {
 
 .readwin .source summary {
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--t3);
   color: var(--bone-2);
 }
 
@@ -1476,7 +1501,7 @@ footer.site .disclaimer {
 
 .readwin .source .note-line {
   margin: var(--s3) 0 0;
-  font-size: 12.5px;
+  font-size: var(--t2);
   color: var(--dim);
   max-width: 78ch;
 }
@@ -1486,7 +1511,7 @@ footer.site .disclaimer {
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--font-mono), monospace;
-  font-size: 12px;
+  font-size: var(--t2);
   line-height: 1.6;
   color: var(--dim);
   border-left: 2px solid var(--hair);
@@ -1583,7 +1608,7 @@ footer.site .disclaimer {
   border-radius: 999px;
   background: var(--amber);
   color: var(--bone);
-  font-size: 15px;
+  font-size: var(--t4);
   font-weight: 600;
   text-decoration: none;
   box-shadow: var(--block);
@@ -1597,7 +1622,7 @@ footer.site .disclaimer {
 
 .outro .go:hover {
   background: var(--action);
-  color: #fff;
+  color: var(--on-action);
 }
 
 .outro .go:active {
@@ -1646,7 +1671,7 @@ footer.site .disclaimer {
 .what p {
   margin: 0;
   color: var(--bone-2);
-  font-size: 14.5px;
+  font-size: var(--t4);
 }
 
 @media (max-width: 860px) {
@@ -1698,13 +1723,13 @@ footer.site .disclaimer {
   border-radius: 999px;
   background: var(--amber);
   font-family: var(--font-mono), monospace;
-  font-size: 12px;
+  font-size: var(--t2);
   font-weight: 600;
 }
 
 .proofs h3 {
   margin: 0 0 var(--s2);
-  font-size: 15px;
+  font-size: var(--t4);
   letter-spacing: 0.01em;
   text-transform: none;
   color: var(--bone);
@@ -1714,11 +1739,48 @@ footer.site .disclaimer {
 .proofs p {
   margin: 0;
   color: var(--bone-2);
-  font-size: 14.5px;
+  font-size: var(--t4);
 }
 
 @media (max-width: 860px) {
   .proofs {
     grid-template-columns: 1fr;
   }
+}
+
+
+/* Target sentuh di dalam tabel. Tautan hash dan "open evidence" tingginya
+   18-21px karena hanya setinggi barisnya; WCAG 2.5.8 meminta 24px. Padding
+   vertikal menaikkannya tanpa mengubah ritme baris, karena selnya sudah lebih
+   tinggi dari itu. */
+td a {
+  display: inline-block;
+  padding-block: 3px;
+}
+
+
+/* Judul kelompok di kartu verdict adalah seksi tingkat atas halaman itu, jadi
+   ia <h2> — sebelumnya <h3> langsung sesudah <h1> dan urutan judulnya melompat.
+   Tampilannya tetap label kecil: yang berubah pohon dokumennya, bukan matanya. */
+h2.grouplabel {
+  font-family: var(--font-sans), sans-serif;
+  font-variation-settings: normal;
+  font-size: var(--t1);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+  line-height: 1.4;
+  max-width: none;
+  margin: var(--s5) 0 var(--s3);
+}
+
+.card > h2.grouplabel:first-child {
+  margin-top: 0;
+}
+
+.card .kv + h2.grouplabel {
+  margin-top: var(--s5);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--hair);
 }

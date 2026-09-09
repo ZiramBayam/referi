@@ -34,9 +34,11 @@ export default async function RootLayout({ children }) {
         </a>
         <header className="top">
           <div className="wrap">
-            <h1>
+            {/* Merek, bukan judul halaman: tiap halaman menyimpan satu <h1>
+                miliknya sendiri. Sebelumnya halaman depan punya DUA. */}
+            <span className="wordmark">
               <Link href="/">REFERI</Link>
-            </h1>
+            </span>
             <nav aria-label="Main">
               <Link href="/timeline">Timeline</Link>
               <Link href="/panel">Judge panel</Link>

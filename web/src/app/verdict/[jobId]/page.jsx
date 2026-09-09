@@ -44,10 +44,10 @@ export default async function VerdictPage({ params }) {
           job timeline
         </Link>
       </p>
-      <h2>
+      <h1>
         Verdict for job <span className="mono">{jobId}</span> —{" "}
         {verdictKindLabel(readSmallInt(bundle.verdict))}
-      </h2>
+      </h1>
       <p className="lead">
         Why it was decided this way, and what the evidence is. Everything on this page is the
         evidence bundle that is keccak-hashed into the <code>reasonHash</code> of the{" "}
@@ -65,7 +65,7 @@ export default async function VerdictPage({ params }) {
       </p>
 
       <div className="card">
-        <h3>The job</h3>
+        <h2 className="grouplabel">The job</h2>
         <dl className="kv">
           <dt>provider</dt>
           <dd>
@@ -82,7 +82,7 @@ export default async function VerdictPage({ params }) {
           </dd>
         </dl>
 
-        <h3>Announced on chain</h3>
+        <h2 className="grouplabel">Announced on chain</h2>
         <dl className="kv">
           <dt>last ACP status</dt>
           <dd>{acpStatusLabel(job.acpStatus)}</dd>
@@ -96,7 +96,7 @@ export default async function VerdictPage({ params }) {
           </dd>
         </dl>
 
-        <h3>The memory behind the decision</h3>
+        <h2 className="grouplabel">The memory behind the decision</h2>
         <dl className="kv">
           <dt>memory_root (from the agent)</dt>
           <dd>
@@ -108,7 +108,7 @@ export default async function VerdictPage({ params }) {
           <dd className="mono">{evaluation?.depth ?? gate?.depth ?? "—"}</dd>
         </dl>
 
-        <h3>This bundle</h3>
+        <h2 className="grouplabel">This bundle</h2>
         <dl className="kv">
           <dt>bundle version</dt>
           <dd className="mono">{bundle.version}</dd>

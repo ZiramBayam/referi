@@ -43,7 +43,7 @@ export default async function TimelinePage() {
         </Link>
       </p>
 
-      <h2 id="record">Five jobs that really landed on chain</h2>
+      <h1 id="record">Five jobs that really landed on chain</h1>
       <p className="lead">
         Ordered by jobId. The &quot;verdict&quot; column is the <code>kind</code> announced by{" "}
         <code>EvaluatorVault.postVerdict</code>; the &quot;ACP status&quot; column is the
