@@ -1,4 +1,5 @@
 import { txUrl, addressUrl } from "../lib/chain.js";
+import Icon from "./Icon.jsx";
 
 /**
  * Tautan transaksi. Bila hash BELUM ADA, yang ditampilkan adalah kata "not available" —
@@ -16,6 +17,7 @@ export function TxLink({ hash, label }) {
       aria-label={`Transaction ${hash} on the block explorer (opens in a new tab)`}
     >
       {label ?? hash}
+      <Icon name="external-link" size={12} />
     </a>
   );
 }
@@ -32,6 +34,7 @@ export function AddressLink({ address, label }) {
       aria-label={`Address ${address} on the block explorer (opens in a new tab)`}
     >
       {label ?? address}
+      <Icon name="external-link" size={12} />
     </a>
   );
 }

@@ -127,6 +127,51 @@ th,
   font-variant-numeric: tabular-nums;
 }
 
+/* ------------------------------------------------------------------ ikon --
+   Ikon Lucide (ISC), di-inline di `components/Icon.jsx`. Ia mewarisi warna dan
+   duduk pada garis dasar teks yang ditemaninya. */
+
+.icon {
+  vertical-align: -0.14em;
+  flex: none;
+}
+
+a .icon {
+  margin-left: 0.35em;
+  opacity: 0.55;
+  transition: opacity 0.16s var(--ease);
+}
+
+a:hover .icon {
+  opacity: 1;
+}
+
+.backlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  text-decoration: none;
+  color: var(--dim);
+  font-size: 14px;
+}
+
+.backlink .icon {
+  margin-left: 0;
+  margin-right: 0.45em;
+  opacity: 1;
+}
+
+.backlink:hover {
+  color: var(--amber);
+}
+
+/* Status tidak boleh disampaikan warna saja — ikonnya ikut mengatakannya. */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+}
+
 .skip {
   position: absolute;
   left: -9999px;
@@ -515,7 +560,6 @@ caption {
 /* --------------------------------------------------------------- verdict -- */
 
 .tag {
-  display: inline-block;
   padding: 3px 11px;
   border-radius: 999px;
   border: 1px solid transparent;
@@ -627,6 +671,12 @@ input[type="file"]::file-selector-button {
 input[type="file"]::file-selector-button:hover {
   border-color: var(--amber);
   color: var(--amber);
+}
+
+button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
 }
 
 button,

@@ -3,6 +3,7 @@ import { loadIndex } from "../lib/data.js";
 import { formatUsdc6 } from "../lib/canonical.js";
 import { acpStatusLabel, verdictKindLabel, EXPLORER_NAME } from "../lib/chain.js";
 import { TxLink, AddressLink, shorten } from "../components/Links.jsx";
+import Icon from "../components/Icon.jsx";
 
 /**
  * Batang kedalaman. `sampling` membaca 2 bagian pertama (SAMPLING_SECTION_LIMIT
@@ -140,6 +141,7 @@ export default async function TimelinePage() {
                 <td>{acpStatusLabel(job.acpStatus)}</td>
                 <td>
                   <span className={"tag " + (job.verdictKind === 1 ? "pass" : "fail")}>
+                    <Icon name={job.verdictKind === 1 ? "check" : "x"} size={11} />
                     {verdictKindLabel(job.verdictKind)}
                   </span>
                   <div style={{ color: "var(--dim)", fontSize: 12 }}>{job.bundleKind}</div>

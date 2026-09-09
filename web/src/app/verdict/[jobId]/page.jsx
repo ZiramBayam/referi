@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Icon from "../../../components/Icon.jsx";
 import { notFound } from "next/navigation";
 import { loadJobs, loadJob, loadBundle, loadDeliverable } from "../../../lib/data.js";
 import { readSmallInt, readUint, readSectionIndex, formatUsdc6 } from "../../../lib/canonical.js";
@@ -36,7 +37,10 @@ export default async function VerdictPage({ params }) {
   return (
     <div>
       <p className="lead">
-        <Link href="/">← job timeline</Link>
+        <Link href="/" className="backlink">
+          <Icon name="arrow-left" size={14} />
+          job timeline
+        </Link>
       </p>
       <h2>
         Verdict for job <span className="mono">{jobId}</span> —{" "}
