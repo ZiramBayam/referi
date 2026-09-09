@@ -1,48 +1,47 @@
 /* ============================================================================
-   THE LEDGER — dunia visual halaman bukti.
+   CASE FILE — dunia visual halaman bukti.
 
-   Produk ini menuduh. Ia berkata: dua job dengan teks yang SAMA PERSIS berakhir
-   berlawanan, dan buktinya ada di chain. Halaman yang menyampaikan tuduhan itu
-   tidak boleh terlihat seperti lampiran rapat.
+   Produk ini menuduh: dua job dengan teks SAMA PERSIS berakhir berlawanan, dan
+   buktinya ada di chain. Sebelumnya tuduhan itu disampaikan di kanvas hitam.
+   Sekarang di atas KERTAS — berkas perkara yang dicetak, bukan terminal.
 
-   Maka: kanvas nyaris hitam, huruf judul serif berukuran besar yang berbicara
-   satu kalimat penuh, angka bermonospace yang rata kolom sehingga bisa
-   dibandingkan dengan mata, dan SATU warna sinyal amber yang hanya menyala pada
-   hal yang benar-benar diputuskan.
+   Resepnya diambil dari situs terang yang berhasil ceria tanpa kehilangan
+   kredibilitas (Gumroad): ground tenang, tinta hitam tegas, dan SATU warna
+   keras dipakai berskala besar. Bukan pelangi. Kuning stabilo menandai hal yang
+   diputuskan; hijau dan merah hanya untuk verdict; biru hanya untuk aksi.
 
-   Gelap adalah komitmen, bukan tema. Tidak ada varian terang: adegan pakainya
-   adalah juri yang membaca bukti di layar penuh, dan setengah-setengah antara
-   dua dunia menghasilkan dua-duanya lemah.
+   Terang adalah komitmen, bukan tema.
    ========================================================================== */
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  /* Kanvas */
-  --void: #08090c;
-  --surface: #0d1014;
-  --raised: #12161c;
-  --hair: #1b212a;
-  --hair-2: #28313d;
+  /* Kertas */
+  --void: #f7f4ec;
+  --surface: #fffdf8;
+  --raised: #f1ede1;
+  --hair: #e0dacb;
+  --hair-2: #16150f;
 
-  /* Tinta — putih hangat, bukan putih layar; ia berpasangan dengan serif */
-  --bone: #f4f1ea;
-  --bone-2: #aab4c1;
-  --dim: #78838f;
+  /* Tinta */
+  --bone: #16150f;
+  --bone-2: #4a4739;
+  --dim: #6f6a58;
 
-  /* Sinyal tunggal */
-  --amber: #f0b429;
-  --amber-dim: #3a2c0c;
+  /* Sinyal: stabilo kuning untuk yang diputuskan, biru untuk aksi */
+  --amber: #f5c518;
+  --amber-dim: #fdf3cf;
+  --action: #2a2be0;
 
   /* Semantik verdict */
-  --pass: #5ddba4;
-  --pass-dim: #0f2a20;
-  --fail: #ff6b5b;
-  --fail-dim: #331715;
-  --unver: #e0a83c;
-  --unver-dim: #2e2310;
+  --pass: #0b6b39;
+  --pass-dim: #dcf1e4;
+  --fail: #c62416;
+  --fail-dim: #fbe3e0;
+  --unver: #8a5a00;
+  --unver-dim: #fbeecd;
 
-  --sel: #2a3550;
+  --sel: #ffe89a;
 
   /* Jarak */
   --s1: 4px;
@@ -59,6 +58,10 @@
 
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
   --measure: 62ch;
+
+  /* Di dunia kertas, kedalaman datang dari blok tinta yang bergeser — bukan
+     bayangan kabur. Ini dipilih sadar, jadi ia sistem, bukan kostum. */
+  --block: 3px 3px 0 var(--bone);
 }
 
 * {
@@ -81,8 +84,8 @@ body {
 
   /* Tekstur berasal dari dunia subjeknya: kisi tipis seperti kertas grafik
      laboratorium, nyaris tak terlihat, bukan hiasan gradien. */
-  background-image: linear-gradient(var(--surface) 1px, transparent 1px),
-    linear-gradient(90deg, var(--surface) 1px, transparent 1px);
+  background-image: linear-gradient(var(--hair) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hair) 1px, transparent 1px);
   background-size: 64px 64px;
   background-position: -1px -1px;
 }
@@ -93,7 +96,7 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid var(--amber);
+  outline: 2px solid var(--action);
   outline-offset: 3px;
   border-radius: 3px;
 }
@@ -107,8 +110,8 @@ a {
 }
 
 a:hover {
-  color: var(--amber);
-  text-decoration-color: var(--amber);
+  color: var(--action);
+  text-decoration-color: var(--action);
 }
 
 code,
@@ -162,7 +165,7 @@ a:hover .icon {
 }
 
 .backlink:hover {
-  color: var(--amber);
+  color: var(--action);
 }
 
 /* Status tidak boleh disampaikan warna saja — ikonnya ikut mengatakannya. */
@@ -236,7 +239,7 @@ header.top nav a {
 }
 
 header.top nav a:hover {
-  color: var(--amber);
+  color: var(--action);
 }
 
 header.top .net {
@@ -310,7 +313,10 @@ strong {
   font-family: var(--font-display), Georgia, serif;
   font-size: clamp(46px, 9vw, 118px);
   font-weight: 400;
-  line-height: 0.94;
+  /* 0.94 memuat dua baris rapat dengan indah SELAMA tidak ada latar. Begitu
+     baris kedua distabilo, kotak latarnya memakan turunan huruf baris pertama;
+     1.06 memberi blok itu ruangnya sendiri. */
+  line-height: 1.06;
   letter-spacing: -0.038em;
   margin: 0;
   /* 11ch memecah "Opposite verdicts." jadi dua baris dan mematahkan kalimatnya;
@@ -319,9 +325,17 @@ strong {
   text-wrap: balance;
 }
 
+/* Satu warna keras, berskala besar: kalimat yang diputuskan DISTABILO, bukan
+   diwarnai. Teks kuning di atas kertas krem tidak terbaca; tinta hitam di atas
+   blok kuning terbaca, dan jauh lebih ceria. */
 .hero h1 em {
   font-style: italic;
-  color: var(--amber);
+  color: var(--bone);
+  background: var(--amber);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding: 0 0.12em;
+  margin-left: -0.06em;
 }
 
 /* Sub-baris TIDAK boleh bersaing dengan judul: lebih kecil, lebih redup, dan
@@ -343,13 +357,15 @@ strong {
 }
 
 .hero .actions .go {
+  border: 2px solid var(--bone);
+  box-shadow: var(--block);
   display: inline-flex;
   align-items: center;
   gap: 0.5em;
   padding: var(--s2) var(--s4);
   border-radius: 999px;
   background: var(--amber);
-  color: var(--void);
+  color: var(--bone);
   font-size: 13.5px;
   font-weight: 600;
   text-decoration: none;
@@ -357,8 +373,8 @@ strong {
 }
 
 .hero .actions .go:hover {
-  background: color-mix(in srgb, var(--amber) 82%, #fff);
-  color: var(--void);
+  background: var(--action);
+  color: #fff;
 }
 
 .hero .actions .go .icon {
@@ -389,9 +405,10 @@ strong {
 }
 
 .plate {
-  border: 1px solid var(--hair-2);
+  border: 2px solid var(--bone);
   border-radius: var(--r);
-  background: linear-gradient(180deg, var(--raised), var(--surface));
+  background: var(--surface);
+  box-shadow: var(--block);
   padding: var(--s5);
 }
 
@@ -412,7 +429,7 @@ strong {
 }
 
 .plate.is-pass {
-  border-color: color-mix(in srgb, var(--pass) 34%, transparent);
+  background: var(--pass-dim);
 }
 
 .plate.is-pass .verdict {
@@ -420,7 +437,7 @@ strong {
 }
 
 .plate.is-fail {
-  border-color: color-mix(in srgb, var(--fail) 34%, transparent);
+  background: var(--fail-dim);
 }
 
 .plate.is-fail .verdict {
@@ -480,7 +497,9 @@ strong {
 }
 
 .shared b {
-  color: var(--amber);
+  color: var(--bone);
+  background: var(--amber);
+  padding: 1px 5px;
   font-weight: 400;
 }
 
@@ -515,7 +534,10 @@ strong {
 .steps .n {
   font-family: var(--font-mono), monospace;
   font-size: 11px;
-  color: var(--amber);
+  color: var(--bone);
+  background: var(--amber);
+  padding: 1px 7px;
+  border-radius: 999px;
   letter-spacing: 0.1em;
 }
 
@@ -707,7 +729,7 @@ caption {
 
 pre.proof,
 pre.doc {
-  background: var(--void);
+  background: var(--raised);
   border: 1px solid var(--hair);
   border-radius: var(--r-sm);
   padding: var(--s4);
@@ -749,7 +771,7 @@ textarea::placeholder {
 }
 
 textarea:focus {
-  border-color: var(--amber);
+  border-color: var(--action);
   box-shadow: 0 0 0 3px var(--amber-dim);
   outline: none;
 }
@@ -778,8 +800,8 @@ input[type="file"]::file-selector-button {
 }
 
 input[type="file"]::file-selector-button:hover {
-  border-color: var(--amber);
-  color: var(--amber);
+  border-color: var(--action);
+  color: var(--action);
 }
 
 button {
@@ -804,8 +826,8 @@ select {
 }
 
 button:hover:not(:disabled) {
-  border-color: var(--amber);
-  color: var(--amber);
+  border-color: var(--action);
+  color: var(--action);
 }
 
 button:active:not(:disabled) {
@@ -818,16 +840,17 @@ button:disabled {
 }
 
 button.primary {
-  background: var(--amber);
-  color: var(--void);
-  border-color: var(--amber);
+  background: var(--bone);
+  color: var(--surface);
+  border-color: var(--bone);
   font-weight: 600;
+  box-shadow: var(--block);
 }
 
 button.primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--amber) 84%, #fff);
-  border-color: color-mix(in srgb, var(--amber) 84%, #fff);
-  color: var(--void);
+  background: var(--action);
+  border-color: var(--action);
+  color: #fff;
 }
 
 button.danger {
