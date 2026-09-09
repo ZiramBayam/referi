@@ -36,7 +36,7 @@ export default async function RootLayout({ children }) {
           <div className="wrap">
             <h1>REFERI</h1>
             <nav aria-label="Main">
-              <Link href="/">Timeline</Link>
+              <Link href="/timeline">Timeline</Link>
               <Link href="/panel">Judge panel</Link>
             </nav>
             <span className="net">

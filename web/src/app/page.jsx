@@ -161,92 +161,21 @@ export default async function TimelinePage() {
         </>
       ) : null}
 
-      <h2 id="record">Five jobs that really landed on chain</h2>
+      <h2>See the whole record</h2>
       <p className="lead">
-        Ordered by jobId. The &quot;verdict&quot; column is the <code>kind</code> announced by{" "}
-        <code>EvaluatorVault.postVerdict</code>; the &quot;ACP status&quot; column is the
-        ERC-8183 job status enum. Every verdict links to its own <code>VerdictPosted</code>{" "}
-        transaction on {EXPLORER_NAME} — that explorer is used because it is the only one that
-        picks up the vault contract&apos;s Sourcify verification, so event names show up decoded
-        instead of as raw topics.
+        Every claim above is backed by an artifact you can open. The timeline lists the five
+        jobs that landed on Base Sepolia with the transaction that announced each verdict, and
+        the judge panel runs the same checks on any text you paste into it.
       </p>
-
-      <div className="table-wrap" data-reveal>
-        <table>
-          <caption>
-            Jobs 418–422: provider, budget, on-chain status, and the verdict announced for each.
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Job</th>
-              <th scope="col">Provider</th>
-              <th scope="col">Budget</th>
-              <th scope="col">Depth</th>
-              <th scope="col">ACP status</th>
-              <th scope="col">Verdict</th>
-              <th scope="col">VerdictPosted tx</th>
-              <th scope="col">Evidence</th>
-            </tr>
-          </thead>
-          <tbody>
-            {jobs.map((/** @type {any} */ job) => (
-              <Fragment key={job.jobId}>
-              <tr>
-                <td className="mono">
-                  <strong>{job.jobId}</strong>
-                </td>
-                <td>
-                  <AddressLink address={job.provider} label={shorten(job.provider)} />
-                  <div style={{ color: "var(--dim)", fontSize: 12 }}>{job.providerLabel}</div>
-                </td>
-                <td className="mono">
-                  {formatUsdc6(job.budgetUsdc6) ?? <span className="none">not available</span>}
-                </td>
-                <td className="mono">
-                  <DepthBar depth={job.depth} />
-                  {job.depth || "—"}
-                </td>
-                <td>{acpStatusLabel(job.acpStatus)}</td>
-                <td>
-                  <span className={"tag " + (job.verdictKind === 1 ? "pass" : "fail")}>
-                    <Icon name={job.verdictKind === 1 ? "check" : "x"} size={11} />
-                    {verdictKindLabel(job.verdictKind)}
-                  </span>
-                  <div style={{ color: "var(--dim)", fontSize: 12 }}>{job.bundleKind}</div>
-                </td>
-                <td>
-                  <TxLink hash={job.verdictTxHash} label={shorten(job.verdictTxHash)} />
-                </td>
-                <td>
-                  <Link href={"/verdict/" + job.jobId}>open evidence</Link>
-                </td>
-              </tr>
-              {/* Catatan per job dulu hidup sebagai daftar terpisah di bawah tabel,
-                  mengulang kelima job yang sama. Ia milik barisnya. */}
-              <tr className="note-row">
-                <td />
-                <td colSpan={7}>{job.note}</td>
-              </tr>
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <h2>Where these numbers come from</h2>
-      <div className="card note">
-        <dl className="kv">
-          {Object.entries(index.source).map(([key, value]) => (
-            <div key={key} style={{ display: "contents" }}>
-              <dt className="mono">{key}</dt>
-              <dd>{String(value)}</dd>
-            </div>
-          ))}
-        </dl>
-        <p className="lead" style={{ marginBottom: 0 }}>
-          This page makes no RPC calls, connects no wallet, and computes no hashes. It only
-          renders artifacts that already exist in the repository.
-        </p>
+      <div className="outro" data-reveal>
+        <Link className="go" href="/timeline">
+          Open the timeline
+          <Icon name="arrow-right" size={14} />
+        </Link>
+        <Link className="go ghost" href="/panel">
+          Try the judge panel
+          <Icon name="arrow-right" size={14} />
+        </Link>
       </div>
     </div>
   );
