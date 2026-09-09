@@ -1605,3 +1605,54 @@ footer.site .disclaimer {
 .outro .go:hover .icon {
   transform: translateX(3px);
 }
+
+/* "Apa ini" — tiga kolom pendek. Sengaja BUKAN kartu: garis rambut memisahkan,
+   sama seperti rantai langkah, supaya halaman ini punya satu bahasa saja untuk
+   "beberapa hal setara berdampingan". */
+.what {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  border-top: 1px solid var(--hair);
+  margin-top: var(--s5);
+}
+
+.what > div {
+  padding: var(--s5) var(--s5) var(--s5) 0;
+  border-right: 1px solid var(--hair);
+}
+
+.what > div + div {
+  padding-left: var(--s5);
+}
+
+.what > div:last-child {
+  border-right: none;
+}
+
+.what h3 {
+  margin-top: 0;
+}
+
+.what p {
+  margin: 0;
+  color: var(--bone-2);
+  font-size: 14.5px;
+}
+
+@media (max-width: 860px) {
+  .what {
+    grid-template-columns: 1fr;
+  }
+
+  .what > div,
+  .what > div + div {
+    border-right: none;
+    border-bottom: 1px solid var(--hair);
+    padding: var(--s4) 0;
+  }
+
+  .what > div:last-child {
+    border-bottom: none;
+  }
+}

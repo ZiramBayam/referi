@@ -108,6 +108,39 @@ export default async function TimelinePage() {
         </section>
       ) : null}
 
+      <h2>What this is</h2>
+      <p className="lead">
+        REFERI is a referee for escrow, not a marketplace and not a wallet. When a client
+        creates an ERC-8183 job they name an evaluator; point that at this vault and REFERI
+        decides whether the escrowed money is released to the provider or refunded to the
+        client — and it remembers that provider on the next job.
+      </p>
+
+      <div className="what" data-reveal>
+        <div>
+          <h3>Who it is for</h3>
+          <p>
+            Anyone buying work from the same providers more than once. Meet a provider twice
+            and a forgetful referee turns into repeated loss.
+          </p>
+        </div>
+        <div>
+          <h3>How it is wired in</h3>
+          <p>
+            Set <code>evaluatorAddress</code> to the vault when the job is created. That is the
+            whole integration — no hook to whitelist, no SDK to adopt.
+          </p>
+        </div>
+        <div>
+          <h3>What it changes</h3>
+          <p>
+            A standard ERC-8183 evaluator is stateless, so the same provider can repeat the
+            same trick on the next job and leave no trace. This one carries a record, and
+            announces its hash on chain with every verdict.
+          </p>
+        </div>
+      </div>
+
       <h2>How that difference is produced</h2>
       <p className="lead">
         Three steps, in this order. Nothing here is a judgement call by a model — every step is
