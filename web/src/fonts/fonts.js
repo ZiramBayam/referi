@@ -3,18 +3,21 @@ import localFont from "next/font/local";
 /**
  * Tiga huruf, di-vendor ke repo (bukan CDN) supaya halaman ini utuh saat juri
  * menjalankannya tanpa internet. Ketiganya SIL Open Font License 1.1 — lihat
- * `src/fonts/NOTICE.md`. Subset yang diunduh hanya latin dasar (U+0000-00FF):
- * ~100 KB untuk ketiganya.
+ * `src/fonts/NOTICE.md`. Subset yang diunduh hanya latin dasar (U+0000-00FF).
  *
- *   display : Instrument Serif — suara judul. Besar, tracking rapat.
- *   sans    : Inter            — prosa dan antarmuka.
- *   mono    : JetBrains Mono   — angka, hash, alamat, apa pun yang dibandingkan
- *                                antar baris.
+ *   display : Fraunces      — serif variabel dengan sumbu WONK dan SOFT: huruf
+ *                             yang sengaja miring-lucu dan sudut yang dilunakkan.
+ *                             Ia PUNYA watak; Instrument Serif elegan tapi datar.
+ *   sans    : Space Grotesk — prosa dan antarmuka. Inter adalah huruf UI paling
+ *                             netral yang ada, dan netral itulah yang membuat
+ *                             halaman ini terbaca seperti dokumen kantor.
+ *   mono    : JetBrains Mono — angka, hash, alamat, apa pun yang dibandingkan
+ *                             antar baris.
  */
 
 export const display = localFont({
-  src: "./InstrumentSerif-Regular.woff2",
-  weight: "400",
+  src: "./Fraunces-Variable.woff2",
+  weight: "400 700",
   style: "normal",
   display: "swap",
   variable: "--font-display",
@@ -22,8 +25,8 @@ export const display = localFont({
 });
 
 export const sans = localFont({
-  src: "./Inter-Variable.woff2",
-  weight: "100 900",
+  src: "./SpaceGrotesk-Variable.woff2",
+  weight: "300 700",
   style: "normal",
   display: "swap",
   variable: "--font-sans",

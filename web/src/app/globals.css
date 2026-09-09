@@ -220,6 +220,8 @@ header.top .wrap {
    yang benar untuk "The Evaluator" membuat "REFERI" saling menempel. */
 header.top h1 {
   font-family: var(--font-display), Georgia, serif;
+  font-variation-settings: "opsz" 24;
+  font-weight: 600;
   font-size: 22px;
   font-weight: 400;
   letter-spacing: 0.08em;
@@ -257,6 +259,7 @@ header.top .net {
 
 h2 {
   font-family: var(--font-display), Georgia, serif;
+  font-variation-settings: "opsz" 72;
   font-size: clamp(30px, 4vw, 46px);
   font-weight: 400;
   line-height: 1.06;
@@ -347,6 +350,7 @@ strong {
 
 .hero h1 {
   font-family: var(--font-display), Georgia, serif;
+  font-variation-settings: "opsz" 144;
   font-size: clamp(46px, 9vw, 118px);
   font-weight: 400;
   /* 0.94 memuat dua baris rapat dengan indah SELAMA tidak ada latar. Begitu
@@ -365,7 +369,11 @@ strong {
    diwarnai. Teks kuning di atas kertas krem tidak terbaca; tinta hitam di atas
    blok kuning terbaca, dan jauh lebih ceria. */
 .hero h1 em {
-  font-style: italic;
+  /* Fraunces subset ini tidak punya face italic; `font-style: italic` akan
+     dimiringkan sintetis oleh browser dan hasilnya kotor. Tekanan datang dari
+     bobot dan sumbu opsz-nya sendiri. */
+  font-style: normal;
+  font-weight: 600;
   color: var(--bone);
   background: var(--amber);
   box-decoration-break: clone;
@@ -458,7 +466,11 @@ strong {
 
 .plate .verdict {
   font-family: var(--font-display), Georgia, serif;
-  font-size: clamp(26px, 3.4vw, 40px);
+  /* Fraunces lebih lebar dari Instrument Serif: pada 40px "COMPLETE (kind=1)"
+     pecah dua baris sementara "REJECT (kind=2)" tetap satu, dan pasangan pelat
+     itu berhenti terbaca sejajar. Keduanya harus muat satu baris. */
+  font-variation-settings: "opsz" 48;
+  font-size: clamp(22px, 2.5vw, 31px);
   line-height: 1.05;
   letter-spacing: -0.02em;
   margin: var(--s2) 0 var(--s4);
@@ -579,6 +591,7 @@ strong {
 
 .steps h3 {
   font-family: var(--font-display), Georgia, serif;
+  font-variation-settings: "opsz" 36;
   font-size: 22px;
   font-weight: 400;
   letter-spacing: -0.015em;

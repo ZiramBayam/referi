@@ -6,8 +6,8 @@ repository provided the fonts themselves stay under the OFL and are not sold on 
 
 | File | Family | Copyright | Licence |
 |---|---|---|---|
-| `InstrumentSerif-Regular.woff2` | Instrument Serif | Copyright 2022 The Instrument Serif Project Authors | OFL 1.1 |
-| `Inter-Variable.woff2` | Inter | Copyright 2016 The Inter Project Authors | OFL 1.1 |
+| `Fraunces-Variable.woff2` | Fraunces | Copyright 2020 The Fraunces Project Authors | OFL 1.1 |
+| `SpaceGrotesk-Variable.woff2` | Space Grotesk | Copyright 2020 The Space Grotesk Project Authors | OFL 1.1 |
 | `JetBrainsMono-Variable.woff2` | JetBrains Mono | Copyright 2020 The JetBrains Mono Project Authors | OFL 1.1 |
 
 Full licence text: <https://openfontlicense.org/open-font-license-official-text/>
@@ -16,4 +16,4 @@ Full licence text: <https://openfontlicense.org/open-font-license-official-text/
 evidence pages must render identically with the network off. Fetching the fonts from
 `fonts.gstatic.com` at build or run time would make the page depend on a third-party host
 that is not part of the submission. Each file is the latin subset only (`U+0000-00FF`),
-so the three together add roughly 100 KB.
+so the three together add roughly 120 KB.
