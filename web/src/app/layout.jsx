@@ -13,10 +13,13 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>
+        <a className="skip" href="#content">
+          Skip to content
+        </a>
         <header className="top">
           <div className="wrap">
             <h1>The Evaluator</h1>
-            <nav>
+            <nav aria-label="Main">
               <Link href="/">Job timeline</Link>
               <Link href="/panel">Judge panel</Link>
             </nav>
@@ -25,7 +28,9 @@ export default function RootLayout({ children }) {
             </span>
           </div>
         </header>
-        <main className="wrap">{children}</main>
+        <main className="wrap" id="content">
+          {children}
+        </main>
       </body>
     </html>
   );

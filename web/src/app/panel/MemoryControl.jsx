@@ -86,8 +86,11 @@ export default function MemoryControl({ enabled, resetApi }) {
         </p>
       </div>
 
-      {result ? <ResetResult data={result} /> : null}
-      {failure ? <ResetFailure failure={failure} command={serveCommand} /> : null}
+      {/* Aksi merusak: hasilnya wajib terdengar, bukan hanya terlihat. */}
+      <div aria-live="polite">
+        {result ? <ResetResult data={result} /> : null}
+        {failure ? <ResetFailure failure={failure} command={serveCommand} /> : null}
+      </div>
 
       <div className="card note">
         <p style={{ marginTop: 0 }}>

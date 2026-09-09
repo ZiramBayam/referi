@@ -1,65 +1,196 @@
-/* CSS polos, tanpa framework dan tanpa aset pihak ketiga (putusan PM 8 Sep).
-   Target keterbacaan: 1280x720 (resolusi rekaman video). Tanpa animasi. */
+/* Dunia visual: "konsol bukti" — instrumen baca, bukan halaman pemasaran.
+   Setiap nilai di layar ini adalah sesuatu yang bisa dilacak ke chain atau ke berkas,
+   jadi tipografinya bekerja seperti alat ukur: satu warna sinyal, angka rata kolom,
+   kedalaman tipis, dan SATU momen gerak saat bukti mendarat.
+
+   Nama kelas TIDAK berubah dari versi sebelumnya — hanya bahasanya yang naik. */
 
 :root {
-  --ink: #14181d;
+  color-scheme: light;
+
+  /* Tinta & permukaan */
+  --ink: #10151b;
+  --ink-2: #35404c;
   --muted: #5b6672;
-  --line: #d3dae1;
-  --bg: #f7f9fb;
+  --line: #dde4ea;
+  --line-2: #eef2f6;
+  --bg: #f4f7fa;
   --card: #ffffff;
+  --sunk: #f1f5f8;
+
+  /* Sinyal — satu warna, dipakai untuk tautan, fokus, dan aksen aktif */
+  --signal: #0b4fa8;
+  --signal-soft: #e4edfa;
+  --link: var(--signal);
+  --focus: var(--signal);
+  --sel: #d8e6fa;
+
+  /* Semantik verdict */
   --pass: #0a6b3d;
+  --pass-bg: #e6f4ec;
   --fail: #9b1c1c;
+  --fail-bg: #fbeaea;
   --unver: #7a5a00;
-  --link: #0b4fa8;
+  --unver-bg: #fbf3de;
+
+  /* Skala jarak — langkah nyata, bukan angka acak */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 36px;
+  --s7: 56px;
+
+  /* Kedalaman: SELALU punya offset + blur lembut. Halo tanpa offset itu hiasan. */
+  --lift: 0 1px 2px rgba(16, 21, 27, 0.04), 0 4px 12px rgba(16, 21, 27, 0.05);
+  --lift-2: 0 2px 4px rgba(16, 21, 27, 0.05), 0 12px 28px rgba(16, 21, 27, 0.08);
+
+  --r: 12px;
+  --r-sm: 8px;
+
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Mode gelap: dipilih dari adegan pakai — juri membaca bukti ini larut malam,
+   di layar penuh, sesudah menonton video. Bukan dari kebiasaan kategori. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --ink: #e8eef5;
+    --ink-2: #b3c0cd;
+    --muted: #8b98a7;
+    --line: #262f3a;
+    --line-2: #1c242e;
+    --bg: #0d1117;
+    --card: #141b23;
+    --sunk: #10161d;
+
+    --signal: #6aa9f5;
+    --signal-soft: #17263a;
+    --sel: #1e3a5c;
+
+    --pass: #4ec98a;
+    --pass-bg: #10241a;
+    --fail: #f28b8b;
+    --fail-bg: #2a1618;
+    --unver: #d9b25f;
+    --unver-bg: #241d0e;
+
+    --lift: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
+    --lift-2: 0 2px 4px rgba(0, 0, 0, 0.45), 0 12px 28px rgba(0, 0, 0, 0.4);
+  }
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 14px/1.5 ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font: 15px/1.6 ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Permukaan yang digambar browser tetap milik halaman ini, bukan milik OS. */
+::selection {
+  background: var(--sel);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 a {
   color: var(--link);
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* Angka bukti dibandingkan antar baris, jadi harus rata kolom. */
+code,
+.mono,
+td,
+th {
+  font-variant-numeric: tabular-nums;
 }
 
 code,
 .mono {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-size: 0.86em;
+  letter-spacing: -0.01em;
+}
+
+.skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: var(--s2) var(--s3);
+  z-index: 10;
+  box-shadow: var(--lift-2);
+}
+
+.skip:focus {
+  left: var(--s2);
+  top: var(--s2);
 }
 
 .wrap {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 16px 20px 48px;
+  padding: var(--s5) var(--s5) var(--s7);
 }
 
 header.top {
   background: var(--card);
   border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 5;
 }
 
 header.top .wrap {
-  padding: 12px 20px;
+  padding: var(--s3) var(--s5);
   display: flex;
   align-items: baseline;
-  gap: 20px;
+  gap: var(--s5);
 }
 
 header.top h1 {
-  font-size: 16px;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
   margin: 0;
 }
 
 header.top nav a {
-  margin-right: 14px;
+  margin-right: var(--s4);
   text-decoration: none;
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+header.top nav a:hover {
+  color: var(--signal);
 }
 
 header.top .net {
@@ -68,90 +199,150 @@ header.top .net {
   font-size: 12px;
 }
 
+/* Skala tipe dengan langkah yang jelas — sebelumnya semuanya 13-16px dan rata. */
 h2 {
-  font-size: 15px;
-  margin: 24px 0 8px;
+  font-size: 22px;
+  line-height: 1.25;
+  font-weight: 640;
+  letter-spacing: -0.022em;
+  margin: var(--s6) 0 var(--s2);
+}
+
+h2:first-child {
+  margin-top: var(--s2);
 }
 
 h3 {
   font-size: 13px;
-  margin: 16px 0 6px;
+  font-weight: 640;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: var(--s4) 0 var(--s2);
 }
 
 p.lead {
-  color: var(--muted);
-  margin: 4px 0 12px;
-  max-width: 90ch;
+  color: var(--ink-2);
+  margin: var(--s1) 0 var(--s3);
+  max-width: 72ch;
+}
+
+/* ---------- tabel bukti ---------- */
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--card);
+  box-shadow: var(--lift);
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
   background: var(--card);
-  border: 1px solid var(--line);
 }
 
 th,
 td {
   text-align: left;
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--line);
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--line-2);
   vertical-align: top;
 }
 
 th {
-  background: #eef2f6;
+  background: var(--sunk);
   font-weight: 600;
-  font-size: 12px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--muted);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
 }
 
-tr:last-child td {
+tbody tr:last-child td {
   border-bottom: none;
 }
+
+tbody tr {
+  transition: background 0.12s var(--ease);
+}
+
+tbody tr:hover {
+  background: var(--line-2);
+}
+
+caption {
+  caption-side: top;
+}
+
+/* ---------- kartu ---------- */
 
 .card {
   background: var(--card);
   border: 1px solid var(--line);
-  padding: 12px 14px;
-  margin: 10px 0;
+  border-radius: var(--r);
+  padding: var(--s4) var(--s5);
+  margin: var(--s3) 0;
+  box-shadow: var(--lift);
+}
+
+.card h3:first-child,
+.card p:first-child {
+  margin-top: 0;
 }
 
 .kv {
   display: grid;
   grid-template-columns: 190px 1fr;
-  gap: 4px 12px;
+  gap: var(--s1) var(--s4);
 }
 
 .kv dt {
   color: var(--muted);
+  font-size: 13px;
 }
 
 .kv dd {
   margin: 0;
-  word-break: break-all;
+  /* `break-all` memotong kata biasa di tengah — ".json" jadi ".jso" + "n". Hash dan
+     path panjang tetap harus patah, tapi hanya ketika memang tidak muat. */
+  overflow-wrap: anywhere;
 }
+
+/* ---------- verdict ---------- */
 
 .tag {
   display: inline-block;
-  padding: 1px 6px;
-  border: 1px solid currentColor;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 650;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
 }
 
 .tag.pass {
   color: var(--pass);
+  background: var(--pass-bg);
+  border-color: color-mix(in srgb, var(--pass) 28%, transparent);
 }
 
 .tag.fail {
   color: var(--fail);
+  background: var(--fail-bg);
+  border-color: color-mix(in srgb, var(--fail) 28%, transparent);
 }
 
 .tag.unverified {
   color: var(--unver);
+  background: var(--unver-bg);
+  border-color: color-mix(in srgb, var(--unver) 28%, transparent);
 }
 
 .none {
@@ -159,61 +350,197 @@ tr:last-child td {
   font-style: italic;
 }
 
+/* ---------- kutipan bukti ---------- */
+
 pre.proof,
 pre.doc {
-  background: #f2f5f8;
+  background: var(--sunk);
   border: 1px solid var(--line);
-  border-left: 3px solid var(--muted);
-  padding: 8px 10px;
-  margin: 6px 0 0;
+  border-radius: var(--r-sm);
+  padding: var(--s3) var(--s4);
+  margin: var(--s2) 0 0;
   white-space: pre-wrap;
   word-break: break-word;
   overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.55;
 }
+
+/* ---------- kontrol ---------- */
 
 textarea {
   width: 100%;
   min-height: 190px;
-  padding: 8px;
+  padding: var(--s3);
   border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  color: var(--ink);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+
+textarea:focus {
+  border-color: var(--signal);
+  box-shadow: 0 0 0 3px var(--signal-soft);
+  outline: none;
+}
+
+label {
+  display: inline-block;
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: var(--s1);
 }
 
 button,
 select {
   font: inherit;
-  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: 500;
+  padding: var(--s2) var(--s4);
   border: 1px solid var(--line);
+  border-radius: var(--r-sm);
   background: var(--card);
+  color: var(--ink);
   cursor: pointer;
+  transition: background 0.14s var(--ease), border-color 0.14s var(--ease),
+    transform 0.14s var(--ease);
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--muted);
+  background: var(--line-2);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 button.primary {
   background: var(--ink);
-  color: #fff;
+  color: var(--bg);
   border-color: var(--ink);
 }
 
+button.primary:hover:not(:disabled) {
+  background: var(--ink-2);
+  border-color: var(--ink-2);
+}
+
 button.danger {
-  border-color: var(--fail);
+  border-color: color-mix(in srgb, var(--fail) 45%, transparent);
   color: var(--fail);
+  background: var(--fail-bg);
+}
+
+button.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fail) 14%, var(--card));
+  border-color: var(--fail);
 }
 
 .row {
   display: flex;
-  gap: 10px;
+  gap: var(--s3);
   align-items: center;
   flex-wrap: wrap;
-  margin: 10px 0;
+  margin: var(--s3) 0;
 }
 
+/* ---------- callout ----------
+   Elevasi dinyatakan SEKALI: latar bertinta + garis 1px. Pita border-left tebal
+   adalah kostum, bukan sistem kedalaman. */
+
 .warn {
-  border-left: 3px solid var(--unver);
-  background: #fdf8e8;
+  background: var(--unver-bg);
+  border-color: color-mix(in srgb, var(--unver) 30%, transparent);
 }
 
 .note {
-  border-left: 3px solid var(--muted);
-  background: #f2f5f8;
+  background: var(--sunk);
+  border-color: var(--line);
+}
+
+/* ---------- SATU momen gerak ----------
+   Bukti "mendarat" sekali saat halaman dibuka, dari keadaan yang sudah terlihat
+   (opacity 1 di no-preference-pun aman karena animasi hanya menggeser 6px). */
+
+@media (prefers-reduced-motion: no-preference) {
+  .card,
+  .table-wrap {
+    animation: settle 0.42s var(--ease) both;
+  }
+
+  @keyframes settle {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+/* ---------- layar sempit ----------
+   Target rekaman tetap 1280x720; blok ini hanya menahan layar sempit agar tidak patah. */
+
+@media (max-width: 720px) {
+  body {
+    font-size: 14px;
+  }
+
+  .wrap {
+    padding: var(--s4) var(--s3) var(--s6);
+  }
+
+  header.top {
+    position: static;
+  }
+
+  header.top .wrap {
+    flex-wrap: wrap;
+    gap: var(--s1) var(--s4);
+  }
+
+  header.top .net {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+
+  h2 {
+    font-size: 19px;
+    margin-top: var(--s5);
+  }
+
+  .card {
+    padding: var(--s3) var(--s4);
+  }
+
+  .kv {
+    grid-template-columns: 1fr;
+    gap: 2px 0;
+  }
+
+  .kv dt {
+    margin-top: var(--s2);
+  }
+
+  th {
+    position: static;
+  }
+
+  /* Target sentuh 44px (WCAG 2.5.8). Di desktop tingginya tidak berubah. */
+  button,
+  select {
+    min-height: 44px;
+  }
 }

@@ -20,17 +20,28 @@ export default async function TimelinePage() {
         verification, so event names show up decoded instead of as raw topics.
       </p>
 
+      <div className="table-wrap">
       <table>
+        <caption
+          className="none"
+          style={{
+            textAlign: "left",
+            padding: "12px 16px",
+            borderBottom: "1px solid var(--line)",
+          }}
+        >
+          Jobs 418–422: provider, budget, on-chain status, and the verdict announced for each.
+        </caption>
         <thead>
           <tr>
-            <th>Job</th>
-            <th>Provider</th>
-            <th>Budget</th>
-            <th>ACP status</th>
-            <th>Verdict</th>
-            <th>Bundle shape</th>
-            <th>VerdictPosted tx</th>
-            <th>Evidence</th>
+            <th scope="col">Job</th>
+            <th scope="col">Provider</th>
+            <th scope="col">Budget</th>
+            <th scope="col">ACP status</th>
+            <th scope="col">Verdict</th>
+            <th scope="col">Bundle shape</th>
+            <th scope="col">VerdictPosted tx</th>
+            <th scope="col">Evidence</th>
           </tr>
         </thead>
         <tbody>
@@ -66,6 +77,7 @@ export default async function TimelinePage() {
           ))}
         </tbody>
       </table>
+      </div>
 
       <h2>What happened, in order</h2>
       <ul className="lead">
