@@ -1117,3 +1117,188 @@ footer.site .disclaimer {
     min-height: 44px;
   }
 }
+
+/* ------------------------------------------------------- jendela membaca --
+   Bagian yang bisa DIMAINKAN. Kedalaman digeser, seksi ketiga menyala atau
+   padam, dan verdictnya berbalik — dijalankan oleh `evaluateText`, kode yang
+   sama yang menulis bundel on-chain. */
+
+.readwin {
+  border: 2px solid var(--bone);
+  border-radius: var(--r);
+  background: var(--surface);
+  box-shadow: var(--block);
+  overflow: hidden;
+  margin-top: var(--s5);
+}
+
+.readwin-controls {
+  display: flex;
+  border-bottom: 2px solid var(--bone);
+}
+
+.readwin-controls button {
+  flex: 1;
+  display: block;
+  text-align: left;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--raised);
+  color: var(--dim);
+  padding: var(--s3) var(--s5);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: var(--font-mono), monospace;
+}
+
+.readwin-controls button + button {
+  border-left: 2px solid var(--bone);
+}
+
+.readwin-controls button em {
+  display: block;
+  font-family: var(--font-sans), sans-serif;
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 400;
+  margin-top: 2px;
+}
+
+.readwin-controls button.on {
+  background: var(--amber);
+  color: var(--bone);
+}
+
+.readwin-controls button:hover:not(.on) {
+  background: var(--surface);
+  color: var(--bone);
+}
+
+.readwin-body {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+}
+
+.readwin .doc {
+  padding: var(--s5);
+  border-right: 2px solid var(--bone);
+}
+
+.readwin .sec {
+  border-left: 3px solid var(--hair);
+  padding-left: var(--s4);
+  margin-bottom: var(--s4);
+  opacity: 0.38;
+  transition: opacity 0.28s var(--ease), border-color 0.28s var(--ease);
+}
+
+.readwin .sec.read {
+  opacity: 1;
+  border-left-color: var(--bone);
+}
+
+.readwin .sec .marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.readwin .sec.read .marker {
+  color: var(--pass);
+}
+
+.readwin .sec pre {
+  margin: var(--s2) 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono), monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--bone-2);
+}
+
+.readwin mark {
+  background: var(--fail);
+  color: #fff;
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+.readwin .out {
+  padding: var(--s5);
+  transition: background 0.28s var(--ease);
+}
+
+.readwin .out.is-pass {
+  background: var(--pass-dim);
+}
+
+.readwin .out.is-fail {
+  background: var(--fail-dim);
+}
+
+.readwin .out .k {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.readwin .out .v {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 40px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  margin: var(--s2) 0 var(--s4);
+}
+
+.readwin .out.is-pass .v {
+  color: var(--pass);
+}
+
+.readwin .out.is-fail .v {
+  color: var(--fail);
+}
+
+.readwin .out dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--s1) var(--s3);
+  margin: 0 0 var(--s4);
+  font-size: 12.5px;
+}
+
+.readwin .out dt {
+  color: var(--dim);
+}
+
+.readwin .out dd {
+  margin: 0;
+  font-family: var(--font-mono), monospace;
+}
+
+.readwin .out .why {
+  margin: 0;
+  font-size: 13px;
+  color: var(--bone-2);
+  border-top: 1px solid color-mix(in srgb, var(--bone) 18%, transparent);
+  padding-top: var(--s3);
+}
+
+@media (max-width: 860px) {
+  .readwin-body {
+    grid-template-columns: 1fr;
+  }
+
+  .readwin .doc {
+    border-right: none;
+    border-bottom: 2px solid var(--bone);
+  }
+}

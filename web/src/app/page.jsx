@@ -1,10 +1,11 @@
 import { Fragment } from "react";
 import Link from "next/link";
-import { loadIndex } from "../lib/data.js";
+import { loadIndex, loadDeliverable } from "../lib/data.js";
 import { formatUsdc6 } from "../lib/canonical.js";
 import { acpStatusLabel, verdictKindLabel, EXPLORER_NAME } from "../lib/chain.js";
 import { TxLink, AddressLink, shorten } from "../components/Links.jsx";
 import Icon from "../components/Icon.jsx";
+import ReadWindow from "../components/ReadWindow.jsx";
 
 /**
  * Batang kedalaman. `sampling` membaca 2 bagian pertama (SAMPLING_SECTION_LIMIT
@@ -28,6 +29,10 @@ function DepthBar({ depth }) {
 export default async function TimelinePage() {
   const index = await loadIndex();
   const jobs = index.jobs;
+
+  // Teks deliverable yang dipakai peraga interaktif diambil dari artefak yang
+  // SAMA yang di-hash ke chain, bukan disalin ke dalam komponen.
+  const twinText = await loadDeliverable("422").catch(() => null);
 
   // Pasangan tesis: dua job dengan deliverable byte-identik dan anggaran sama.
   // Dicari DARI data, bukan ditulis tangan — kalau artefaknya berubah, hero ikut
@@ -139,6 +144,18 @@ export default async function TimelinePage() {
           <span className="src">contracts/src/EvaluatorVault.sol</span>
         </li>
       </ol>
+
+      {twinText?.text ? (
+        <>
+          <h2>Read it the way the referee did</h2>
+          <p className="lead">
+            This is the actual deliverable from job 422, and the control below runs the same
+            check code that produced the on-chain bundles. Move the depth and watch the third
+            section — and the verdict — change.
+          </p>
+          <ReadWindow text={twinText.text} />
+        </>
+      ) : null}
 
       <h2 id="record">Five jobs that really landed on chain</h2>
       <p className="lead">
