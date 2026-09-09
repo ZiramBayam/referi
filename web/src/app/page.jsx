@@ -103,6 +103,8 @@ export default async function TimelinePage() {
           <p className="shared">
             keccak256 of both deliverables <b>{shorten(passed.deliverableHash)}</b>
           </p>
+
+          <p className="more">how that difference is produced</p>
         </section>
       ) : null}
 

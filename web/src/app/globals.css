@@ -304,9 +304,43 @@ strong {
    memulai judulnya sekitar seperempat viewport ke bawah, dan ruang kosong di
    kanannya dibiarkan kosong — asimetri itu yang membuatnya terbaca percaya diri
    alih-alih penuh sesak. */
+/* Hero mengisi TEPAT satu layar, tidak lebih. Sebelumnya ia 989px pada viewport
+   900px — sepuluh persen terlalu tinggi, yang artinya pelat bukti terpotong
+   persis di lipatan dan pembaca melihat separuh kartu tanpa tahu ada dua.
+   Flex + min-height membuat isinya berpusat dan berhenti di batas layar.
+
+   Seksi LAIN sengaja TIDAK dipaksa setinggi ini: tabel dan provenance adalah
+   bahan rujukan yang dibandingkan antar baris, dan memaksanya 100vh hanya
+   menambah ruang kosong sekaligus menjauhkan baris yang perlu diadu. */
 .hero {
-  padding: clamp(var(--s7), 13vh, 160px) 0 var(--s7);
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--s7) 0;
   border-bottom: 1px solid var(--hair);
+}
+
+/* Isyarat bahwa halaman berlanjut — tanpa ini satu layar penuh terbaca sebagai
+   seluruh halaman. */
+.hero .more {
+  margin: var(--s6) 0 0;
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.hero .more::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--hair);
+  max-width: 120px;
 }
 
 .hero h1 {
@@ -400,7 +434,7 @@ strong {
   grid-template-columns: 1fr auto 1fr;
   align-items: stretch;
   gap: var(--s4);
-  margin-top: var(--s8);
+  margin-top: var(--s6);
   max-width: 880px;
 }
 
@@ -1300,5 +1334,59 @@ footer.site .disclaimer {
   .readwin .doc {
     border-right: none;
     border-bottom: 2px solid var(--bone);
+  }
+}
+
+/* Layar PENDEK (laptop 768p, dan 1280x720 yang dipakai merekam video demo).
+   Tanpa blok ini hero setinggi 922px pada viewport 720px, jadi kedua pelat
+   bukti terpotong di lipatan — tepat pada resolusi yang direkam. Yang dipangkas
+   hanya ritme vertikalnya; tidak ada isi yang hilang. */
+@media (max-height: 820px) {
+  /* Di layar sependek ini isi hero (judul + sub + aksi + dua pelat + hash)
+     memang TIDAK muat satu layar. `min-height` dengan isi yang lebih tinggi
+     dari kotaknya membuat `justify-content: center` meluber ke DUA arah, jadi
+     bagian atas ikut terpotong — lebih buruk daripada sekadar menggulir.
+     Maka di sini hero kembali setinggi isinya, dan itu keputusan sadar:
+     satu layar penuh berlaku di layar yang benar-benar punya ruangnya. */
+  .hero {
+    min-height: 0;
+    display: block;
+    padding: var(--s5) 0;
+  }
+
+  .hero h1 {
+    font-size: clamp(40px, 6.2vw, 74px);
+  }
+
+  .hero .sub {
+    margin-top: var(--s4);
+  }
+
+  .hero .actions {
+    margin-top: var(--s4);
+  }
+
+  .plates {
+    margin-top: var(--s5);
+  }
+
+  .plate {
+    padding: var(--s4);
+  }
+
+  .plate .verdict {
+    font-size: clamp(22px, 2.6vw, 30px);
+    margin: var(--s1) 0 var(--s3);
+  }
+
+  .shared {
+    margin-top: var(--s3);
+    padding: var(--s2) var(--s4);
+  }
+
+  /* Isyarat "lanjut ke bawah" tidak muat di layar sepenuh ini — dan tidak
+     dibutuhkan: isi yang menyentuh tepi layar sudah menjadi isyaratnya. */
+  .hero .more {
+    display: none;
   }
 }
