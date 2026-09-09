@@ -1,22 +1,24 @@
-# Objective Hackathon Review Brief — Execution Passport
+# Concept-Stage Hackathon Review Brief — Execution Passport
 
 ## Mandatory instruction to the reviewing AI agent
 
-Act as an independent Sibyl Labs Hackathon judge. Evaluate this repository's **current, runnable state**, not the ambition of the idea, future roadmap, screenshots, or claims in this document.
+Act as an independent product and hackathon-idea reviewer. Evaluate the **Execution Passport idea and approved MVP design**, not the current repository implementation state. This review is intentionally requested before development is complete.
 
-Your task is to produce an objective, evidence-backed assessment of **Execution Passport**, the proposed evolution of Escrow Firewall.
+Your task is to produce an objective, evidence-backed **concept-stage assessment** of Execution Passport, the proposed evolution of Escrow Firewall. It must estimate how strongly the idea could score against the official rubric **if the documented MVP were implemented and demonstrated exactly as designed**.
+
+This is not an official current-build score. A concept cannot pass the official memory gate, earn a partner multiplier, or earn implementation credit until it exists and is demonstrated. Do not convert this conditional assessment into a claim that the project is currently eligible or complete.
 
 You MUST:
 
 1. Read the official rules at <https://hack.sibyllabs.org/rules> before scoring.
-2. Inspect the repository, commit history, README, tests, contracts, and runnable commands yourself.
-3. Distinguish implemented behavior from specification/roadmap. A design document, TODO, mock screen, or unexercised code is **not** implementation evidence.
-4. Give every non-zero score a concrete evidence link: file path + function/test name, commit hash, reproducible command output, or public on-chain/demo artifact.
-5. Score missing, unverified, contradictory, or non-runnable claims as zero for the affected subclaim. Do not infer completion from intent.
-6. Identify disqualifying gate failures before assigning any rubric score.
-7. Do not award PMF points without a publicly verifiable artifact that a judge can inspect in five minutes.
-8. Do not award a partner multiplier merely because dependencies, addresses, or logos exist; the integration must be exercised in the demo and serve the product's actual function.
-9. State all assumptions, blockers, and uncertainty. Do not manufacture a precise score if evidence supports only a range.
+2. Treat these as the primary evidence: `docs/superpowers/specs/2026-09-09-execution-passport-design.md` and `docs/research/2026-09-09-execution-passport-control-plane.md`.
+3. Use external sources to test whether the problem, primitives, competitor gap, and technical claims are credible. Prefer official protocol documentation and primary sources.
+4. Do **not** reduce the idea score because a verifier, demo video, README bridge, test suite, or deployment has not been built yet. Those are delivery gaps, not evidence against the idea's novelty or design quality.
+5. Do distinguish sourced fact from inference. Cite every material claim about the market, existing primitive, or official rule.
+6. Score each criterion as a **conditional potential score**: the score the idea could plausibly earn if the documented MVP works exactly as specified and the demo proves it.
+7. Do not award PMF points without a publicly verifiable artifact; report it as `0 / 10` and assess PMF *potential* separately in prose.
+8. Do not apply Base or Virtuals multiplier. Report multiplier as `not assessed` because this is an idea review, not an exercised build review.
+9. State assumptions, risks, and the specific proof that would be required to turn each conditional score into a real judge score. Do not manufacture precision; use a range where warranted.
 
 The required output format appears in [Required review output](#required-review-output).
 
@@ -159,53 +161,48 @@ An obligation result must be `satisfied`, `unsatisfied`, or `unverifiable`. `unv
 
 ---
 
-## Known current-state warning
+## Review boundary: implementation is deliberately out of scope
 
 At the time this brief was written, the Execution Passport architecture is approved and documented in:
 
 - `docs/superpowers/specs/2026-09-09-execution-passport-design.md`
 - `docs/research/2026-09-09-execution-passport-control-plane.md`
 
-Those documents are **not proof that the Execution Passport contract, Control Hypothesis model, proof evaluator, or end-to-end demo exists**. Inspect the current HEAD and run tests before scoring. Existing Escrow Firewall code may demonstrate an earlier product direction—failure pattern → pre-funding escrow terms—but it must not be credited as Execution Passport enforcement unless the current execution path actually uses it.
+Those documents are deliberately the object under review. Do not search for a PassportVerifier, Control Hypothesis code, video, test, or deployment in order to score the idea down. You may list their absence only in a separate “delivery proof required” section, never as a reason to lower the conditional idea score.
+
+Existing Escrow Firewall code is relevant only as contextual proof that the team has previously explored failure-pattern memory. It neither proves nor weakens the conceptual value of Execution Passport.
 
 ---
 
-## Evidence checklist for a credible MVP
+## Concept-evaluation checklist
 
-The reviewing agent should explicitly check each item.
+The reviewing agent should determine whether the design specifies each item clearly enough to be built and judged. Do not require the item to already exist.
 
 ### Gate evidence
 
-- [ ] A critical-path Sibyl write records deterministic incident evidence as a Control Hypothesis.
-- [ ] A fresh process reads that exact hypothesis before the later rebalance decision.
-- [ ] A different executor identity can receive the same relevant control requirement.
-- [ ] Deleting/disabled Sibyl materially changes the action decision and does not preserve the strict passport path through hardcoded fallback.
-- [ ] README identifies the critical memory read/write locations in under two minutes.
-- [ ] Demo video shows the continuous fresh-session recall moment with timestamp or commit hash.
+- [ ] The design makes a Control Hypothesis a critical Sibyl write.
+- [ ] The design requires fresh-process recall before the later rebalance decision.
+- [ ] The design applies the hypothesis across executor identities rather than as reputation.
+- [ ] The design defines a deletion behavior that materially changes policy without fail-open execution.
+- [ ] The design identifies how README and demo evidence would prove the critical path.
 
 ### Verifier evidence
 
-- [ ] The verifier permits one valid passport for the exact allowlisted mock-rebalance action.
-- [ ] Wrong signer fails.
-- [ ] Wrong chain/domain fails.
-- [ ] Wrong target/selector/calldata hash fails.
-- [ ] Expired passport fails.
-- [ ] Reused nonce fails.
-- [ ] Direct treasury bypass fails.
-- [ ] Old state anchor, stale oracle, failed invariant, and mismatched simulation cannot receive/execute a blocking passport.
+- [ ] The verifier scope is narrow enough to be credible for an MVP.
+- [ ] The design binds signer, chain/domain, target/selector/calldata, expiry, and nonce.
+- [ ] The design prevents direct treasury bypass.
+- [ ] The design specifies behavior for stale anchor, stale oracle, failed invariant, and mismatched simulation.
 
 ### Integrity evidence
 
-- [ ] Passport uses a canonical/typed encoding with reproducible test vectors.
+- [ ] Passport uses an appropriate typed/canonical encoding plan.
 - [ ] Passport binds the memory root and applicable hypothesis IDs.
-- [ ] Outcome update is deterministic and cannot inflate confidence through duplicate action IDs.
-- [ ] All tests pass on a clean checkout with documented commands.
-- [ ] The demo is rerun twice with equivalent deterministic results.
+- [ ] Outcome calibration has a deterministic, duplicate-safe plan.
+- [ ] The design names the test and repeatability evidence required before submission.
 
 ### Partner evidence
 
-- [ ] A Base deployment and executed contract action are shown in the demo, if Base multiplier is claimed.
-- [ ] A real Virtuals-native action is shown in the demo, if Virtuals multiplier is claimed.
+- [ ] The design identifies what real Base and Virtuals action would be needed if those bonuses are pursued later.
 
 ---
 
@@ -214,63 +211,66 @@ The reviewing agent should explicitly check each item.
 Use this exact structure. Cite files and commands directly.
 
 ```md
-# Execution Passport — Independent Hackathon Assessment
+# Execution Passport — Concept-Stage Hackathon Assessment
 
 ## Verdict
-- Gate: PASS / FAIL / INSUFFICIENT EVIDENCE
-- Current implementation maturity: idea / partial prototype / runnable MVP / demo-ready
+- Review mode: IDEA ONLY — implementation intentionally not assessed
+- Official gate status: NOT YET ASSESSABLE (do not write PASS or FAIL)
+- Concept verdict: weak / plausible / strong / exceptional
 - One-sentence reason:
 
 ## Evidence inspected
-| Claim | Evidence location / command | Result | Confidence |
+| Claim about the idea | Design/research/external source | Fact or inference | Confidence |
 |---|---|---|---|
 
-## Gate analysis: Sibyl Memory load-bearing
-- Memory write:
-- Memory read in fresh process:
-- Deletion result:
-- Risk of hardcoded/reconstructible fallback:
-- Gate decision and reason:
+## Conditional gate analysis: would memory be load-bearing if built as designed?
+- Intended Sibyl write:
+- Intended fresh-process read:
+- Intended deletion behavior:
+- Risk that strict policy could be hardcoded/reconstructible:
+- Required implementation proof before a real gate decision:
 
-## Rubric score (only if Gate = PASS)
-| Criterion | Maximum | Score | Evidence | Why points were withheld |
+## Conditional idea score
+Score the potential of the idea if the specified MVP is fully implemented and demonstrated. This is not a score for the current repository.
+
+| Criterion | Maximum | Conditional potential score or range | Evidence | Assumption required to realize it |
 |---|---:|---:|---|---|
 | Memory is load-bearing | 40 | | | |
 | Innovation & originality | 25 | | | |
 | Technical execution | 20 | | | |
 | Pitch & presentation | 15 | | | |
-| Rubric subtotal | 100 | | | |
+| Conditional subtotal | 100 | | | |
 
-If Gate ≠ PASS, write `Not scoreable` for all rubric rows. Do not estimate a hypothetical total.
+For technical execution and pitch, score the quality and feasibility of the documented plan, not missing code/video. Explicitly reduce the potential score if the design itself is unsafe, incoherent, untestable, or does not explain how to prove the claim.
 
 ## PMF bonus
-- Score: 0–10
+- Actual score: 0 / 10 unless public validation evidence exists
 - Publicly verifiable evidence:
-- If score is 0, explain what is missing:
+- PMF potential and what would validate it:
 
 ## Partner multiplier
-- Base: 1.00 or 1.15, with exercised-demo evidence
-- Virtuals: 1.00 or 1.10, with exercised-demo evidence
-- Final multiplier: 1.00–1.25
+- Not assessed in idea mode.
+- State which implementation evidence would be required for each multiplier.
 
-## Final factual score
-- Formula: `(rubric subtotal + PMF bonus) × multiplier`
-- Score: __ / 137.5 maximum theoretical points
-- Do not apply a multiplier without the required evidence.
+## Conditional idea score summary
+- Conditional rubric potential: __ / 100
+- Actual PMF score today: 0 / 10 unless independently verified otherwise
+- Multiplier: not assessed
+- This is not a current official score and must not be represented as one.
 
 ## Strongest aspect
 
-## Three highest-risk weaknesses
+## Three highest-risk concept weaknesses
 1.
 2.
 3.
 
-## Minimum changes required to improve the score materially
+## Design improvements most likely to improve conditional potential
 1.
 2.
 3.
 
-## Claims that must not be made yet
+## Delivery proof required before making implementation claims
 -
 ```
 
