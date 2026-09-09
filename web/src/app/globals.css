@@ -218,6 +218,15 @@ header.top .wrap {
 
 /* Wordmark. Huruf besar pada serif display butuh spasi POSITIF — tracking rapat
    yang benar untuk "The Evaluator" membuat "REFERI" saling menempel. */
+header.top h1 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+header.top h1 a:hover {
+  color: var(--action);
+}
+
 header.top h1 {
   font-family: var(--font-display), Georgia, serif;
   font-variation-settings: "opsz" 24;
@@ -1654,5 +1663,62 @@ footer.site .disclaimer {
 
   .what > div:last-child {
     border-bottom: none;
+  }
+}
+
+/* Empat bukti yang bisa diperiksa sendiri. Dua kolom bernomor — bukan kartu,
+   dan bukan rantai bersambung seperti `.steps`, karena keempatnya berdiri
+   sendiri: urutannya tidak membawa arti, hanya jumlahnya. */
+.proofs {
+  list-style: none;
+  counter-reset: proof;
+  margin: var(--s5) 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--s5) var(--s6);
+}
+
+.proofs li {
+  counter-increment: proof;
+  position: relative;
+  padding-left: var(--s6);
+}
+
+.proofs li::before {
+  content: counter(proof);
+  position: absolute;
+  left: 0;
+  top: 1px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--bone);
+  border-radius: 999px;
+  background: var(--amber);
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.proofs h3 {
+  margin: 0 0 var(--s2);
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--bone);
+  font-weight: 600;
+}
+
+.proofs p {
+  margin: 0;
+  color: var(--bone-2);
+  font-size: 14.5px;
+}
+
+@media (max-width: 860px) {
+  .proofs {
+    grid-template-columns: 1fr;
   }
 }

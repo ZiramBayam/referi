@@ -34,7 +34,9 @@ export default async function RootLayout({ children }) {
         </a>
         <header className="top">
           <div className="wrap">
-            <h1>REFERI</h1>
+            <h1>
+              <Link href="/">REFERI</Link>
+            </h1>
             <nav aria-label="Main">
               <Link href="/timeline">Timeline</Link>
               <Link href="/panel">Judge panel</Link>

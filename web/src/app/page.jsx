@@ -194,6 +194,47 @@ export default async function TimelinePage() {
         </>
       ) : null}
 
+      <h2>Why this could not just be mocked</h2>
+      <p className="lead">
+        A page can claim anything. These four are checkable without trusting a word of it —
+        three of them from a block explorer, one from your own terminal.
+      </p>
+
+      <ol className="proofs" data-reveal>
+        <li>
+          <h3>The reason is bound to the transaction</h3>
+          <p>
+            Hash the evidence bundle served at <code>/verdicts/422.json</code> and you get the
+            <code> reasonHash</code> carried by the <code>VerdictPosted</code> transaction. A
+            mock would have to forge a Base Sepolia transaction to match.
+          </p>
+        </li>
+        <li>
+          <h3>The pair is readable on chain</h3>
+          <p>
+            Jobs 421 and 422 hold byte-identical deliverables and ended in opposite states.
+            Read both from the explorer instead of from here — this page renders artifacts, it
+            does not produce them.
+          </p>
+        </li>
+        <li>
+          <h3>Deleting the memory stops it</h3>
+          <p>
+            Remove <code>memory.db</code> and the agent posts nothing at all: no verdict, no
+            finalize, the wallet nonce unmoved. Something with nothing to lose has nothing to
+            stop for.
+          </p>
+        </li>
+        <li>
+          <h3>There is no model in the decision</h3>
+          <p>
+            The checks are deterministic code, and the qualitative criteria are recorded as
+            unscored rather than quietly passed. A referee that makes judgement calls cannot be
+            audited afterwards — that was the trade.
+          </p>
+        </li>
+      </ol>
+
       <h2>See the whole record</h2>
       <p className="lead">
         Every claim above is backed by an artifact you can open. The timeline lists the five
