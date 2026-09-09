@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 
 /**
  * Satu IntersectionObserver untuk seluruh halaman.
@@ -22,6 +23,14 @@ import { useEffect } from "react";
  * bukan "halaman kosong".
  */
 export default function Reveal() {
+  // WAJIB bergantung pada rute. Komponen ini dipasang SEKALI di layout, jadi
+  // dengan dependency kosong observernya hanya pernah melihat elemen halaman
+  // pertama. Navigasi sisi-klien mengganti isi `<main>` tanpa melepas layout,
+  // sehingga `[data-reveal]` halaman berikutnya tidak pernah diamati dan tetap
+  // `opacity: 0` SELAMANYA. Muat-langsung tetap benar, jadi bug ini hanya
+  // muncul lewat tautan nav — persis jalur yang dipakai orang.
+  const pathname = usePathname();
+
   useEffect(() => {
     const root = document.documentElement;
     if (!("IntersectionObserver" in window)) return;
@@ -46,7 +55,7 @@ export default function Reveal() {
 
     for (const el of document.querySelectorAll("[data-reveal]")) io.observe(el);
     return () => io.disconnect();
-  }, []);
+  }, [pathname]);
 
   return null;
 }
