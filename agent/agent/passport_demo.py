@@ -19,6 +19,7 @@ import tempfile
 from pathlib import Path
 
 from eth_abi import encode as abi_encode
+from eth_account import Account
 from sibyl_memory_client import MemoryClient
 from web3 import Web3
 
@@ -37,7 +38,13 @@ from agent.execution_passport import (
 from agent.passport_client import LocalPassportClient
 
 DEFAULT_RPC = "http://127.0.0.1:8545"
-ANVIL_KEY = "0x" + "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+# Kunci akun #0 Anvil, DITURUNKAN dari mnemonic default Anvil, bukan ditulis sebagai
+# konstanta 32-byte — jalur produksi `agent/` dijaga bebas konstanta semacam itu.
+Account.enable_unaudited_hdwallet_features()
+ANVIL_KEY = "0x" + Account.from_mnemonic(
+    "test test test test test test test test test test test junk",
+    account_path="m/44'/60'/0'/0/0",
+).key.hex().removeprefix("0x")
 
 
 def _calldata(amount: int) -> str:
