@@ -1,7 +1,7 @@
 # Execution Passport — Evidence-Based Implementation Assessment
 
 Assessment date: 2026-09-10  
-Reviewed implementation/evidence commit: `666046c93129b705cd445103916c7173ddb7c095`  
+Reviewed implementation/evidence commit: `bb74f01a3592d89e32287eb701b319f37f71faff`  
 Official rules: <https://hack.sibyllabs.org/rules>, accessed 2026-09-10.
 
 This document evaluates the non-UI Execution Passport MVP that is actually implemented
@@ -107,17 +107,18 @@ make demo-passport
 Observed output from the reviewed commit:
 
 ```text
-commit=666046c93129b705cd445103916c7173ddb7c095
+commit=bb74f01a3592d89e32287eb701b319f37f71faff
 chain_id=84532 executor=anvil-local-fresh-process
-incident_oracle_age_seconds=121
-incident_timestamps=oracle=1789010290 observed=1789010410
+incident_oracle_age_seconds=120
+incident_timestamps=oracle=1789010674 observed=1789010794
+incident_digest=0xc2e11b1d4f715d57cae9cc3ee2349fa85ee27245d2d627633da697c1d6ce053c
 before_memory_decision=human-review-required reason=no-matching-hypothesis: bootstrap human review required
-stored_hypothesis=stale-oracle-rebalance/v1 memory_root=0x99855359d9fd640cb7cbab9db75b919e4dff9a1829aec6fdf923f7a1852351cf
-fresh_timestamps=oracle=1789010405 observed=1789010410
+stored_hypothesis=stale-oracle-rebalance/v1 memory_root=0xaba14f262d16fb6bbb42f31cab9fe31450e1cfc2f539b72bc09d83cf9afa20f1
+fresh_timestamps=oracle=1789010789 observed=1789010794
 fresh_process_recall=stale-oracle-rebalance/v1 executor_identity=child-process
 thresholds_from_memory=oracle=60 reserve=250000
 invalid_passport_rejected=calldata-mismatch error=PassportClientError
-accepted_tx=b497d3c83c740b1ec57a1763ca4fb6347384cca07983475f0f4d384d131e08e1 consumed_nonce=2
+accepted_tx=74669bca7a4c11ac2d32d7157bd0b3f96b504138def6db4ee404f54cc579444b consumed_nonce=2
 accepted_rebalance=exactly-once
 passport_memory_deleted=True after_delete_decision=human-review-required
 ```
