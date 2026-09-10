@@ -339,6 +339,31 @@ Before the implementation commit:
 
 ## 11. Deferred backlog — exclude from MVP
 
+### Why Safe and production-oracle work is deferred
+
+Penundaan ini adalah keputusan scope dan safety, bukan kegagalan memenuhi memory gate.
+Aturan hackathon tidak mewajibkan Safe integration atau production oracle sebagai syarat
+gate maupun rubric. Dengan batasan MVP yang dinyatakan jelas, penundaan tersebut tidak
+otomatis menurunkan skor Memory atau Innovation. Dampak yang jujur untuk Technical
+Execution adalah ceiling yang lebih rendah karena MVP masih memakai mock oracle, mock
+treasury, dan satu trusted policy signer; dampak Pitch muncul hanya jika produk
+dipresentasikan seolah-olah production-ready. Penilaian implementasi saat ini sudah
+mencerminkan batasan ini, bukan menganggapnya sebagai cacat tersembunyi.
+
+Safe integration ditunda karena guard/module yang masuk ke jalur dana nyata harus memiliki
+threat model, signer rotation/recovery, liveness analysis, dan testnet/audit evidence.
+Production oracle ditunda karena adapter nyata harus menangani stale rounds, deviation,
+decimals, sequencer downtime, fallback, dan chain-specific failure modes. Memasukkan
+keduanya sebelum bukti tersebut tersedia akan memperbesar attack surface dan berisiko
+menghasilkan klaim keamanan yang tidak dapat dibuktikan.
+
+MVP positioning yang wajib dipertahankan:
+
+> MVP membuktikan bahwa incident-conditioned memory dapat menjadi execution gate. Mock
+> oracle dan treasury sengaja dipakai agar memory, proof obligations, dan Passport dapat
+> diuji secara deterministik. Safe integration dan production oracle adalah tahap
+> deployment berikutnya, bukan klaim MVP.
+
 - [ ] Enforce `rollback-route` for migration/upgrade actions.
 - [ ] `vault-migration`: accounting, role/allowance, rollback evidence.
 - [ ] `risk-parameter-change`: bounded parameters, protocol-impact simulation, state anchor.
