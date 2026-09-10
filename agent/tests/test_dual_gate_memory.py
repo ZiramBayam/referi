@@ -89,3 +89,19 @@ def test_deleting_the_hypothesis_moves_the_root_back(tmp_path):
 
     ep.delete_control_hypothesis(client)
     assert mp.memory_root_for_onchain(client) == baseline
+
+
+def test_report_names_both_gates_and_one_root(tmp_path):
+    from agent.dual_gate_report import report
+
+    client = _store(tmp_path)
+    mp.save_provider(client, mp.ProviderProfile(address=PROVIDER, risk_level=1))
+    ep.record_incident(client, build_incident(TREASURY, 100_000))
+
+    lines = report(str(tmp_path / "dual-gate.db"))
+    joined = "\n".join(lines)
+
+    assert "gate_acp_providers=1" in joined
+    assert "gate_passport_hypotheses=1" in joined
+    assert "shared_memory_root=0x" in joined
+    assert "root_covers_both_gates=True" in joined
