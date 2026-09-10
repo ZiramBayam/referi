@@ -50,13 +50,13 @@ New proof id `PROOF_ACTOR: Final = "actor-standing"`, added to `MVP_PROOF_IDS`.
 `ObligationDefinition` gains one optional field `max_risk_level: int | None`. It is only
 meaningful for `actor-standing`; the constructor rejects it on other ids.
 
-`ActionProposal` gains `executor: str` (lowercase, validated like `target`). It is part of the
-action digest and of the passport message. There is no default: an action without an executor is
-not a valid proposal in v2.
+`ExecutionPassport` gains `executor: str` (lowercase, validated like `target`), placed after
+`target` in the EIP-712 message. `ActionProposal` and the action digest are unchanged, so incident
+evidence and hypothesis scope matching are untouched. `evaluate_rebalance_for_passport` takes
+`executor` as a required keyword.
 
-`DeterministicEnvironment` gains `executor_profile: ProviderProfile | None` and
-`executor_profile_read: bool`. The decision path reads the profile itself (see Section 3); the
-environment carries the observation so `evaluate_obligations` stays pure and testable.
+`evaluate_obligations` takes `executor_profile: ProviderProfile | None` as a keyword. The decision
+path reads the profile itself (see Section 3) and passes it in, so the evaluator stays pure.
 
 Evaluation rule for `actor-standing`, with no default pass:
 
