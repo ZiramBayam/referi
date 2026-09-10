@@ -196,7 +196,8 @@ JSON with no floating point values:
   "result": "satisfied",
   "observed": {"age_seconds": 12, "oracle_timestamp": 1000},
   "threshold": {"max_age_seconds": 60},
-  "evidence_digest": "0x..."
+  "evidence_digest": "0x...",
+  "explanation": "oracle observation is within the remembered freshness window"
 }
 ```
 
@@ -208,6 +209,13 @@ hypothesis_ids_hash     = keccak256(UTF-8(canonical_json(sorted_ids_array)))
 The contract binds both hashes through the trusted policy signer but does not independently
 query Sibyl, the oracle, or the simulator. The off-chain evidence bundle is authoritative
 only within the mock MVP trust boundary and must never be described as an audited proof.
+
+Outcome calibration is deterministic and duplicate-safe: a repeated `action_id` is a
+no-op; otherwise `worked` increments confidence by 200 BPS, `failed` decreases it by 500
+BPS, and `inconclusive` leaves the score unchanged. The score is recomputed from the
+bounded baseline formula `clamp(8000 + worked_count*200 - failed_count*500, 0, 10000)`.
+`updated_at` advances only from an explicitly supplied observation timestamp and never
+moves backwards; calibration never auto-retires or relaxes the blocking policy.
 
 ## Fixed vector 1
 
@@ -223,8 +231,8 @@ calldata                 = 0xf49930180000000000000000000000000000000000000000000
 calldata_hash            = 0xe88f9b14f8921d7450af76f0d8ab7aa348bde46316d628ab6f91e9dac0c582a3
 action_digest            = 0xa5f373496d1d79b025a7d8154046861cbc61ed45a24cf8533ee974d95d5bc830
 hypothesis_ids_hash      = 0xb1e9546ad67d2b7e25027c4ed279adafc69e9ec84dd1ef94ea3da9dca60d6ecd
-obligation_results_hash  = 0xf97c5eff8c38e7fd72ccae972dae841db627e463488636a6adfcf5f28d576d9a
-passport_digest           = 0x071219b6d21349169f45b653032b49171eced6754d08625228060a491b140d16
+obligation_results_hash  = 0x49a8d4f0ccf032c5649f4a25b0d3a35162c11b54bb6cd35a80ca711852f6140a
+passport_digest           = 0x1f5ece583170ab17407e77846f1f5c4dab174153a93cebe81787221001b97b0b
 ```
 
 The corresponding test-only private key is `0x12` repeated 32 times. It must never be

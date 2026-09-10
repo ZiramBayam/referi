@@ -383,10 +383,10 @@ def test_fixed_cross_language_vector():
         "0xb1e9546ad67d2b7e25027c4ed279adafc69e9ec84dd1ef94ea3da9dca60d6ecd"
     )
     assert passport.obligation_results_hash == (
-        "0xf97c5eff8c38e7fd72ccae972dae841db627e463488636a6adfcf5f28d576d9a"
+        "0x49a8d4f0ccf032c5649f4a25b0d3a35162c11b54bb6cd35a80ca711852f6140a"
     )
     assert Web3.to_hex(Account.sign_message(typed, "0x" + "12" * 32).message_hash) == (
-        "0x071219b6d21349169f45b653032b49171eced6754d08625228060a491b140d16"
+        "0x1f5ece583170ab17407e77846f1f5c4dab174153a93cebe81787221001b97b0b"
     )
 
 

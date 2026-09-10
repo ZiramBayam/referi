@@ -794,6 +794,7 @@ class ObligationResult:
     observed: Mapping[str, Any]
     threshold: Mapping[str, Any]
     evidence_digest: str
+    explanation: str
 
     def __post_init__(self) -> None:
         if self.obligation_id not in KNOWN_PROOF_IDS or self.obligation_id == PROOF_ROLLBACK:
@@ -801,6 +802,8 @@ class ObligationResult:
         if self.result not in PROOF_RESULTS:
             raise PassportValidationError("invalid obligation result")
         _canonical_hash(self.evidence_digest, "evidence_digest")
+        if not self.explanation or not isinstance(self.explanation, str):
+            raise PassportValidationError("obligation explanation must be non-empty")
 
     def to_body(self) -> dict[str, Any]:
         return {
@@ -809,6 +812,7 @@ class ObligationResult:
             "observed": dict(self.observed),
             "threshold": dict(self.threshold),
             "evidence_digest": self.evidence_digest,
+            "explanation": self.explanation,
         }
 
 
@@ -951,14 +955,39 @@ def _obligation_result(
     observed: Mapping[str, Any],
     threshold: Mapping[str, Any],
 ) -> ObligationResult:
+    explanation = {
+        PROOF_STATE_ANCHOR: {
+            "satisfied": "state anchor is recent and matches the current fixture block",
+            "unsatisfied": "state anchor is stale or differs from the current fixture block",
+            "unverifiable": "state anchor freshness cannot be verified from the supplied observations",
+        },
+        PROOF_ORACLE: {
+            "satisfied": "oracle observation is within the remembered freshness window",
+            "unsatisfied": "oracle observation exceeds the remembered freshness window",
+            "unverifiable": (
+                "oracle freshness cannot be verified because its timestamp is unavailable or invalid"
+            ),
+        },
+        PROOF_SIMULATION: {
+            "satisfied": "simulation succeeded for the exact proposed action digest",
+            "unsatisfied": "simulation is missing, failed, or belongs to a different action digest",
+            "unverifiable": "simulation result cannot be verified from the supplied observations",
+        },
+        PROOF_INVARIANT: {
+            "satisfied": "simulated post-state reserve meets the remembered minimum",
+            "unsatisfied": "simulated post-state reserve is below the remembered minimum",
+            "unverifiable": "post-state reserve cannot be verified from the supplied observations",
+        },
+    }[obligation.obligation_id][result]
     body = {
         "id": obligation.obligation_id,
         "result": result,
         "observed": dict(observed),
         "threshold": dict(threshold),
+        "explanation": explanation,
     }
     digest = _hash_hex(Web3.keccak(text=canonical_json(body)), "evidence_digest")
-    return ObligationResult(obligation.obligation_id, result, observed, threshold, digest)
+    return ObligationResult(obligation.obligation_id, result, observed, threshold, digest, explanation)
 
 
 def evaluate_obligations(
