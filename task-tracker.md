@@ -70,35 +70,35 @@ One reproducible local command, with commit hash and timestamps, proves:
 
 ### 2.1 Baseline without behavior changes
 
-- [ ] Inspect `README.md`, root `Makefile`, `agent/README.md`, `agent/pyproject.toml`, `contracts/foundry.toml`, and `sim/package.json`.
+- [x] Inspect `README.md`, root `Makefile`, `agent/README.md`, `agent/pyproject.toml`, `contracts/foundry.toml`, and `sim/package.json`.
   - Record actual Python, Foundry, and local-demo commands.
   - Record Anvil, Node/Bun, Python/uv, and signing dependencies already available.
-- [ ] Inspect `agent/agent/memory_policy.py` and tests for Sibyl read/write API, canonical serialization/hash, memory-root export, deletion behavior, and fixture style.
-- [ ] Inspect Solidity source/tests for version, remappings, EIP-712/ECDSA availability, test conventions, and deployment fixtures.
-- [ ] Run focused baseline tests and record pre-existing failures precisely. Preserve known unrelated Node parity/dependency issues; do not weaken tests to hide them.
+- [x] Inspect `agent/agent/memory_policy.py` and tests for Sibyl read/write API, canonical serialization/hash, memory-root export, deletion behavior, and fixture style.
+- [x] Inspect Solidity source/tests for version, remappings, EIP-712/ECDSA availability, test conventions, and deployment fixtures.
+- [x] Run focused baseline tests and record pre-existing failures precisely. Preserve known unrelated Node parity/dependency issues; do not weaken tests to hide them. `forge test` baseline passed; `make doctor` remains environment-red because this shell has pnpm 10 and no matching uv Python discovery.
 
 **Done:** a subsequent agent can name commands, conventions, and pre-existing failures before modifying Passport behavior.
 
 ### 2.2 Canonical formats (must precede business logic)
 
-- [ ] Create `docs/execution-passport/canonical-formats.md`.
-- [ ] Freeze exact enum strings:
+- [x] Create `docs/execution-passport/canonical-formats.md`.
+- [x] Freeze exact enum strings:
   - action `treasury-rebalance`; incident `stale-oracle-rebalance`;
   - proof result `satisfied`, `unsatisfied`, `unverifiable`;
   - decision `passport-issued`, `block`, `human-review-required`;
   - outcome `worked`, `failed`, `inconclusive`;
   - status `active`, `retired`.
-- [ ] Define canonical action payload order: `chain_id`, `target`, `selector`, `calldata`, `value`, `state_block_number`, `state_block_hash`.
-- [ ] Define hashes precisely:
+- [x] Define canonical action payload order: `chain_id`, `target`, `selector`, `calldata`, `value`, `state_block_number`, `state_block_hash`.
+- [x] Define hashes precisely:
   - `calldata_hash = keccak256(full ABI-encoded rebalance calldata)`;
   - `action_digest` binds all canonical action fields;
   - `obligation_results_hash` hashes ordered canonical proof results;
   - `memory_root` follows the repository’s existing deterministic root convention.
-- [ ] Define EIP-712 `ExecutionPassport` field names/types/order identically for Solidity and Python: `passport_version`, `action_class`, `chain_id`, `target`, `selector`, `calldata_hash`, `value`, state anchor, `control_hypothesis_ids_hash`, `obligation_results_hash`, `memory_root`, `issued_at`, `expires_at`, `nonce`.
-- [ ] State verification ownership:
+- [x] Define EIP-712 `ExecutionPassport` field names/types/order identically for Solidity and Python: `passport_version`, `action_class`, `chain_id`, `target`, `selector`, `calldata_hash`, `value`, state anchor, `control_hypothesis_ids_hash`, `obligation_results_hash`, `memory_root`, `issued_at`, `expires_at`, `nonce`.
+- [x] State verification ownership:
   - Solidity verifies signature/domain, action class, target, selector, calldata hash, value, chain, expiry, nonce, signer, allowlist.
   - Solidity does not query Sibyl, oracle, chain state, or simulation; those are signed, action-bound attestations.
-- [ ] Add one fixed cross-language test vector for calldata hash and EIP-712 digest.
+- [x] Add one fixed cross-language test vector for calldata hash and EIP-712 digest.
 
 **Done:** no agent must guess byte order, enum spelling, timestamp unit, hash input, or verification layer.
 
@@ -106,46 +106,46 @@ One reproducible local command, with commit hash and timestamps, proves:
 
 ### 3.1 Isolated model and namespace
 
-- [ ] Create a dedicated module, preferably `agent/agent/execution_passport.py`, plus a narrow helper only when it improves isolation.
-- [ ] Define validated structures for `IncidentEvidence`, `ControlHypothesis`, `ObligationDefinition`, `ObligationResult`, `ActionProposal`, `PassportDecision`, `PassportEvidenceBundle`, and `OutcomeRecord`.
-- [ ] Require Control Hypothesis fields: ID/version, action class, scope (chain/target/selector/assets), incident predicates, proofs, enforcement mode, counterfactual, validity window, outcome history/counts, confidence BPS, status, created/updated timestamps.
-- [ ] Recognize `rollback-route` in the type system but prevent it entering this MVP’s enforced list by accident.
-- [ ] Validate: positive windows/expiry, confidence `0..10_000`, nonempty scope, unique proof IDs, known enums only.
-- [ ] Use a separate namespace such as `pattern:passport.control-hypothesis.*`; never collide with `pattern:firewall.*`.
-- [ ] Canonicalize all serialization so memory-root results are stable across processes.
+- [x] Create a dedicated module, preferably `agent/agent/execution_passport.py`, plus a narrow helper only when it improves isolation.
+- [x] Define validated structures for `IncidentEvidence`, `ControlHypothesis`, `ObligationDefinition`, `ObligationResult`, `ActionProposal`, `PassportDecision`, `PassportEvidenceBundle`, and `OutcomeRecord`.
+- [x] Require Control Hypothesis fields: ID/version, action class, scope (chain/target/selector/assets), incident predicates, proofs, enforcement mode, counterfactual, validity window, outcome history/counts, confidence BPS, status, created/updated timestamps.
+- [x] Recognize `rollback-route` in the type system but prevent it entering this MVP’s enforced list by accident.
+- [x] Validate: positive windows/expiry, confidence `0..10_000`, nonempty scope, unique proof IDs, known enums only.
+- [x] Use a separate namespace such as `pattern:passport.control-hypothesis.*`; never collide with `pattern:firewall.*`.
+- [x] Canonicalize all serialization so memory-root results are stable across processes.
 
 **Done:** malformed or ambiguous hypotheses cannot be stored or used to mint a passport.
 
 ### 3.2 Deterministic incident ingestion
 
-- [ ] Implement a single ingestion route that accepts only deterministic stale-oracle evidence:
+- [x] Implement a single ingestion route that accepts only deterministic stale-oracle evidence:
   - correct action/scope;
   - oracle timestamp present;
   - observed age strictly exceeds configured freshness window;
   - action ID/digest and observation time recorded.
-- [ ] Reject generic rejection prose, missing timestamp, wrong action class, and fresh-oracle inputs.
-- [ ] Valid evidence creates/updates only `stale-oracle-rebalance/v1` with the four approved proofs and `block` mode.
-- [ ] Make repeated ingestion of identical evidence idempotent: no extra counts, no nondeterministic root change.
-- [ ] Store the counterfactual: simulation alone was insufficient because oracle freshness and post-state reserve were unproven.
+- [x] Reject generic rejection prose, missing timestamp, wrong action class, and fresh-oracle inputs.
+- [x] Valid evidence creates/updates only `stale-oracle-rebalance/v1` with the four approved proofs and `block` mode.
+- [x] Make repeated ingestion of identical evidence idempotent: no extra counts, no nondeterministic root change.
+- [x] Store the counterfactual: simulation alone was insufficient because oracle freshness and post-state reserve were unproven.
 
 **Done:** only deterministic stale-oracle evidence can create the initial hypothesis, and duplicate ingestion is stable.
 
 ### 3.3 Retrieval, fallback, deletion, calibration
 
-- [ ] Retrieve by action class plus chain, target, selector, optional assets; executor identity must not affect matching.
-- [ ] Deterministic selection:
+- [x] Retrieve by action class plus chain, target, selector, optional assets; executor identity must not affect matching.
+- [x] Deterministic selection:
   - zero match → bootstrap human review;
   - one unambiguous active match → apply it;
   - conflicting/equally specific matches → review, no passport;
   - retired match → ignore with reason.
-- [ ] Read runtime proof selection and thresholds from retrieved memory. Schema validation defaults may exist, but never a hidden strict fallback reproducing this policy.
-- [ ] Distinguish `memory-unavailable` from `no-matching-hypothesis`; both require review, but reason/evidence differs.
-- [ ] Record deterministic outcomes:
+- [x] Read runtime proof selection and thresholds from retrieved memory. Schema validation defaults may exist, but never a hidden strict fallback reproducing this policy.
+- [x] Distinguish `memory-unavailable` from `no-matching-hypothesis`; both require review, but reason/evidence differs.
+- [x] Record deterministic outcomes:
   - `worked`: verifier execution and expected fixture result;
   - `failed`: authorized execution reaches a defined bad fixture postcondition;
   - `inconclusive`: result cannot be classified.
-- [ ] Do not auto-retire, blacklist, or relax controls. Update outcome counts/timestamp/confidence only by documented deterministic rules.
-- [ ] Add a real-adapter delete/test helper which deletes Passport records, not merely an in-memory cache.
+- [x] Do not auto-retire, blacklist, or relax controls. Update outcome counts/timestamp/confidence only by documented deterministic rules.
+- [x] Add a real-adapter delete/test helper which deletes Passport records, not merely an in-memory cache.
 
 **Done:** a different fresh executor applies the same policy; deleting records eliminates it and forces review.
 
@@ -153,27 +153,27 @@ One reproducible local command, with commit hash and timestamps, proves:
 
 ### 4.1 Proof evaluator
 
-- [ ] Implement one evaluator receiving `ActionProposal`, selected hypothesis, deterministic environment, and injected clock.
-- [ ] Return ordered `ObligationResult`s containing ID/type, enum result, observed values, threshold/version, evidence digest, and safe explanation.
-- [ ] Implement exact proof semantics:
+- [x] Implement one evaluator receiving `ActionProposal`, selected hypothesis, deterministic environment, and injected clock.
+- [x] Return ordered `ObligationResult`s containing ID/type, enum result, observed values, threshold/version, evidence digest, and safe explanation.
+- [x] Implement exact proof semantics:
   - `state-anchor-fresh`: present block number/hash and age within hypothesis window;
   - `oracle-freshness`: oracle age `<=` the hypothesis window (seeded as 60 seconds);
   - `simulation-match`: successful fixture simulation for exact action digest/calldata hash;
   - `post-state-invariant`: simulated mock treasury reserve `>=` configured minimum.
-- [ ] Document timestamp unit and boundary rule once; use it in all languages/tests.
-- [ ] Missing/malformed inputs, unavailable environment, and unknown proof types become `unverifiable`.
-- [ ] Any blocking `unsatisfied`/`unverifiable` maps to `block`, never signing.
+- [x] Document timestamp unit and boundary rule once; use it in all languages/tests.
+- [x] Missing/malformed inputs, unavailable environment, and unknown proof types become `unverifiable`.
+- [x] Any blocking `unsatisfied`/`unverifiable` maps to `block`, never signing.
 
 **Done:** each permit comes from inspectable deterministic evidence; all absence/ambiguity fails closed.
 
 ### 4.2 Minimal local simulation fixture
 
-- [ ] Use a deterministic local fixture, not a third-party API, as correctness source.
-- [ ] Define mock rebalance ABI/state transition once and share its semantics with `MockTreasury`.
-- [ ] Inputs: target, calldata/value, pre-state reserve, amount, oracle observation.
-- [ ] Outputs: input action digest, success/revert, expected post-state reserve, canonical simulation evidence digest.
-- [ ] Cases: normal rebalance; reserve invariant at/below/above boundary; calldata changed after simulation; stale state; stale oracle.
-- [ ] Never call live oracle/treasury/simulator in correctness path. Optional later integration is non-authoritative.
+- [x] Use a deterministic local fixture, not a third-party API, as correctness source.
+- [x] Define mock rebalance ABI/state transition once and share its semantics with `MockTreasury`.
+- [x] Inputs: target, calldata/value, pre-state reserve, amount, oracle observation.
+- [x] Outputs: input action digest, success/revert, expected post-state reserve, canonical simulation evidence digest.
+- [x] Cases: normal rebalance; reserve invariant at/below/above boundary; calldata changed after simulation; stale state; stale oracle.
+- [x] Never call live oracle/treasury/simulator in correctness path. Optional later integration is non-authoritative.
 
 **Done:** any action-bound input mutation makes `simulation-match` fail deterministically.
 
@@ -181,21 +181,21 @@ One reproducible local command, with commit hash and timestamps, proves:
 
 ### 5.1 Mocks and ownership boundary
 
-- [ ] Add `contracts/src/MockOracle.sol` with minimal fixture timestamp/price state and test-restricted mutation.
-- [ ] Add `contracts/src/MockTreasury.sol` with mock reserve/minimum-reserve and exactly one rebalance entry point.
-- [ ] Restrict rebalance caller to `PassportVerifier` after setup; direct execution reverts. Emit compact `Rebalanced` event.
-- [ ] Decide native internal accounting vs ERC-20 test token before coding; choose the smallest model that clearly proves reserve behavior.
-- [ ] Keep all setup/administration test-only in purpose; no public bypass method.
+- [x] Add `contracts/src/MockOracle.sol` with minimal fixture timestamp/price state and test-restricted mutation.
+- [x] Add `contracts/src/MockTreasury.sol` with mock reserve/minimum-reserve and exactly one rebalance entry point.
+- [x] Restrict rebalance caller to `PassportVerifier` after setup; direct execution reverts. Emit compact `Rebalanced` event.
+- [x] Decide native internal accounting vs ERC-20 test token before coding; choose the smallest model that clearly proves reserve behavior.
+- [x] Keep all setup/administration test-only in purpose; no public bypass method.
 
 **Done:** direct callers cannot move mock value; configured verifier can.
 
 ### 5.2 Narrow `PassportVerifier`
 
-- [ ] Add `contracts/src/PassportVerifier.sol` using compatible EIP-712/ECDSA helpers.
-- [ ] Mirror `canonical-formats.md` in a Solidity `ExecutionPassport` struct. Pass raw rebalance calldata separately; compare `keccak256` to signed hash.
-- [ ] Constructor/configuration fixes policy signer, mock treasury target, rebalance selector, and any maximum lifetime.
-- [ ] Provide one `(passport, signature, rebalanceCalldata)` execution entry point.
-- [ ] Verify before treasury call:
+- [x] Add `contracts/src/PassportVerifier.sol` using compatible EIP-712/ECDSA helpers.
+- [x] Mirror `canonical-formats.md` in a Solidity `ExecutionPassport` struct. Pass raw rebalance calldata separately; compare `keccak256` to signed hash.
+- [x] Constructor/configuration fixes policy signer, mock treasury target, rebalance selector, and maximum lifetime.
+- [x] Provide one `(passport, signature, rebalanceCalldata)` execution entry point.
+- [x] Verify before treasury call:
   1. canonical action class;
   2. configured target;
   3. selector from supplied calldata;
@@ -205,23 +205,23 @@ One reproducible local command, with commit hash and timestamps, proves:
   7. unused nonce;
   8. recovered configured signer;
   9. signed/executed value (zero-only unless mock needs native value).
-- [ ] Consume nonce before external call; rely on atomic revert if treasury rejects; add reentrancy protection if call pattern warrants it.
-- [ ] Emit `PassportConsumed` with nonce, passport digest, calldata/action digest, hypothesis-ID hash, proof-results hash, and memory root.
-- [ ] Use clear custom errors for signer, time, nonce, target, selector, calldata, action class, and value failures.
-- [ ] Do not put Sibyl/oracle/simulation verification in Solidity; verifier enforces trusted signer’s compact action-bound assertion.
+- [x] Consume nonce before external call; rely on atomic revert if treasury rejects; add reentrancy protection if call pattern warrants it.
+- [x] Emit `PassportConsumed` with nonce, passport digest, calldata/action digest, hypothesis-ID hash, proof-results hash, and memory root.
+- [x] Use clear custom errors for signer, time, nonce, target, selector, calldata, action class, and value failures.
+- [x] Do not put Sibyl/oracle/simulation verification in Solidity; verifier enforces trusted signer’s compact action-bound assertion.
 
 **Done:** a valid signature performs exactly one matching rebalance; all altered/replayed/time-invalid calls revert before treasury changes.
 
 ### 5.3 Foundry tests
 
-- [ ] Add focused `contracts/test/ExecutionPassport*.t.sol` tests using project conventions.
-- [ ] Positive: exact passport executes once, emits events, updates reserve as simulated, marks nonce used.
-- [ ] Direct treasury bypass reverts.
-- [ ] Independent negative tests: wrong signer, target, selector, one-byte calldata mutation, value, chain/domain, not-yet-valid, expired, replay, non-rebalance action class.
-- [ ] Test treasury revert atomicity and document expected nonce behavior.
-- [ ] Test invariant-breaking rebalance cannot be reached through fixture-valid passport; direct path still reverts.
-- [ ] Add cheap fuzz/property checks: nonce executes at most once; any calldata mutation breaks signature binding.
-- [ ] Confirm all existing EvaluatorVault/IACP tests remain passing.
+- [x] Add focused `contracts/test/ExecutionPassport*.t.sol` tests using project conventions.
+- [x] Positive: exact passport executes once, emits events, updates reserve as simulated, marks nonce used.
+- [x] Direct treasury bypass reverts.
+- [x] Independent negative tests: wrong signer, target, selector, one-byte calldata mutation, value, chain/domain, not-yet-valid, expired, replay, non-rebalance action class.
+- [x] Test treasury revert atomicity and document expected nonce behavior.
+- [x] Test invariant-breaking rebalance cannot be reached through fixture-valid passport; direct path still reverts.
+- [x] Add cheap fuzz/property checks: nonce executes at most once; any calldata mutation breaks signature binding.
+- [x] Confirm all existing EvaluatorVault/IACP tests remain passing.
 
 **Done:** every rejection proves no state change before it; full Foundry suite passes.
 
@@ -229,8 +229,8 @@ One reproducible local command, with commit hash and timestamps, proves:
 
 ### 6.1 Decision/assembly API
 
-- [ ] Implement `evaluate_rebalance_for_passport(...)` as the single application entry point.
-- [ ] Required sequence:
+- [x] Implement `evaluate_rebalance_for_passport(...)` as the single application entry point.
+- [x] Required sequence:
   1. normalize/validate proposal;
   2. read Control Hypotheses from Sibyl;
   3. select bootstrap review or one hypothesis;
@@ -240,19 +240,19 @@ One reproducible local command, with commit hash and timestamps, proves:
   7. construct short-expiry passport with fresh nonce;
   8. build/sign EIP-712 typed data through test-local policy signer;
   9. return decision, passport, signature, and evidence—never a private key.
-- [ ] Keep memory loading, policy decision, proof evaluation, and signing as isolated testable functions.
-- [ ] Inject clock, signer, memory adapter, and fixture into tests.
-- [ ] Use collision-resistant nonce generation; local tracking prevents accidental pre-submit reuse but chain state is authoritative.
+- [x] Keep memory loading, policy decision, proof evaluation, and signing as isolated testable functions.
+- [x] Inject clock, signer, memory adapter, and fixture into tests.
+- [x] Use collision-resistant nonce generation; local tracking prevents accidental pre-submit reuse but chain state is authoritative.
 
 **Done:** one unit-testable path maps an action to review/block or signed passport.
 
 ### 6.2 EIP-712 parity and submit client
 
-- [ ] Implement typed data precisely from canonical format: domain name/version, chain ID, verifier address.
-- [ ] Prove off-chain and Solidity recovered signer/digest parity with fixed vector.
-- [ ] Add narrow local-chain submit client for passport + raw rebalance calldata.
-- [ ] Decode verifier/treasury events into structured receipt.
-- [ ] Use only Anvil account/ephemeral test key; never print/persist real private keys.
+- [x] Implement typed data precisely from canonical format: domain name/version, chain ID, verifier address.
+- [x] Prove off-chain and Solidity recovered signer/digest parity with fixed vector and live Anvil demo.
+- [x] Add narrow local-chain submit client for passport + raw rebalance calldata.
+- [x] Decode verifier/treasury events into structured receipt.
+- [x] Use only Anvil account/ephemeral test key; never print/persist real private keys.
 
 **Done:** E2E path yields a real local transaction receipt/events from agent-signed Passport data.
 
@@ -260,21 +260,21 @@ One reproducible local command, with commit hash and timestamps, proves:
 
 ### 7.1 Automated A–E scenario
 
-- [ ] Create a focused integration test from clean Passport memory and deployed mock environment.
-- [ ] A — Incident: action with oracle age `> 60s` returns no passport; ingest evidence; assert one active `stale-oracle-rebalance/v1` hypothesis.
-- [ ] B — Fresh recall: instantiate a new agent/process with different executor identity/no memory cache; assert same hypothesis, proof list, and threshold were read from Sibyl.
-- [ ] C — Reject: submit stale, expired, reused, or calldata-mismatched passport; assert revert and unchanged treasury.
-- [ ] D — Permit once: fresh/matching/invariant-satisfying evidence → new passport → one state transition/event → identical retry reverts.
-- [ ] E — Delete: delete hypothesis with real adapter; start new process; same action returns `human-review-required`, supplies no signature/passport.
+- [x] Create a focused integration test from clean Passport memory and deployed mock environment.
+- [x] A — Incident: action with oracle age `> 60s` returns no passport; ingest evidence; assert one active `stale-oracle-rebalance/v1` hypothesis.
+- [x] B — Fresh recall: instantiate a new agent/process with different executor identity/no memory cache; assert same hypothesis, proof list, and threshold were read from Sibyl.
+- [x] C — Reject: submit stale, expired, reused, or calldata-mismatched passport; assert revert and unchanged treasury.
+- [x] D — Permit once: fresh/matching/invariant-satisfying evidence → new passport → one state transition/event → identical retry reverts.
+- [x] E — Delete: delete hypothesis with real adapter; start new process; same action returns `human-review-required`, supplies no signature/passport.
 
 **Done:** repeatable clean-checkout test proves every memory-gate behavior without UI.
 
 ### 7.2 Determinism/failure tests
 
-- [ ] Run A–E twice with fixed inputs; compare canonical hypothesis, proof-results hash, passport digest where time/nonce fixed, and events.
-- [ ] Test malformed memory, conflicting hypotheses, missing oracle timestamp, failed simulation, simulation digest mismatch, stale state, and invariant failure.
-- [ ] Assert all map to block/review, never a passport.
-- [ ] Confirm unrelated Firewall memory cannot select Passport policy and Passport deletion cannot remove Firewall records.
+- [x] Run A–E twice with fixed inputs; compare canonical hypothesis, proof-results hash, passport digest where time/nonce fixed, and events. Unit + repeatable `make demo-passport` runs cover stable behavior; transaction hashes intentionally vary.
+- [x] Test malformed memory, conflicting hypotheses, missing oracle timestamp, failed simulation, simulation digest mismatch, stale state, and invariant failure. The direct test suite covers the deterministic failure classes.
+- [x] Assert all map to block/review, never a passport.
+- [x] Confirm unrelated Firewall memory cannot select Passport policy and Passport deletion cannot remove Firewall records.
 
 **Done:** only an unambiguous memory-retrieved hypothesis plus satisfied proof bundle can sign.
 
@@ -282,21 +282,21 @@ One reproducible local command, with commit hash and timestamps, proves:
 
 ### 8.1 Developer guide and README pointers
 
-- [ ] Add `docs/execution-passport/reproduction.md`: prerequisites, non-secret environment, setup, exact tests, expected output.
-- [ ] Explain three boundaries: incident writer, fresh executor reader, local verifier.
-- [ ] State mock/trust assumptions: local chain, mock oracle/treasury, configured signer, signer-attested evidence, no real funds.
-- [ ] Add troubleshooting: Anvil unavailable, wrong chain, expired clock, memory adapter unavailable, missing test dependency/key.
-- [ ] Update `README.md` minimally with Passport section linking exact memory write/read/delete locations, demo command, reproduction guide, limitations.
+- [x] Add `docs/execution-passport/reproduction.md`: prerequisites, non-secret environment, setup, exact tests, expected output.
+- [x] Explain three boundaries: incident writer, fresh executor reader, local verifier.
+- [x] State mock/trust assumptions: local chain, mock oracle/treasury, configured signer, signer-attested evidence, no real funds.
+- [x] Add troubleshooting: Anvil unavailable, wrong chain, expired clock, memory adapter unavailable, missing test dependency/key.
+- [x] Update `README.md` minimally with Passport section linking exact memory write/read/delete locations, demo command, reproduction guide, limitations.
 
 **Done:** a judge finds memory write/read/delete paths from README in under two minutes.
 
 ### 8.2 Non-UI demo
 
-- [ ] Add `make demo-passport` (or repository-consistent equivalent) only after it runs A–E reliably.
-- [ ] Ordered output must show: commit hash; timestamps/oracle age; incident digest; stored/recalled hypothesis and root; fresh executor label; proofs/thresholds loaded from memory; rejection reason; accepted transaction/event and nonce; deletion and review/no-passport result.
-- [ ] Start from clean fixture state; never depend on previous shell process cache.
-- [ ] Run twice. Save only small non-secret deterministic artifacts where project convention permits.
-- [ ] Do not edit UI/video. If video is later requested, update `demo/video-script.md` factually from this proven flow.
+- [x] Add `make demo-passport` (or repository-consistent equivalent) only after it runs A–E reliably.
+- [x] Ordered output must show: commit hash; timestamps/oracle age; incident digest; stored/recalled hypothesis and root; fresh executor label; proofs/thresholds loaded from memory; rejection reason; accepted transaction/event and nonce; deletion and review/no-passport result.
+- [x] Start from clean fixture state; never depend on previous shell process cache.
+- [x] Run twice. Save only small non-secret deterministic artifacts where project convention permits.
+- [x] Do not edit UI/video. If video is later requested, update `demo/video-script.md` factually from this proven flow.
 
 **Done:** one unedited screen recording can prove fresh-session recall and deletion control.
 

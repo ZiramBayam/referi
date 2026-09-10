@@ -63,6 +63,7 @@ observed_actions
 worked / failed / inconclusive counts
 confidence_bps
 status
+created_at / updated_at
 ```
 
 Initial hypothesis:

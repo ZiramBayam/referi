@@ -82,6 +82,36 @@ terms policy, applied patterns, and commitment in its verdict evidence bundle. A
 with the same Sibyl database recalls the safeguard; deleting the database produces explicit
 generic terms instead. The terms CLI refuses to overwrite a different artifact at the same path.
 
+## Execution Passport MVP (current product direction)
+
+Execution Passport turns an incident into a required execution condition for a high-value
+DeFi action. The MVP supports one action class, `treasury-rebalance`, against a local
+`MockTreasury`: deterministic stale-oracle evidence is written to Sibyl as a Control
+Hypothesis; a fresh executor reads it, evaluates four proof obligations, and signs a
+short-lived EIP-712 Passport; `PassportVerifier` accepts the exact rebalance once and
+rejects mismatched, expired, or replayed calls.
+
+Run the complete non-UI demo from scratch:
+
+```sh
+make demo-passport
+```
+
+The demo proves fresh-process recall, memory-derived obligation thresholds, calldata
+rejection, exactly-once execution, and deletion fallback to human review. It uses only
+Anvil test accounts and mock contracts—never real funds or the Base Sepolia deployment.
+The memory paths and detailed acceptance criteria are documented in
+[`docs/execution-passport/reproduction.md`](docs/execution-passport/reproduction.md):
+
+- write: `agent/agent/execution_passport.py::record_incident`;
+- read: `load_control_hypotheses` through `evaluate_rebalance_for_passport`;
+- delete control: the targeted `delete_control_hypothesis` transaction in
+  `agent/agent/execution_passport.py`.
+
+This is intentionally not a production Safe Guard, general DeFi firewall, or economic
+safety guarantee. Follow-up action classes—vault migration, risk parameter change, and
+contract upgrade—are roadmap items.
+
 ## How to run
 
 ```

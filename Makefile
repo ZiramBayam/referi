@@ -1,4 +1,4 @@
-.PHONY: doctor test demo
+.PHONY: doctor test demo demo-passport
 # doctor: cetak versi toolchain DAN gagal keras (exit 1) bila tidak cocok docs/versions.md.
 # Ambang sengaja major/minor saja (lihat "Ambang ADR" di docs/versions.md): drift patch tidak
 # memerahkan gate. Kecuali forge, yang dipin persis karena memengaruhi bytecode.
@@ -61,6 +61,11 @@ test:
 # INTERAKTIF, alasan yang sama dengan `make doctor`.
 demo:
 	cd sim && pnpm run demo
+
+# Execution Passport MVP: isolated Anvil + mock treasury/verifier + Sibyl memory loop.
+# No real funds, external RPC, or frontend is used. The Python demo stops its own Anvil.
+demo-passport:
+	cd agent && uv run python -m agent.passport_demo --start-anvil
 
 # Satu-satunya entrypoint deploy yang sah (ADR-016).
 #
