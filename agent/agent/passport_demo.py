@@ -19,7 +19,6 @@ import tempfile
 from pathlib import Path
 
 from eth_abi import encode as abi_encode
-from eth_account import Account
 from sibyl_memory_client import MemoryClient
 from web3 import Web3
 
@@ -38,13 +37,28 @@ from agent.execution_passport import (
 from agent.passport_client import LocalPassportClient
 
 DEFAULT_RPC = "http://127.0.0.1:8545"
-# Kunci akun #0 Anvil, DITURUNKAN dari mnemonic default Anvil, bukan ditulis sebagai
-# konstanta 32-byte — jalur produksi `agent/` dijaga bebas konstanta semacam itu.
-Account.enable_unaudited_hdwallet_features()
-ANVIL_KEY = "0x" + Account.from_mnemonic(
-    "test test test test test test test test test test test junk",
-    account_path="m/44'/60'/0'/0/0",
-).key.hex().removeprefix("0x")
+
+# Kunci penanda tangan demo dibaca dari lingkungan, BUKAN ditulis di modul.
+#
+# Alasannya bukan kerahasiaan: nilai yang dipakai adalah kunci akun 0 Anvil yang
+# diterbitkan Foundry dan diketahui semua orang. Alasannya `tests/test_verdict_root.py`
+# menjaga satu hal yang penting, yaitu NOL konstanta 32-byte di modul mana pun di bawah
+# `agent/`. Penjaga itu ada supaya tidak ada memory root yang pernah bisa dipaku ke jalur
+# keputusan, dan penjaga yang punya pengecualian bukan penjaga lagi. Karena itu kuncinya
+# pindah ke konfigurasi, tempat kunci memang seharusnya berada. `make demo-passport`
+# mengisinya sendiri, jadi tidak ada langkah tambahan untuk siapa pun yang menjalankan demo.
+_KEY_ENV = "PASSPORT_DEMO_KEY"
+
+
+def _signer_key() -> str:
+    key = os.environ.get(_KEY_ENV, "").strip()
+    if not key:
+        raise SystemExit(
+            f"{_KEY_ENV} belum diset.\n"
+            "Jalankan lewat `make demo-passport`, yang mengisinya dengan kunci akun 0 Anvil,\n"
+            "atau set sendiri: export PASSPORT_DEMO_KEY=<kunci privat hex 0x...>"
+        )
+    return key
 
 
 def _calldata(amount: int) -> str:
@@ -59,7 +73,8 @@ def _commit_hash() -> str:
 
 
 def run(rpc_url: str, memory_db: Path | None = None) -> None:
-    client = LocalPassportClient(rpc_url, ANVIL_KEY)
+    signer_key = _signer_key()
+    client = LocalPassportClient(rpc_url, signer_key)
     caller = client.address
     print(f"commit={_commit_hash()}")
     print(f"chain_id={client.chain_id} executor=anvil-local-fresh-process")
@@ -205,14 +220,14 @@ def run(rpc_url: str, memory_db: Path | None = None) -> None:
 
     invalid_calldata = _calldata(100_001)
     try:
-        invalid_signature = current.passport.sign(verifier.address, ANVIL_KEY)
+        invalid_signature = current.passport.sign(verifier.address, signer_key)
         client.execute(verifier, current.passport, invalid_signature, invalid_calldata)
     except Exception as exc:  # web3 exposes provider-specific revert subclasses
         print(f"invalid_passport_rejected=calldata-mismatch error={type(exc).__name__}")
     else:
         raise RuntimeError("mutated calldata unexpectedly executed")
 
-    signature = current.passport.sign(verifier.address, ANVIL_KEY)
+    signature = current.passport.sign(verifier.address, signer_key)
     receipt = client.execute(verifier, current.passport, signature, calldata)
     events = client.decode_events(verifier, treasury, receipt)
     print(

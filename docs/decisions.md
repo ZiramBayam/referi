@@ -1076,3 +1076,81 @@ Konsekuensi:
 (-) `motion` menaruh animasi masuk sebagai `opacity: 0` inline di HTML SSR. Konsekuensinya jujur: dengan
     JavaScript mati, bagian penjelas di bawah lipatan tidak terlihat. Ini diterima karena ruang eksekusi
     memang tidak berfungsi tanpa JavaScript sama sekali, dan rujukan berperilaku sama.
+
+## ADR-033 Skrip deploy baru untuk fixture Execution Passport; ADR-029 keputusan 2 dipersempit
+Tanggal: 2026-09-10. Status: diterima. Menyempitkan ADR-029 keputusan 2. TIDAK mencabut ADR-016 maupun ADR-022.
+
+Konteks:
+(a) ADR-029 keputusan 2 berbunyi "TIDAK ada skrip deploy baru di `contracts/` sebelum submission".
+    Alasannya saat itu tepat: pada hari ke-8, arah produk masih Escrow Firewall, alamat yang dirujuk
+    artefak juri sudah ada dan beku (ADR-022), dan menyentuh `contracts/` berarti review keamanan
+    tambahan dengan nilai rubric nol.
+(b) Yang berubah: arah produk berpindah ke Execution Passport (task-tracker menyatakannya menggantikan
+    tracker Escrow Firewall). Akibatnya alamat yang dirujuk artefak juri hari ini BUKAN lagi hanya
+    `EvaluatorVault`. Produk yang dipresentasikan sekarang, yaitu `PassportVerifier` + `MockTreasury`
+    + `MockOracle`, tidak punya satu pun alamat di jaringan persisten.
+(c) Diukur, bukan diduga: `deployments/84532.json` hanya memuat `EvaluatorVault`, `AgenticCommerce`,
+    dan token pembayaran. `make demo-passport` men-deploy ketiga kontrak passport ke Anvil sekali-pakai,
+    yang menurut ADR-029 keputusan 1 memang dikecualikan, tetapi itu berarti nol jejak persisten.
+(d) Premis ADR-029 keputusan 2 karena itu tidak lagi berlaku: biayanya bukan "nilai rubric nol",
+    melainkan sumbu teknis dan multiplier yang tidak bisa diverifikasi juri sama sekali.
+
+Keputusan:
+1. `contracts/script/DeployPassport.s.sol` ditambahkan. Ia men-deploy `MockTreasury`, `MockOracle`,
+   dan `PassportVerifier` dalam satu run, lalu memanggil `configureVerifier` sekali. Ketiganya dalam
+   SATU skrip karena `PassportVerifier` menyimpan alamat treasury sebagai immutable: men-deploy
+   verifier terhadap treasury yang salah menghasilkan verifier yang tidak bisa dipakai sama sekali.
+2. Ia mengikuti ADR-016 huruf demi huruf: tidak ada `vm.envString` untuk kunci, tidak ada `vm.addr`,
+   dan `vm.startBroadcast()` dipanggil TANPA argumen. Kunci privat tidak pernah menjadi argumen
+   cheatcode, jadi kebocoran `--json` tertutup di akarnya. Jalur broadcast tetap keystore terenkripsi
+   (`--account agent --sender <alamat literal>`), dan `--private-key <nilai>` tetap DILARANG.
+3. `_validate` dipisah dari pembacaan env, sama seperti `Deploy.s.sol`, supaya bisa diuji tanpa
+   `vm.setEnv` yang bersifat global terhadap proses `forge test` paralel. Ia menolak chain yang salah,
+   `policySigner` nol, dan `initialReserve < minimumReserve`.
+4. ADR-022 TIDAK tersentuh. `EvaluatorVault 0x5c6EE45…f384` tetap beku dan tetap alamat submission
+   untuk arah lama. Skrip ini tidak pernah menyentuhnya.
+5. Selama `deployments/passport-84532.json` berisi `status: "PENDING_BROADCAST"`, tidak ada berkas,
+   README, situs, atau naskah video yang boleh menyatakan kontrak passport ada di chain. Berkas itu
+   adalah satu-satunya sumber kebenaran untuk status deploy.
+
+Konsekuensi:
+(+) Produk yang benar-benar dipresentasikan bisa diverifikasi juri di block explorer, bukan hanya
+    di terminal pembuatnya.
+(+) Simulasi terhadap Base Sepolia sudah lolos sebelum ADR ini ditulis: estimasi 1.901.821 gas,
+    0,000020920031 ETH, dengan saldo deployer 0,0419 ETH.
+(-) Satu berkas baru di `contracts/`, yang menurut ADR-029 memang berarti permukaan yang harus
+    direview keamanan bertambah. Mitigasinya: skrip ini tidak punya cabang selain guard, tidak
+    menyentuh kontrak yang sudah beku, dan tidak menerima satu pun rahasia.
+(-) Alamat hasil `CREATE` bergantung nonce deployer. Alamat di blok `simulation` pada
+    `deployments/passport-84532.json` akan berubah bila nonce bergerak sebelum broadcast, dan
+    karena itu ditandai sebagai prediksi, bukan alamat.
+
+## ADR-034 Referi disajikan sebagai satu memori dengan dua gerbang, bukan sebagai pivot
+Tanggal: 2026-09-10. Status: diterima. Aditif; tidak mencabut ADR mana pun.
+
+Konteks:
+(a) Sejak arah produk berpindah ke Execution Passport, seluruh artefak menyajikan gerbang
+    ACP sebagai pekerjaan yang ditinggalkan. Itu akurat soal fokus pengembangan dan KELIRU
+    soal arsitekturnya.
+(b) Diukur, bukan diduga: hipotesis kendali gerbang passport disimpan di
+    `pattern:passport.control-hypothesis.stale-oracle-rebalance.v1`
+    (`execution_passport.py` konstanta `HYPOTHESIS_KEY`), sedangkan cakupan `MemorySnapshot`
+    adalah seluruh entity `provider` + seluruh `reference:pattern:*` + seluruh
+    `reference:rubric:*` (ADR-020 keputusan 7). Konsekuensinya: root yang diumumkan
+    `EvaluatorVault.postVerdict` MENGIKAT kebijakan gerbang Base.
+(c) Properti itu benar sejak gerbang passport ditulis dan tidak pernah dibuktikan di mana pun.
+
+Keputusan:
+1. Artefak menyajikan Referi sebagai SATU sistem memori dengan DUA gerbang penegakan.
+2. Setiap klaim tentang tautan itu harus punya perintah yang membuktikannya. Ditambahkan
+   `make dual-gate` (nol jaringan) dan `make virtuals-evidence` (baca-saja, nol transaksi).
+3. Properti root dikunci tes di `agent/tests/test_dual_gate_memory.py`, supaya memindahkan
+   hipotesis keluar dari namespace `pattern:` memerahkan tes alih-alih diam-diam memutus
+   klaim terbesar submission.
+4. Batas yang DILARANG dikaburkan: Execution Passport TIDAK mengirim transaksi ke ACP, dan
+   gerbang ACP TIDAK bisa memposting verdict baru dengan wallet sekarang karena
+   `EvaluatorVault.agent()` immutable di alamat lama. Keduanya dinyatakan di post 04.
+
+Konsekuensi:
+(+) Argumen multiplier bersandar pada properti yang bisa diperiksa, bukan pada framing.
+(-) Dua perintah dan satu berkas tes baru yang harus dijaga.

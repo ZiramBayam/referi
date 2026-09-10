@@ -12,6 +12,7 @@ import {
   Loader2,
   Lock,
   RotateCcw,
+  Radio,
   ScanLine,
   ShieldCheck,
   TriangleAlert,
@@ -19,7 +20,7 @@ import {
 } from "lucide-react";
 import { buttonClasses } from "./ui/Button.jsx";
 import { EASE } from "./motion.jsx";
-import { cn, formatAmount } from "../lib/utils.js";
+import { cn, formatAmount, shortenAddress, shortenHash } from "../lib/utils.js";
 import {
   ACTION_CLASS,
   CHAIN_ID,
@@ -364,6 +365,11 @@ export default function ExecutionRoom() {
                   Proof obligations
                 </span>
               </div>
+              {preflight && (
+                <div className="px-5 pt-5">
+                  <EngineNote preflight={preflight} />
+                </div>
+              )}
               <div className="relative px-5">
                 <motion.div
                   key={bodyKey}
@@ -515,6 +521,77 @@ export default function ExecutionRoom() {
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * Mesin apa yang menghasilkan keputusan di layar.
+ *
+ * Ini bukan hiasan dan bukan debug output. Ruang ini memanggil agen Python yang
+ * sesungguhnya bila ia bisa dijalankan, dan jatuh ke simulasi aturan dalam JavaScript
+ * bila tidak. Kedua keadaan itu terlihat identik tanpa penanda ini, dan halaman yang
+ * tidak bisa dibedakan dari mesinnya adalah halaman yang membuat pembacanya salah
+ * menyimpulkan. Jadi ia dinyatakan, bukan disiratkan.
+ *
+ * @param {{ preflight: any }} props
+ */
+function EngineNote({ preflight }) {
+  const live = preflight.engine === "agent";
+  return (
+    <div
+      className={cn(
+        "mb-4 flex flex-wrap items-start gap-x-3 gap-y-1.5 rounded-xl border px-4 py-3 text-xs leading-relaxed",
+        live
+          ? "border-proof-pass/30 bg-proof-pass/[0.06]"
+          : "border-proof-review/30 bg-proof-review/[0.06]"
+      )}
+    >
+      <span
+        className={cn(
+          "inline-flex shrink-0 items-center gap-1.5 font-mono font-medium uppercase tracking-wide",
+          live ? "text-proof-pass" : "text-proof-review"
+        )}
+      >
+        <Radio className="size-3.5" strokeWidth={2.25} aria-hidden />
+        {live ? "Live agent" : "Rule simulation"}
+      </span>
+      {live ? (
+        <span className="text-muted">
+          Decided by the same Python path{" "}
+          <span className="font-mono text-ink">make demo-passport</span> runs, reading real Sibyl
+          memory.
+          {preflight.memoryRoot && (
+            <>
+              {" "}
+              Memory root{" "}
+              <span className="font-mono text-ink">{shortenHash(preflight.memoryRoot)}</span>.
+            </>
+          )}
+          {preflight.deployment?.verifier && (
+            <>
+              {" "}
+              Bound to the verifier deployed at{" "}
+              <span className="font-mono text-ink">
+                {shortenAddress(preflight.deployment.verifier)}
+              </span>
+              .
+            </>
+          )}
+        </span>
+      ) : (
+        <span className="text-muted">
+          The Python agent is not reachable, so this decision came from a JavaScript
+          re-implementation of the rules. Sibyl was not read and nothing was hashed. Run{" "}
+          <span className="font-mono text-ink">make demo-passport</span> to see the real mechanism.
+          {preflight.engineReason && (
+            <>
+              {" "}
+              <span className="text-faint">({preflight.engineReason})</span>
+            </>
+          )}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -722,13 +799,27 @@ function PassportStep({ preflight, reduce, executed, onExecute }) {
             <pre className="overflow-x-auto whitespace-pre-wrap px-5 pt-5 font-mono text-xs leading-relaxed text-ink [overflow-wrap:anywhere] sm:whitespace-pre sm:[overflow-wrap:normal]">
               {JSON.stringify(preflight.passport, null, 2)}
             </pre>
-            {/* Dua field di atas berisi kalimat, bukan hex. Skema yang dibingkai seperti
-                artefak bertanda tangan akan terbaca begitu, jadi bingkainya mengaku sendiri. */}
+            {/* Penyangkalannya mengikuti mesin. Saat agen jalan, nilai-nilai itu BENAR-BENAR
+                dihitung, dan menyebutnya placeholder akan salah. Saat fixture yang jalan,
+                menyebutnya terhitung akan lebih salah lagi. */}
             <p className="border-t border-proof-pass/20 px-5 py-3.5 text-xs leading-relaxed text-muted">
-              <span className="font-mono text-ink">calldataHash</span> and{" "}
-              <span className="font-mono text-ink">memoryRoot</span> are described here, not
-              computed. The CLI fills them from the exact submitted calldata and the Sibyl root
-              loaded at issuance. Nothing on this page is signed.
+              {preflight.engine === "agent" ? (
+                <>
+                  <span className="font-mono text-ink">calldataHash</span>,{" "}
+                  <span className="font-mono text-ink">memoryRoot</span>, and{" "}
+                  <span className="font-mono text-ink">obligationResultsHash</span> are computed by
+                  the agent from the exact calldata and the Sibyl root it loaded. The passport is
+                  unsigned: signing needs a private key, and no key runs inside a process that
+                  serves web requests.
+                </>
+              ) : (
+                <>
+                  <span className="font-mono text-ink">calldataHash</span> and{" "}
+                  <span className="font-mono text-ink">memoryRoot</span> are described here, not
+                  computed, because the rule simulation produced this. Nothing on this page is
+                  signed.
+                </>
+              )}
             </p>
           </motion.div>
         </div>

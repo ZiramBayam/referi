@@ -19,8 +19,15 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
+# Kunci akun 0 Anvil, diterbitkan Foundry. Di berkas tes ia boleh ditulis apa adanya:
+# pemindai konstanta 32-byte di `test_verdict_root.py` sengaja hanya melihat modul di
+# bawah `agent/agent/`, karena yang dijaganya adalah jalur keputusan, bukan alat uji.
+ANVIL_ACCOUNT_0_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+
+
 @pytest.mark.skipif(shutil.which("anvil") is None, reason="Anvil is required for local-chain integration")
-def test_demo_proves_memory_recall_rejection_execution_and_deletion(tmp_path, capsys):
+def test_demo_proves_memory_recall_rejection_execution_and_deletion(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("PASSPORT_DEMO_KEY", ANVIL_ACCOUNT_0_KEY)
     port = _free_port()
     rpc_url = f"http://127.0.0.1:{port}"
     anvil = subprocess.Popen(
