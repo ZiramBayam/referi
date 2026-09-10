@@ -31,10 +31,11 @@ contract ExecutionPassportVerifierTest is Test {
         bytes memory calldata_ = _calldata(100_000);
         bytes memory signature = _sign(POLICY_KEY, passport);
 
-        vm.expectEmit(true, true, false, true, address(verifier));
+        vm.expectEmit(true, true, true, true, address(verifier));
         emit PassportVerifier.PassportConsumed(
             passport.nonce,
             _digest(passport),
+            address(this),
             _actionDigest(passport),
             passport.hypothesisIdsHash,
             passport.obligationResultsHash,
@@ -93,6 +94,44 @@ contract ExecutionPassportVerifierTest is Test {
 
         vm.expectRevert(PassportVerifier.WrongSigner.selector);
         verifier.execute(passport, signature, calldata_);
+    }
+
+    function test_wrongExecutorRevertsBeforeSignatureCheck() public {
+        PassportVerifier.ExecutionPassport memory passport = _passport(100_000, 15, 1_000, 1_030);
+        bytes memory signature = _sign(POLICY_KEY, passport);
+        bytes memory calldata_ = _calldata(100_000);
+
+        vm.prank(address(0xBEEF));
+        vm.expectRevert(PassportVerifier.WrongExecutor.selector);
+        verifier.execute(passport, signature, calldata_);
+        assertEq(treasury.reserve(), 1_000_000);
+        assertFalse(verifier.usedNonces(15));
+    }
+
+    function test_boundExecutorConsumesPassportAndIsIndexedInEvent() public {
+        address executor = address(0xD00D);
+        PassportVerifier.ExecutionPassport memory passport = _passport(100_000, 16, 1_000, 1_030);
+        passport.executor = executor;
+        bytes memory signature = _sign(POLICY_KEY, passport);
+        bytes memory calldata_ = _calldata(100_000);
+
+        vm.expectEmit(true, true, true, true, address(verifier));
+        emit PassportVerifier.PassportConsumed(
+            passport.nonce,
+            _digest(passport),
+            executor,
+            _actionDigest(passport),
+            passport.hypothesisIdsHash,
+            passport.obligationResultsHash,
+            passport.memoryRoot
+        );
+        vm.prank(executor);
+        verifier.execute(passport, signature, calldata_);
+        assertEq(treasury.reserve(), 900_000);
+    }
+
+    function test_passportVersionIsTwo() public view {
+        assertEq(verifier.PASSPORT_VERSION(), 2);
     }
 
     function test_expiredPassportReverts() public {
@@ -207,10 +246,11 @@ contract ExecutionPassportVerifierTest is Test {
     ) private view returns (PassportVerifier.ExecutionPassport memory passport) {
         bytes memory calldata_ = _calldata(amount);
         passport = PassportVerifier.ExecutionPassport({
-            passportVersion: 1,
+            passportVersion: 2,
             actionClass: verifier.ACTION_CLASS(),
             chainId: block.chainid,
             target: address(treasury),
+            executor: address(this),
             selector: verifier.REBALANCE_SELECTOR(),
             calldataHash: keccak256(calldata_),
             value: 0,
