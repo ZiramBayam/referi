@@ -123,6 +123,7 @@ def run(rpc_url: str, memory_db: Path | None = None) -> None:
         nonce=1,
     )
     print(f"incident_oracle_age_seconds={incident.oracle_age_seconds}")
+    print(f"incident_timestamps=oracle={oracle_timestamp} observed={now}")
     print(f"before_memory_decision={blocked.decision} reason={blocked.reason}")
     remembered = record_incident(memory, incident)
     print(f"stored_hypothesis={remembered.hypothesis_id} memory_root={memory_root_hex(memory)}")
@@ -145,6 +146,7 @@ def run(rpc_url: str, memory_db: Path | None = None) -> None:
         action, current_reserve=1_000_000, minimum_reserve=DEFAULT_MIN_RESERVE
     )
     fresh_oracle_timestamp = int(oracle.functions.timestamp().call())
+    print(f"fresh_timestamps=oracle={fresh_oracle_timestamp} observed={fresh_now}")
 
     recall_code = (
         "import sys; from sibyl_memory_client import MemoryClient; "

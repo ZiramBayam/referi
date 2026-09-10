@@ -29,8 +29,10 @@ The output must contain these labelled facts:
 
 ```text
 before_memory_decision=human-review-required
+incident_timestamps=oracle=<unix-seconds> observed=<unix-seconds>
 stored_hypothesis=stale-oracle-rebalance/v1
 fresh_process_recall=stale-oracle-rebalance/v1
+fresh_timestamps=oracle=<unix-seconds> observed=<unix-seconds>
 thresholds_from_memory=oracle=60 reserve=250000
 invalid_passport_rejected=calldata-mismatch
 accepted_rebalance=exactly-once

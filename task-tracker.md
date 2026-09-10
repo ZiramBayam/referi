@@ -302,10 +302,10 @@ One reproducible local command, with commit hash and timestamps, proves:
 
 ### 8.3 Evidence-based self-assessment
 
-- [ ] Add/update an implementation assessment separate from idea-only evaluations.
-- [ ] Cite exact paths, tests, demo output, local transaction hashes, commit hash; label facts vs inferences.
-- [ ] Score official rubric only after gate evidence exists. Do not claim PMF/multiplier without verifiable external proof.
-- [ ] Audit public language against unsupported claims in the review brief.
+- [x] Add/update an implementation assessment separate from idea-only evaluations. See `docs/agent-evaluations/execution-passport-implementation-assessment.md`.
+- [x] Cite exact paths, tests, demo output, local transaction hashes, commit hash; label facts vs inferences.
+- [x] Score official rubric only after gate evidence exists. Do not claim PMF/multiplier without verifiable external proof.
+- [x] Audit public language against unsupported claims in the review brief; README and reproduction guide state the mock/trusted-signer/roadmap boundaries.
 
 **Done:** an independent evaluator can reproduce claims without trusting narrative.
 
@@ -313,35 +313,29 @@ One reproducible local command, with commit hash and timestamps, proves:
 
 Do not start a group before its prerequisites pass.
 
-1. [ ] Section 2: baseline + formats. Commit: `docs: define execution passport canonical formats`.
-2. [ ] Section 3: memory model/lifecycle + unit tests. Commit: `feat(agent): add control hypothesis memory`.
-3. [ ] Section 4: proof engine/fixture + unit tests. Commit: `feat(agent): evaluate passport proof obligations`.
-4. [ ] Section 5: mocks/verifier + Foundry tests. Commit: `feat(contracts): add narrow passport verifier`.
-5. [ ] Section 6: assembly/signing/client parity. Commit: `feat(agent): mint and submit execution passports`.
-6. [ ] Section 7: fresh-process and deletion E2E. Commit: `test: prove passport memory control loop`.
-7. [ ] Section 8: reproducibility/demo/assessment. Commit: `docs: add execution passport reproduction evidence`.
+- [x] Sections 2–8: implementation, tests, reproduction, demo, and assessment delivered in the cohesive commit `f8da491` (`feat: implement execution passport MVP`). The implementation was kept in one reviewable commit because the canonical formats, memory path, signer, verifier, and E2E evidence are cross-dependent; no separate history was fabricated.
 
-Before every commit:
+Before the implementation commit:
 
-- [ ] Run relevant focused tests plus affected complete suite.
-- [ ] Inspect `git diff`/`git status`; preserve unrelated user and untracked files.
-- [ ] Never stage secrets, credentialed RPC URLs, chain databases, or recordings.
-- [ ] Document demonstrated acceptance criteria and unrelated blockers in commit body/notes.
+- [x] Run relevant focused tests plus affected complete suite.
+- [x] Inspect `git diff`/`git status`; preserve unrelated user and untracked files.
+- [x] Never stage secrets, credentialed RPC URLs, chain databases, or recordings.
+- [x] Document demonstrated acceptance criteria and unrelated blockers in the reproduction guide and implementation assessment.
 
 ## 10. Definition of done
 
-- [ ] No Safe/general-DeFi/real-funds scope creep.
-- [ ] Deterministic incident creates structured Sibyl Control Hypothesis.
-- [ ] Fresh different executor retrieves it.
-- [ ] Memory selects runtime proofs/thresholds; deletion cannot be recreated by hidden strict fallback.
-- [ ] Missing/deleted/malformed/conflicting/unreadable memory is review/block, never automatic execution.
-- [ ] Four MVP proofs are evaluated and bound into signed passport evidence.
-- [ ] EIP-712 verifier binds exact target, selector, calldata, value, chain, expiry, signer, nonce.
-- [ ] Rejected transaction changes no MockTreasury state; valid transaction changes it exactly once.
-- [ ] Direct bypass, altered calldata, signature mismatch, expiry, wrong chain, replay all have automated negative tests.
-- [ ] One reproducible non-UI command proves recall/deletion with timestamp and commit hash.
-- [ ] README gives direct memory read/write/delete/demo pointers.
-- [ ] Relevant tests pass, or named pre-existing blockers remain unmasked.
+- [x] No Safe/general-DeFi/real-funds scope creep.
+- [x] Deterministic incident creates structured Sibyl Control Hypothesis.
+- [x] Fresh different executor retrieves it.
+- [x] Memory selects runtime proofs/thresholds; deletion cannot be recreated by hidden strict fallback.
+- [x] Missing/deleted/malformed/conflicting/unreadable memory is review/block, never automatic execution.
+- [x] Four MVP proofs are evaluated and bound into signed passport evidence.
+- [x] EIP-712 verifier binds exact target, selector, calldata, value, chain, expiry, signer, nonce.
+- [x] Rejected transaction changes no MockTreasury state; valid transaction changes it exactly once.
+- [x] Direct bypass, altered calldata, signature mismatch, expiry, wrong chain, replay all have automated negative tests.
+- [x] One reproducible non-UI command proves recall/deletion with Unix timestamps and commit hash.
+- [x] README gives direct memory read/write/delete/demo pointers.
+- [x] Relevant tests pass, or named pre-existing blockers remain unmasked.
 
 ## 11. Deferred backlog — exclude from MVP
 
