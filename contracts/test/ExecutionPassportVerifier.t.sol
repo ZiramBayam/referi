@@ -234,6 +234,37 @@ contract ExecutionPassportVerifierTest is Test {
         assertFalse(verifier.usedNonces(9));
     }
 
+    /// Cross-language pin. The Python test `test_fixed_cross_language_vector` signs this exact
+    /// message for verifier 0x...cc on chain 84532; both sides must agree on the digest.
+    function test_fixedCrossLanguageDigest() public {
+        vm.chainId(84532);
+        PassportVerifier pinned = new PassportVerifier(treasury, policySigner);
+        vm.etch(address(0xcc), address(pinned).code);
+        PassportVerifier pinnedAt = PassportVerifier(address(0xcc));
+        PassportVerifier.ExecutionPassport memory passport = PassportVerifier.ExecutionPassport({
+            passportVersion: 2,
+            actionClass: keccak256("treasury-rebalance"),
+            chainId: 84532,
+            target: 0x00000000000000000000000000000000000000AA,
+            executor: 0xc3c6Bf20ddE1a547a35f6479D54B08E1548dAeff,
+            selector: bytes4(keccak256("rebalance(uint256)")),
+            calldataHash: 0xe88f9b14f8921d7450af76f0d8ab7aa348bde46316d628ab6f91e9dac0c582a3,
+            value: 0,
+            stateBlockNumber: 10,
+            stateBlockHash: 0x1111111111111111111111111111111111111111111111111111111111111111,
+            hypothesisIdsHash: 0xb1e9546ad67d2b7e25027c4ed279adafc69e9ec84dd1ef94ea3da9dca60d6ecd,
+            obligationResultsHash: 0x5f14df02f59ec954dfd207634b649cdf975bc84de51d9c240bb049fad357753f,
+            memoryRoot: 0x4444444444444444444444444444444444444444444444444444444444444444,
+            issuedAt: 1_000,
+            expiresAt: 1_030,
+            nonce: 1
+        });
+        assertEq(
+            pinnedAt.hashPassport(passport),
+            0x6626747a2858708cc27753e08205a5a3de9e6f0536ea75f579fce17c54d4dd41
+        );
+    }
+
     function _calldata(uint256 amount) private view returns (bytes memory) {
         return abi.encodeWithSelector(verifier.REBALANCE_SELECTOR(), amount);
     }
