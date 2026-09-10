@@ -1,89 +1,103 @@
 ---
 title: "X (Twitter) threads — paste-ready"
-date: 2026-09-09
+date: 2026-09-11
 project: REFERI (Sibyl hackathon, Base Sepolia)
 repo: https://github.com/ZiramBayam/referi
-source: docs/posts/01-2026-09-08-*.md and docs/posts/02-2026-09-08-*.md
+source: docs/posts/03-2026-09-10-*.md and docs/posts/04-2026-09-10-*.md
 ---
 
 # X threads
 
-Two threads, condensed from the two build-in-public posts. Every number, address, and transaction below
-also appears in `README.md`, `docs/evidence.md`, or `docs/limitations.md` — nothing new is claimed here.
-Character counts (including the `n/` prefix) are listed at the bottom; the limit is 280.
+Two threads, condensed from the two most recent build-in-public posts. They follow the current framing
+in `README.md`: **proof before permission, one memory system with two enforcement gates.** Every number,
+address, and output line below also appears in `README.md`, `deployments/passport-84532.json`,
+`deployments/84532.json`, or `docs/limitations.md` — nothing new is claimed here. Character counts
+(including the `n/ ` prefix) are at the bottom; the limit is 280.
 
-## Thread 1 — why an escrow referee needs memory
+The earlier threads, written from the escrow-referee framing, are superseded by these; the reasoning for
+the change is thread 1.
 
-Source: `docs/posts/01-2026-09-08-kenapa-wasit-escrow-butuh-memori.md`
+## Thread 1 — changing direction on day nine
+
+Source: `docs/posts/03-2026-09-10-kenapa-kami-mengganti-arah-produk.md`
 
 ```text
-1/ ERC-8183 makes the escrow evaluator fully trusted — and stateless. Every job is judged as if the provider were born today. Cheat on job A, meet the same referee on job B with a clean record. We built a referee that remembers. Its memory is recomputable from files.
+1/ We changed the product on day nine. The escrow referee still runs, still deployed, five jobs really landed on Base Sepolia. We stopped building it because memory only changed how carefully we graded a document. Nobody's money moved because of it.
 
-2/ The evidence isn't a diagram. Two jobs on Base Sepolia with byte-for-byte identical deliverable text (keccak256 = 0x246071b3…0a51), same budget 250,000, same evaluator, different providers. 421 passed. 422 was rejected. The only difference is history.
+2/ The uncomfortable question, in one sentence: is memory doing work, or decorating a decision that would have been fine anyway? So we moved memory to where being wrong is expensive: the transaction boundary.
 
-3/ Job 421's provider had no incidents → depth `sampling`, only the first 2 sections are read → passed. Job 422's provider had 2 recorded incidents → depth `full` → the TODO defect in the third section is read → rejected. postVerdict: 0xe95910d2…295830
+3/ Execution Passport takes one incident — an agent moved value on an oracle reading two minutes stale — stores it in Sibyl as a Control Hypothesis, and compiles it into four proof obligations that must hold before that class of action moves value again.
 
-4/ The honest limits in the same breath: both providers are our own simulators, the defect is one word caught by one regex, and there is no LLM anywhere in the evaluation path. Qualitative criteria are recorded as unscored and never counted as passed.
+4/ The four: state-anchor-fresh, oracle-freshness, simulation-match, post-state-invariant. Only if all four hold does the agent sign a 60-second EIP-712 passport bound to the exact target, selector, calldata hash, chain, memory root and nonce. Accepted once.
 
-5/ Memory you cannot audit is just a confident guess. So every postVerdict announces a memoryRoot and the vault emits MemoryRootUpdated. The root function is the same single implementation the export tool uses, its encoding locked by a frozen test vector.
+5/ The test we could not run before: delete the hypothesis and the same action returns to human review. Not a permissive default, not a cached answer, a stop. There is no fallback threshold in the code — the run prints thresholds_from_memory=oracle=60 reserve=250000.
 
-6/ And its limit, said out loud: the anchor is circular. The root proves the agent hashed a file, not that the file is legitimate memory — on chain only a ZERO root is rejected. Of eight vault roots, only job 418's can be recomputed today.
+6/ Two more lines from the same run: fresh_process_recall=stale-oracle-rebalance/v1 executor_identity=child-process, a new process recalls it. invalid_passport_rejected=calldata-mismatch, one changed byte and the passport is void. Whole run: 4.62 s.
 
-7/ Sibyl has no FLAGGED tier, so our quarantine is a convention, not a DB feature — and the decision path is forbidden to read it. A suspicion changes nothing until it is promoted: at least 2 distinct jobs, with evidence from a deterministic check.
+7/ The bill for changing direction: our only on-chain evidence belonged to the product we had just left. Fixed now. PassportVerifier, MockTreasury and MockOracle are on Base Sepolia at block 46629087, all three verified on Sourcify, for 0.0000088 ETH.
 
-8/ That ban is not a code comment. Three tests hold it: an AST scan over the decision path's source, a property test where two twin DBs (one poisoned with quarantine rows) must give identical output on 240 random inputs, and a spy client on runtime reads.
+8/ The other cost: we had to drop the impressive version. The passport only reaches failures you can write down as a checkable precondition — oracle staleness, a reserve floor, an exact simulation match. Not bad judgement, not a novel exploit, not mispriced risk.
 
-9/ What is NOT fixed: evaluatorFeeBP is 500 (5%) and the fee is only paid on Completed, so this referee is still paid only when it passes work. MIN_BOND is 0. challenge/resolve are stubs. Vault 0x5c6EE45…f384 on Base Sepolia. https://github.com/ZiramBayam/referi
+9/ Enforced today: one action class, treasury-rebalance, against a mock treasury and a mock oracle on testnet. Safe integration and production oracles are roadmap, so they are not in the pitch. Run it on local Anvil: make demo-passport. https://github.com/ZiramBayam/referi
 ```
 
-## Thread 2 — what broke while building it
+## Thread 2 — one memory, two gates
 
-Source: `docs/posts/02-2026-09-08-apa-yang-patah-saat-membangunnya.md`
+Source: `docs/posts/04-2026-09-10-satu-memori-dua-gerbang.md`
 
 ```text
-1/ 2 days before the submission deadline, the honest list: four things that broke while building our ERC-8183 evaluator, who found them, and what we did. Starting with the one where our own destructive test was rigged to win.
+1/ We spent a day calling this project a pivot. That was wrong, and the correction is a one-line command. Referi is one memory system with two enforcement gates: one on Virtuals ACP, one on Base. They were never two memories.
 
-2/ The first version ran only the variant guaranteed to look good: fresh vault, empty memory, so a job that was REJECTED with memory now passes at the same budget. But delete memory.db on a live vault (non-zero on-chain root) and you get safe mode instead.
+2/ Gate 1, on Virtuals ACP: an evaluator reads a provider's history out of Sibyl and sets check depth and budget cap from it. Jobs 421 and 422 carry byte-for-byte identical deliverables. 421 passed, 422 was rejected. Memory was the only difference.
 
-3/ `make demo` now runs BOTH variants, and variant B runs against the frozen Sepolia vault, so the non-zero root is real state. It aborts the whole run if the safe-mode evidence is missing, if any tx is sent, or if the agent wallet's nonce moves.
+3/ Gate 2, on Base: the Execution Passport reads an incident out of the same Sibyl store and turns it into four proof obligations a treasury action must satisfy before it moves value. Different protocols, different failure modes, different contracts.
 
-4/ Two things we will not smooth over. In variant A the mode the agent reports is `normal`, not naive mode; the degradation shows in depth=sampling and cap=NO CAP. And the demo now needs internet, so without network it does not finish. Recorded as a limitation.
+4/ The passport gate stores its Control Hypothesis at pattern:passport.control-hypothesis.stale-oracle-rebalance.v1. The preimage of the on-chain memory root covers every provider entity and every reference:pattern:* entry. Read those two together.
 
-5/ Second break: our static guard over the memory-root path only saw import statements. A module fetched via importlib, __import__ or sys.modules, or a rebinding as small as `alt = mp`, walked straight past it. Six bypasses, zero red tests.
+5/ The consequence: the memory root that EvaluatorVault.postVerdict announces on the ACP gate already commits to the Base gate's policy. Change the passport's hypothesis and the root the evaluator announces changes. We did not build that link this week.
 
-6/ An adversarial review found it, not us. The scanner now recognises modules obtained without an import statement and tracks aliases; the six forms are tests that must go red. Lesson: a guard that never goes red guards nothing.
+6/ It has been true since the passport gate was written, because both gates use the same memory primitives. We just never showed it. Now you can check: make dual-gate prints the shared root and root_covers_both_gates=True. No network, no key.
 
-7/ Third break: we froze the vault before it was finished. sweepToken exists in the source but is NOT in the deployed bytecode, so 62,500 token units of fees are permanently stranded. arbiter() == agent() there, permanently — the contract is immutable.
+7/ What we are not claiming: the passport does not send transactions to ACP, it guards treasury actions, not escrow jobs. And the ACP gate cannot post new verdicts: we rotated the agent wallet and EvaluatorVault.agent() is immutable at the old address.
 
-8/ We froze it anyway because all our on-chain evidence — jobs 417-422, eight MemoryRootUpdated events, job 420's JobRejected — hangs on that address. We chose evidence that is flawed but whole over evidence that is clean but new. That can be judged wrong.
-
-9/ Still not fixed: the incentive (fee only on Completed), MIN_BOND = 0, challenge/resolve stubs, zero tests in sim/. All 36 limitations — including the security review our judge panel failed, then closed — are in the repo: https://github.com/ZiramBayam/referi
+8/ Verify gate 1 without a key: make virtuals-evidence reads the real ACP contract on Base Sepolia and confirms all five jobs against the file the site serves. Two surfaces, one memory, one root on chain that binds both. https://github.com/ZiramBayam/referi
 ```
 
 ## Character count
 
-Counted including the `n/ ` prefix; the em dash, the ellipsis `…`, and the `→` arrow each count as one
-character.
+Counted including the `n/ ` prefix; the em dash `—` counts as one character. Counted by hand, segment by
+segment.
 
 | Tweet | Thread 1 | Thread 2 |
 |---|---|---|
-| 1/ | 267 | 225 |
-| 2/ | 254 | 256 |
-| 3/ | 252 | 246 |
-| 4/ | 251 | 261 |
-| 5/ | 255 | 240 |
-| 6/ | 239 | 228 |
-| 7/ | 248 | 252 |
-| 8/ | 255 | 256 |
-| 9/ | 262 | 260 |
-| **longest** | **267** | **261** |
+| 1/ | 249 | 225 |
+| 2/ | 208 | 248 |
+| 3/ | 254 | 250 |
+| 4/ | 258 | 248 |
+| 5/ | 267 | 253 |
+| 6/ | 249 | 242 |
+| 7/ | 251 | 252 |
+| 8/ | 263 | 257 |
+| 9/ | 273 | — |
+| **longest** | **273** | **257** |
 
-Nine tweets per thread, zero emoji, zero hashtags, repo link in the last tweet of each thread.
+Thread 1 has nine tweets, thread 2 has eight. Zero emoji, zero hashtags, repo link in the last tweet of
+each thread.
 
 ## Claims deliberately left out
 
-Not written here because the repo does not support them: that the evaluator is paid the same when it
-rejects (ADR-004 is a design, and `evaluatorFeeBP` is only paid on `Completed` — `docs/limitations.md`
-item 14); that `challenge`/`resolve` protect anything (they `revert NotImplemented()` — item 2); that the
-memory root proves the memory file is legitimate (item 16); that the destructive test leaves artifacts you
-can diff (item 19); and any severity scoring behind the demo's "coarse defect" wording (item 19).
+Not written here because the repo does not support them:
+
+- That the web app enforces anything on chain. It never sends a transaction; the execution-room incident
+  is seeded (`_seeded_memory`, `web-stale-oracle-001`) and its anchor is synthetic. Both threads point at
+  the terminal path `make demo-passport` instead.
+- That the passport prevents bad judgement, a novel exploit, or mispriced risk. It reaches only failures
+  expressible as a checkable precondition, and thread 1 tweet 8 says so.
+- That `MockTreasury` holds real funds or that this is a Safe integration or a production vault
+  (`deployments/passport-84532.json` → `boundary`).
+- That the ACP gate can post new verdicts today (`EvaluatorVault.agent()` is immutable at the rotated-away
+  address; the five jobs are history).
+- That the memory root proves the memory file is legitimate — the anchor is circular
+  (`docs/limitations.md` item 16).
+- Any per-obligation coverage number, severity score, or performance figure beyond the measured 4.62 s
+  wall time of `make demo-passport`.
