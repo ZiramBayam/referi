@@ -4,12 +4,26 @@
 //
 // KEAMANAN: `detail` dan `proof` adalah TEKS PIHAK, dan `proof` adalah kutipan mentah
 // dari deliverable pihak lain. Keduanya dirender sebagai CHILDREN React, yang di-escape
-// otomatis. Jalur "sisipkan HTML mentah" tidak dipakai di berkas ini maupun di mana pun
-// di `web/src`; AC task ini menuntut grep atas nama prop itu mengembalikan hasil KOSONG,
-// jadi namanya sengaja tidak ditulis di sini juga.
+// otomatis. Jalur "sisipkan HTML mentah" tidak dipakai di berkas ini maupun di rute
+// bukti mana pun; satu-satunya pemakaiannya di repo ini ada di root layout, untuk dua
+// string yang ditulis pengembang (kontrak arah dan skrip tema anti-FOUC).
 
-import Icon from "./Icon.jsx";
+import { KeyValue, KeyValues, NotAvailable, Tag } from "./PageShell.jsx";
 import { gloss } from "../lib/gloss.js";
+
+/** @param {{ text: string }} props */
+function Gloss({ text }) {
+  const en = gloss(text);
+  if (!en) return null;
+  return (
+    <span className="mt-1.5 flex items-start gap-2 text-[13px] leading-relaxed text-muted">
+      <span className="mt-px shrink-0 rounded border border-border px-1 font-mono text-[10px] uppercase text-faint">
+        en
+      </span>
+      {en}
+    </span>
+  );
+}
 
 /**
  * @param {{ checks: { check: string, criterion: string, status: string, detail: string,
@@ -19,9 +33,9 @@ import { gloss } from "../lib/gloss.js";
 export default function Checks({ checks, criteria }) {
   if (!checks || checks.length === 0) {
     return (
-      <p className="none">
-        not available — this bundle carries no `evaluation` block, so there are no
-        per-criterion check results to show.
+      <p className="text-sm text-faint">
+        not available. This bundle carries no <code className="font-mono">evaluation</code> block,
+        so there are no per-criterion check results to show.
       </p>
     );
   }
@@ -30,65 +44,75 @@ export default function Checks({ checks, criteria }) {
   for (const c of criteria ?? []) criterionText[c.id] = c.text;
 
   return (
-    <div>
+    <div className="flex flex-col gap-4">
       {checks.map((c, i) => (
-        <div className="card" key={c.criterion + ":" + i}>
-          <div className="row" style={{ margin: 0, justifyContent: "space-between" }}>
-            <strong className="mono">{c.criterion}</strong>
-            <span className={"tag " + c.status}>
-              <Icon name={c.status === "pass" ? "check" : c.status === "fail" ? "x" : "triangle-alert"} size={11} />
-              {c.status}
-            </span>
-          </div>
-          {criterionText[c.criterion] ? (
-            <p className="lead" style={{ margin: "6px 0" }}>
-              {criterionText[c.criterion]}
-              {gloss(criterionText[c.criterion]) ? (
-                <span className="gloss">
-                  <span>EN</span>
-                  {gloss(criterionText[c.criterion])}
+        <article
+          key={c.criterion + ":" + i}
+          className="overflow-hidden rounded-2xl border border-border bg-surface"
+        >
+          <header className="flex items-center justify-between gap-4 border-b border-border px-5 py-4">
+            <h3 className="min-w-0 truncate font-mono text-sm font-medium text-ink">
+              {c.criterion}
+            </h3>
+            <Tag status={c.status} />
+          </header>
+
+          <div className="px-5 py-4">
+            {criterionText[c.criterion] && (
+              <p className="mb-4 max-w-prose text-sm leading-relaxed text-ink">
+                {criterionText[c.criterion]}
+                <Gloss text={criterionText[c.criterion]} />
+              </p>
+            )}
+
+            <KeyValues>
+              <KeyValue label="check">
+                <span className="font-mono text-xs">{c.check}</span>
+              </KeyValue>
+              <KeyValue label="depth">
+                <span className="font-mono text-xs">{c.depth}</span>
+              </KeyValue>
+              <KeyValue label="section">
+                <span className="font-mono text-xs">
+                  {c.section === null || c.section === undefined ? (
+                    <NotAvailable />
+                  ) : c.section < 0 ? (
+                    "-1 (points at no single section)"
+                  ) : (
+                    String(c.section)
+                  )}
                 </span>
-              ) : null}
-            </p>
-          ) : null}
-          <dl className="kv" style={{ marginTop: 6 }}>
-            <dt>check</dt>
-            <dd className="mono">{c.check}</dd>
-            <dt>depth</dt>
-            <dd className="mono">{c.depth}</dd>
-            <dt>section</dt>
-            <dd className="mono">
-              {c.section === null || c.section === undefined ? (
-                <span className="none">not available</span>
-              ) : c.section < 0 ? (
-                "-1 (points at no single section)"
+              </KeyValue>
+              <KeyValue label="pattern id">
+                <span className="font-mono text-xs">
+                  {c.pattern ? c.pattern : <span className="text-faint">none</span>}
+                </span>
+              </KeyValue>
+              <KeyValue label="reason">
+                <span className="leading-relaxed">
+                  {c.detail}
+                  <Gloss text={c.detail} />
+                </span>
+              </KeyValue>
+            </KeyValues>
+
+            <div className="mt-5">
+              <h4 className="text-xs font-medium uppercase tracking-wide text-faint">
+                Evidence (proof)
+              </h4>
+              {c.proof ? (
+                <pre className="mt-2 overflow-x-auto rounded-xl border border-border bg-bg px-4 py-3.5 font-mono text-xs leading-relaxed text-ink">
+                  {c.proof}
+                </pre>
               ) : (
-                String(c.section)
+                <p className="mt-2 text-sm text-faint">
+                  not available. This check passed or was not verified, so the agent stored no
+                  excerpt.
+                </p>
               )}
-            </dd>
-            <dt>pattern id</dt>
-            <dd className="mono">{c.pattern ? c.pattern : <span className="none">none</span>}</dd>
-            <dt>reason</dt>
-            <dd>
-              {c.detail}
-              {gloss(c.detail) ? (
-                <span className="gloss">
-                  <span>EN</span>
-                  {gloss(c.detail)}
-                </span>
-              ) : null}
-            </dd>
-          </dl>
-          <h3 style={{ marginBottom: 0 }}>evidence (proof)</h3>
-          {c.proof ? (
-            <pre className="proof">{c.proof}</pre>
-          ) : (
-            <p className="none" style={{ marginTop: 4 }}>
-              not available — this check passed or was not verified, so the agent stored no
-              excerpt.
-            </p>
-          )}
-        </div>
+            </div>
+          </div>
+        </article>
       ))}
     </div>
   );

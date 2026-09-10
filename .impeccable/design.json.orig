@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-10T11:02:41+07:00",
+  "title": "Design System: Referi Execution Passport",
+  "extensions": {
+    "colorMeta": {
+      "background": { "role": "neutral", "displayName": "Void", "canonical": "#090b0e", "tonalRamp": ["#090b0e", "#0d1115", "#11161c", "#161d24", "#29313a", "#52606d", "#9aa5b1", "#f0f3f6"] },
+      "primary": { "role": "primary", "displayName": "Electric Blue", "canonical": "#3b7cff", "tonalRamp": ["#07142e", "#0b2251", "#15366f", "#234c9d", "#3b7cff", "#6c9bff", "#a5c2ff", "#e9f0ff"] },
+      "success": { "role": "secondary", "displayName": "Proof Green", "canonical": "#54d39a", "tonalRamp": ["#071a14", "#0b2a20", "#102d25", "#1f634b", "#54d39a", "#8ce5bb", "#c2f3db", "#ecfff5"] },
+      "warning": { "role": "tertiary", "displayName": "Control Amber", "canonical": "#f2b94b", "tonalRamp": ["#1b1305", "#2a1e0b", "#342a16", "#71531d", "#f2b94b", "#f7d58d", "#fbe9c4", "#fff8e8"] },
+      "danger": { "role": "tertiary", "displayName": "Guard Red", "canonical": "#ff746b", "tonalRamp": ["#1e090b", "#2b1013", "#351a1c", "#783035", "#ff746b", "#ffaca6", "#ffd3d0", "#fff0ef"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Editorial instrument", "purpose": "Product thesis and major statements." },
+      "body": { "displayName": "Readable operator text", "purpose": "Instructions and explanations." },
+      "label": { "displayName": "Evidence mono", "purpose": "Identifiers, measurements, and state vocabulary." }
+    },
+    "shadows": [
+      { "name": "none-at-rest", "value": "none", "purpose": "Surfaces use tonal layering and instrument-line borders instead of floating shadows." },
+      { "name": "focus-ring", "value": "0 0 0 3px rgba(59, 124, 255, 0.12)", "purpose": "Keyboard and input focus communicates the active control." },
+      { "name": "signal-glow", "value": "0 0 0 4px rgba(84, 211, 154, 0.08)", "purpose": "The small live signal indicates operational fixture state." }
+    ],
+    "motion": [
+      { "name": "ease-standard", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "State and navigation transitions." },
+      { "name": "proof-reveal", "value": "opacity 650ms + translateY(14px)", "purpose": "Section reveal when evidence enters the viewport; disabled for reduced motion." },
+      { "name": "preflight-pulse", "value": "1.2s ease-in-out", "purpose": "Communicates that the agent is evaluating, not decoration." }
+    ],
+    "breakpoints": [
+      { "name": "tablet", "value": "980px" },
+      { "name": "mobile", "value": "680px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The blue control that advances the execution proof flow.",
+      "html": "<button class=\"ds-btn-primary\">RUN AGENT PREFLIGHT <svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 12h14M12 5l7 7-7 7\"/></svg></button>",
+      "css": ".ds-btn-primary { min-height: 44px; padding: 0 17px; display: inline-flex; align-items: center; gap: 11px; background: #3b7cff; color: #fff; border: 1px solid #3b7cff; border-radius: 6px; font: 600 13px var(--font-sans, sans-serif); transition: background 180ms cubic-bezier(.16,1,.3,1), color 180ms cubic-bezier(.16,1,.3,1), transform 180ms cubic-bezier(.16,1,.3,1); } .ds-btn-primary:hover { background: #6c9bff; color: #090b0e; transform: translateY(-1px); } .ds-btn-primary:focus-visible { outline: 2px solid #6c9bff; outline-offset: 4px; } .ds-btn-primary svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }"
+    },
+    {
+      "name": "Action Input",
+      "kind": "input",
+      "refersTo": "input-action",
+      "description": "Monospace numeric field for the bounded rebalance proposal.",
+      "html": "<label class=\"ds-field-label\" for=\"amount\">REBALANCE AMOUNT</label><input class=\"ds-input-action\" id=\"amount\" value=\"100000\" inputmode=\"numeric\" />",
+      "css": ".ds-field-label { display: block; margin-bottom: 10px; color: #c4ccd4; font: 600 12px var(--font-sans, sans-serif); } .ds-input-action { width: 100%; min-height: 58px; padding: 0 15px; background: #0d1115; color: #f0f3f6; border: 1px solid #3c4854; border-radius: 6px; font: 500 20px var(--font-mono, monospace); outline: none; } .ds-input-action:focus-visible { border-color: #3b7cff; box-shadow: 0 0 0 3px rgba(59,124,255,.12); }"
+    },
+    {
+      "name": "Decision Chip",
+      "kind": "chip",
+      "refersTo": "status-chip",
+      "description": "Compact text-first state indicator for the execution gate.",
+      "html": "<span class=\"ds-chip ds-chip-block\">BLOCKED</span>",
+      "css": ".ds-chip { display: inline-flex; align-items: center; padding: 7px 9px; border: 1px solid currentColor; border-radius: 4px; font: 600 10px var(--font-mono, monospace); letter-spacing: .06em; } .ds-chip-block { color: #ff746b; background: #351a1c; } .ds-chip-pass { color: #54d39a; background: #102d25; } .ds-chip-review { color: #f2b94b; background: #342a16; } .ds-chip:focus-visible { outline: 2px solid #6c9bff; outline-offset: 3px; }"
+    },
+    {
+      "name": "Execution Console",
+      "kind": "custom",
+      "refersTo": "console-panel",
+      "description": "Structured gate surface that pairs action, proof rows, decision, and next action.",
+      "html": "<section class=\"ds-console\"><header><h2>Execution gate</h2><span class=\"ds-chip ds-chip-block\">BLOCKED</span></header><div class=\"ds-proof\"><strong>Oracle freshness</strong><span>BLOCK</span></div><footer><p>Known failure mechanism recalled: oracle freshness is not proven.</p><button class=\"ds-btn-primary\">RUN PREFLIGHT</button></footer></section>",
+      "css": ".ds-console { border: 1px solid #3c4854; background: #11161c; color: #f0f3f6; } .ds-console header { min-height: 92px; padding: 18px 22px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid #29313a; } .ds-console h2 { margin: 0; font: 450 32px/1.02 var(--font-display, Georgia, serif); letter-spacing: -.045em; } .ds-proof { min-height: 64px; padding: 0 22px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #29313a; font: 600 13px var(--font-sans, sans-serif); } .ds-proof span { color: #ff746b; font: 600 10px var(--font-mono, monospace); } .ds-console footer { padding: 20px 22px 22px; } .ds-console p { color: #c4ccd4; font: 400 12px/1.55 var(--font-sans, sans-serif); }"
+    },
+    {
+      "name": "Passport Sheet",
+      "kind": "custom",
+      "description": "Typed passport preview that makes action binding inspectable after all proofs pass.",
+      "html": "<section class=\"ds-passport\"><header><span>ExecutionPassport</span><span> EIP-712 / VALID</span></header><pre>{\"actionClass\":\"treasury-rebalance\",\"nonce\":42}</pre></section>",
+      "css": ".ds-passport { border: 1px solid #54d39a; background: rgba(16,45,37,.2); color: #bcebd7; } .ds-passport header { padding: 13px 17px; display: flex; justify-content: space-between; border-bottom: 1px solid rgba(84,211,154,.35); color: #c4ccd4; font: 500 10px var(--font-mono, monospace); } .ds-passport header span:last-child { color: #54d39a; } .ds-passport pre { min-height: 220px; margin: 0; padding: 20px; font: 400 11px/1.7 var(--font-mono, monospace); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Proof Observatory",
+    "overview": "Referi is expressed as a dark protocol console: a quiet, instrument-like environment where the user can watch evidence become permission. Near-black fields create the working surface; thin structural lines and monospace measurements expose the control plane; electric blue marks interaction; green, amber, and red are reserved for decisions and trust boundaries.\n\nThe system is intentionally operational rather than ornamental. The primary composition gives the action and the gate equal presence, so the visitor can propose a rebalance and inspect the agent's reasoning in the same scene. The signature is a proof cascade: memory, obligations, passport, and exactly-once outcome unfold without leaving the task.",
+    "keyCharacteristics": ["Matte dark surfaces with instrument-line borders.", "Fraunces headlines paired with Space Grotesk body copy and JetBrains Mono data.", "Electric blue for controls; semantic colors only for state.", "Flat tonal depth; no decorative card shadows."],
+    "rules": [
+      { "name": "The Signal Rarity Rule", "body": "Blue is for user control; green, amber, and red are reserved for proof state, review, incident, and rejection. Do not use semantic colors as decoration.", "section": "colors" },
+      { "name": "The Data-in-Mono Rule", "body": "Monospace is evidence language, not a costume: use it for values, hashes, selectors, timestamps, action classes, and state labels.", "section": "typography" },
+      { "name": "The Instrument-Line Rule", "body": "A container earns a border when it separates evidence or controls; it does not receive a shadow just to look important.", "section": "elevation" }
+    ],
+    "dos": ["Do keep the action, memory, proof, and outcome in one connected reading path.", "Do reserve monospace for data and system vocabulary.", "Do use text and icons with semantic colors so status is never color-only.", "Do label all fixture values and keep the testnet/no-real-funds boundary visible.", "Do use wide breathing room around the execution scene and tighter rhythm inside the gate."],
+    "donts": ["Don't turn Referi into a portfolio dashboard, wallet, or generic DeFi terminal.", "Don't use semantic green as a decorative accent or blue as a risk signal.", "Don't add floating card shadows, gradient text, or ornamental gradients.", "Don't present the fixture preview as a signed production passport or a real transaction.", "Don't hide a failed obligation behind a collapsed explanation or animation."]
+  }
+}

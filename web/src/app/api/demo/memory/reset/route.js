@@ -1,6 +1,6 @@
 // Proksi same-origin ke endpoint hapus memori milik `agent/`.
 //
-// KENAPA PROKSI, bukan fetch langsung dari browser ke :8010 — diukur, bukan diduga:
+// KENAPA PROKSI, bukan fetch langsung dari browser ke :8010, diukur, bukan diduga:
 //   $ curl -i -X OPTIONS http://127.0.0.1:8010/demo/memory/reset \
 //       -H 'Origin: http://localhost:3000' -H 'Access-Control-Request-Method: POST'
 //     HTTP/1.0 501 Unsupported method ('OPTIONS')
@@ -15,7 +15,7 @@
 //   fetch('http://127.0.0.1:8010/demo/memory/reset', {method:'POST', mode:'no-cors',
 //         headers:{'content-type':'text/plain'}, body:'{}'})
 // TANPA preflight; permintaannya tetap sampai dan penghapusan tetap terjadi, hanya
-// responsnya yang buram bagi penyerang. Menghapus adalah efek samping, bukan bacaan —
+// responsnya yang buram bagi penyerang. Menghapus adalah efek samping, bukan bacaan,
 // jadi CORS tidak pernah menjadi pertahanan di sini. Yang benar-benar menahan adalah
 // (a) sisi agen menolak peer non-loopback dan (b) cek same-origin di bawah.
 //
@@ -38,7 +38,7 @@ const RESET_PATH = "/demo/memory/reset";
 const TIMEOUT_MS = 10_000;
 
 // Header yang dikirim KE sisi agen. Dikumpulkan di satu tempat karena sisi 8010 boleh
-// memperketat syaratnya (mis. mewajibkan `content-type` persis, atau token) — proksi
+// memperketat syaratnya (mis. mewajibkan `content-type` persis, atau token), proksi
 // ini pemanggil sisi-server, jadi ia bebas mengirim apa pun yang diwajibkan dan hanya
 // konstanta ini yang perlu berubah.
 const UPSTREAM_HEADERS = { "content-type": "application/json" };

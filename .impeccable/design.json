@@ -1,0 +1,290 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-10T00:00:00Z",
+  "title": "Design System: Referi",
+  "extensions": {
+    "note": "Values recorded from the built code in web/src. web/src/app/globals.css is the single source of truth: :root / [data-theme=\"dark\"] and [data-theme=\"light\"] declare every token at full strength, and @theme inline re-exports them as Tailwind v4 utilities. Frontmatter carries the dark (default) value; `light` below carries the light-theme value for the same token.",
+    "colorMeta": {
+      "bg": {
+        "role": "neutral",
+        "displayName": "Ground",
+        "canonical": "oklch(0.145 0 0)",
+        "light": "oklch(0.995 0 0)",
+        "tonalRamp": ["oklch(0.145 0 0)", "oklch(0.225 0 0)", "oklch(0.34 0 0)", "oklch(0.47 0 0)", "oklch(0.58 0 0)", "oklch(0.74 0 0)", "oklch(0.9 0 0)", "oklch(0.995 0 0)"]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Surface",
+        "canonical": "oklch(0.185 0 0)",
+        "light": "oklch(0.975 0 0)",
+        "tonalRamp": ["oklch(0.145 0 0)", "oklch(0.225 0 0)", "oklch(0.34 0 0)", "oklch(0.47 0 0)", "oklch(0.58 0 0)", "oklch(0.74 0 0)", "oklch(0.9 0 0)", "oklch(0.995 0 0)"]
+      },
+      "surface-2": {
+        "role": "neutral",
+        "displayName": "Surface Raised",
+        "canonical": "oklch(0.225 0 0)",
+        "light": "oklch(0.95 0 0)",
+        "tonalRamp": ["oklch(0.145 0 0)", "oklch(0.225 0 0)", "oklch(0.34 0 0)", "oklch(0.47 0 0)", "oklch(0.58 0 0)", "oklch(0.74 0 0)", "oklch(0.9 0 0)", "oklch(0.995 0 0)"]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(0.275 0 0)",
+        "light": "oklch(0.9 0 0)",
+        "tonalRamp": ["oklch(0.145 0 0)", "oklch(0.225 0 0)", "oklch(0.34 0 0)", "oklch(0.47 0 0)", "oklch(0.58 0 0)", "oklch(0.74 0 0)", "oklch(0.9 0 0)", "oklch(0.995 0 0)"]
+      },
+      "border-strong": {
+        "role": "neutral",
+        "displayName": "Hairline Strong",
+        "canonical": "oklch(0.34 0 0)",
+        "light": "oklch(0.82 0 0)",
+        "tonalRamp": ["oklch(0.145 0 0)", "oklch(0.225 0 0)", "oklch(0.34 0 0)", "oklch(0.47 0 0)", "oklch(0.58 0 0)", "oklch(0.74 0 0)", "oklch(0.9 0 0)", "oklch(0.995 0 0)"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "oklch(0.975 0 0)",
+        "light": "oklch(0.22 0 0)",
+        "tonalRamp": ["oklch(0.145 0 0)", "oklch(0.225 0 0)", "oklch(0.34 0 0)", "oklch(0.47 0 0)", "oklch(0.58 0 0)", "oklch(0.74 0 0)", "oklch(0.9 0 0)", "oklch(0.995 0 0)"]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted",
+        "canonical": "oklch(0.74 0 0)",
+        "light": "oklch(0.45 0 0)",
+        "tonalRamp": ["oklch(0.145 0 0)", "oklch(0.225 0 0)", "oklch(0.34 0 0)", "oklch(0.47 0 0)", "oklch(0.58 0 0)", "oklch(0.74 0 0)", "oklch(0.9 0 0)", "oklch(0.995 0 0)"]
+      },
+      "faint": {
+        "role": "neutral",
+        "displayName": "Faint",
+        "canonical": "oklch(0.58 0 0)",
+        "light": "oklch(0.47 0 0)",
+        "deviation": "The light value is deliberately darker than the Veritas reference's oklch(0.56 0 0), which measures roughly 3.7:1 on the light ground and misses WCAG AA 4.5:1 for the small mono labels this token carries. See docs/decisions.md ADR-032 §6.",
+        "tonalRamp": ["oklch(0.145 0 0)", "oklch(0.225 0 0)", "oklch(0.34 0 0)", "oklch(0.47 0 0)", "oklch(0.58 0 0)", "oklch(0.74 0 0)", "oklch(0.9 0 0)", "oklch(0.995 0 0)"]
+      },
+      "primary": {
+        "role": "primary",
+        "displayName": "Referi Blue",
+        "canonical": "oklch(0.522 0.267 263.3)",
+        "light": "oklch(0.522 0.267 263.3)",
+        "hex": "#004eff",
+        "tonalRamp": ["oklch(0.2 0.13 263)", "oklch(0.3 0.19 263)", "oklch(0.4 0.24 263)", "oklch(0.47 0.25 263)", "oklch(0.522 0.267 263.3)", "oklch(0.575 0.247 263)", "oklch(0.7 0.2 263)", "oklch(0.78 0.13 263)"]
+      },
+      "primary-hover": {
+        "role": "primary",
+        "displayName": "Blue Hover",
+        "canonical": "oklch(0.575 0.247 263)",
+        "light": "oklch(0.47 0.25 263)",
+        "tonalRamp": ["oklch(0.2 0.13 263)", "oklch(0.3 0.19 263)", "oklch(0.4 0.24 263)", "oklch(0.47 0.25 263)", "oklch(0.522 0.267 263.3)", "oklch(0.575 0.247 263)", "oklch(0.7 0.2 263)", "oklch(0.78 0.13 263)"]
+      },
+      "primary-ink": {
+        "role": "primary",
+        "displayName": "Readable Blue",
+        "canonical": "oklch(0.78 0.13 263)",
+        "light": "oklch(0.5 0.25 263)",
+        "tonalRamp": ["oklch(0.2 0.13 263)", "oklch(0.3 0.19 263)", "oklch(0.4 0.24 263)", "oklch(0.47 0.25 263)", "oklch(0.522 0.267 263.3)", "oklch(0.575 0.247 263)", "oklch(0.7 0.2 263)", "oklch(0.78 0.13 263)"]
+      },
+      "on-primary": {
+        "role": "primary",
+        "displayName": "On Primary",
+        "canonical": "oklch(0.99 0 0)",
+        "light": "oklch(0.995 0 0)",
+        "tonalRamp": ["oklch(0.145 0 0)", "oklch(0.225 0 0)", "oklch(0.34 0 0)", "oklch(0.47 0 0)", "oklch(0.58 0 0)", "oklch(0.74 0 0)", "oklch(0.9 0 0)", "oklch(0.995 0 0)"]
+      },
+      "ring": {
+        "role": "primary",
+        "displayName": "Ring Blue",
+        "canonical": "oklch(0.7 0.2 263)",
+        "light": "oklch(0.55 0.24 263)",
+        "tonalRamp": ["oklch(0.2 0.13 263)", "oklch(0.3 0.19 263)", "oklch(0.4 0.24 263)", "oklch(0.47 0.25 263)", "oklch(0.522 0.267 263.3)", "oklch(0.575 0.247 263)", "oklch(0.7 0.2 263)", "oklch(0.78 0.13 263)"]
+      },
+      "proof-pass": {
+        "role": "tertiary",
+        "displayName": "Proof Pass",
+        "canonical": "oklch(0.72 0.17 152)",
+        "light": "oklch(0.52 0.15 152)",
+        "tonalRamp": ["oklch(0.3 0.07 152)", "oklch(0.4 0.11 152)", "oklch(0.52 0.15 152)", "oklch(0.6 0.16 152)", "oklch(0.66 0.17 152)", "oklch(0.72 0.17 152)", "oklch(0.83 0.13 152)", "oklch(0.93 0.07 152)"]
+      },
+      "proof-review": {
+        "role": "tertiary",
+        "displayName": "Proof Review",
+        "canonical": "oklch(0.8 0.15 85)",
+        "light": "oklch(0.56 0.12 70)",
+        "tonalRamp": ["oklch(0.32 0.06 85)", "oklch(0.44 0.09 85)", "oklch(0.56 0.12 85)", "oklch(0.66 0.14 85)", "oklch(0.73 0.15 85)", "oklch(0.8 0.15 85)", "oklch(0.89 0.11 85)", "oklch(0.96 0.06 85)"]
+      },
+      "proof-block": {
+        "role": "tertiary",
+        "displayName": "Proof Block",
+        "canonical": "oklch(0.62 0.21 25)",
+        "light": "oklch(0.55 0.2 25)",
+        "tonalRamp": ["oklch(0.28 0.1 25)", "oklch(0.38 0.14 25)", "oklch(0.47 0.18 25)", "oklch(0.55 0.2 25)", "oklch(0.62 0.21 25)", "oklch(0.71 0.18 25)", "oklch(0.83 0.12 25)", "oklch(0.93 0.06 25)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "The single page headline in the execution room. One per page, written as a full sentence. Fraunces variable, axes opsz / SOFT / WONK." },
+      "headline": { "displayName": "Headline", "purpose": "Section headlines: the passport, the refusal, the outcome, the memory argument. Every one is a sentence with a full stop." },
+      "title": { "displayName": "Title", "purpose": "Panel and card headings (20px; 18px in the gate console header; 36px for inner-page PageHeader titles)." },
+      "body": { "displayName": "Body", "purpose": "Prose and ledes at 15px, capped around 60-70ch by max-w-xl / max-w-2xl. An 18px step is used once, for the hero sub-paragraph." },
+      "body-compact": { "displayName": "Body Compact", "purpose": "Denser panel prose, list rows and nav labels at 14px; a 13px step handles in-panel explanations." },
+      "label": { "displayName": "Label", "purpose": "Proof-state words, decision chips, status tags and group labels. Always mono, always uppercase, always paired with an icon." },
+      "data": { "displayName": "Data", "purpose": "Obligation ids, hashes, addresses, file paths, chain labels and JSON. Mono; often at --faint when it is a key rather than a value." }
+    },
+    "shadows": [
+      {
+        "name": "primary-inset-edge",
+        "value": "0 1px 0 oklch(1 0 0 / 0.12) inset",
+        "purpose": "The only box-shadow in the codebase. A material top edge on the primary button's saturated fill — not elevation, and not a pattern to extend. The system has no shadow vocabulary; depth is one tone step plus a 1px hairline."
+      }
+    ],
+    "motion": [
+      { "name": "ease-out-expo", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "The authored moment: obligation rows arriving, scroll reveals, the passport unsealing. Also exported as EASE from web/src/components/motion.jsx." },
+      { "name": "ease-out-quart", "value": "cubic-bezier(0.25, 1, 0.5, 1)", "purpose": "Ambient and feedback timing: the preflight scanline, the stage-marker pulse, the theme crossfade." },
+      { "name": "duration-control", "value": "150ms", "purpose": "Button background / border / transform response." },
+      { "name": "duration-state", "value": "240ms", "purpose": "Keyed, enter-only decision chip replacement." },
+      { "name": "duration-obligation", "value": "420ms, 75ms stagger", "purpose": "Proof obligation rows entering from x:10 under the scanline." },
+      { "name": "duration-reveal", "value": "600-700ms", "purpose": "Scroll reveals (14-18px rise, once) and the .reveal keyframe on first paint." },
+      { "name": "duration-unseal", "value": "750ms", "purpose": "The passport clip-path unseal: inset(0 0 100% 0) to inset(0 0 0% 0)." },
+      { "name": "duration-theme", "value": "280ms", "purpose": "Colour crossfade, applied only while html.theme-anim is present — i.e. only when the user presses the toggle, never on load." },
+      { "name": "spring-marker", "value": "spring, stiffness 420-480, damping 38-40", "purpose": "The sliding nav marker and stage-rail underline (shared layoutId). One marker moves; four never appear and disappear." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "container", "value": "1152px (max-w-6xl) with 20px gutters at every width" }
+    ],
+    "themeSwitch": {
+      "attribute": "data-theme on <html>, values \"dark\" (default) and \"light\"",
+      "resolution": "?theme= query param wins, then localStorage key referi-theme, then prefers-color-scheme; applied by an inline script before first paint so the page never flashes.",
+      "source": "web/src/components/theme/ThemeProvider.jsx"
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The page's main action. Referi Blue fill with a 1px inset highlight, and its own outline focus ring because that highlight would otherwise beat the global box-shadow ring.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Run agent preflight<svg class=\"ds-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.25\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14m-7-7 7 7-7 7\"/></svg></button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: var(--font-sans), system-ui, sans-serif; font-weight: 500; white-space: nowrap; border: 0; cursor: pointer; border-radius: 10px; height: 40px; padding: 0 16px; font-size: 14px; transition: background 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out, transform 150ms ease-out; } .ds-btn:active { transform: translateY(1px); } .ds-btn:disabled { opacity: 0.5; pointer-events: none; } .ds-icon { width: 16px; height: 16px; } .ds-btn-primary { background: var(--primary); color: var(--on-primary); box-shadow: 0 1px 0 oklch(1 0 0 / 0.12) inset; } .ds-btn-primary:hover { background: var(--primary-hover); } .ds-btn-primary:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "The workhorse control: every fixture toggle, every refusal test, every in-page jump. Raised surface with a hairline that strengthens on hover.",
+      "html": "<button class=\"ds-btn ds-btn-secondary\">Refresh oracle fixture</button>",
+      "css": ".ds-btn-secondary { background: var(--surface-2); color: var(--ink); border: 1px solid var(--border); } .ds-btn-secondary:hover { border-color: var(--border-strong); } .ds-btn-secondary:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring); }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "The default quiet panel: one tone step up from the ground plus a hairline. No shadow, ever.",
+      "html": "<div class=\"ds-card\"><header class=\"ds-card-head\"><h3 class=\"ds-card-title\">Proposed action</h3><span class=\"ds-card-meta\">Base Sepolia &middot; 84532</span></header><div class=\"ds-card-body\">MockTreasury.rebalance(120,000)</div></div>",
+      "css": ".ds-card { border-radius: 14px; border: 1px solid var(--border); background: var(--surface); overflow: hidden; } .ds-card-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border); padding: 16px 20px; } .ds-card-title { margin: 0; font-family: var(--font-display), Georgia, serif; font-size: 18px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); } .ds-card-meta { font-family: var(--font-mono), ui-monospace, monospace; font-size: 12px; color: var(--faint); } .ds-card-body { padding: 16px 20px; font-family: var(--font-mono), ui-monospace, monospace; font-size: 14px; color: var(--ink); }"
+    },
+    {
+      "name": "Status Tag",
+      "kind": "chip",
+      "refersTo": "tag-pass",
+      "description": "The portable state marker. Icon plus word, always — status is never carried by colour alone. Anything that is neither pass nor fail renders amber as unverified, never as a silent pass.",
+      "html": "<span class=\"ds-tag ds-tag-pass\"><svg class=\"ds-tag-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M20 6 9 17l-5-5\"/></svg>pass</span> <span class=\"ds-tag ds-tag-review\"><svg class=\"ds-tag-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\"/><path d=\"M12 9v4\"/><path d=\"M12 17h.01\"/></svg>review</span> <span class=\"ds-tag ds-tag-block\"><svg class=\"ds-tag-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M18 6 6 18M6 6l12 12\"/></svg>fail</span>",
+      "css": ".ds-tag { display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; border: 1px solid; padding: 4px 8px; font-family: var(--font-mono), ui-monospace, monospace; font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.025em; } .ds-tag-icon { width: 12px; height: 12px; } .ds-tag-pass { border-color: color-mix(in oklch, var(--proof-pass) 40%, transparent); background: color-mix(in oklch, var(--proof-pass) 10%, transparent); color: var(--proof-pass); } .ds-tag-review { border-color: color-mix(in oklch, var(--proof-review) 40%, transparent); background: color-mix(in oklch, var(--proof-review) 10%, transparent); color: var(--proof-review); } .ds-tag-block { border-color: color-mix(in oklch, var(--proof-block) 40%, transparent); background: color-mix(in oklch, var(--proof-block) 10%, transparent); color: var(--proof-block); }"
+    },
+    {
+      "name": "Amount Input",
+      "kind": "input",
+      "refersTo": "input-amount",
+      "description": "The one real field in the product. The wrapper is the object: focus and error both land on the frame, not the bare input, and the unit suffix lives inside it.",
+      "html": "<div class=\"ds-field\"><input class=\"ds-field-input\" inputmode=\"numeric\" value=\"120000\" aria-label=\"Rebalance amount\"><span class=\"ds-field-unit\">MOCK</span></div>",
+      "css": ".ds-field { display: flex; align-items: center; height: 56px; max-width: 384px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); transition: border-color 150ms ease-out; } .ds-field:focus-within { border-color: var(--primary); } .ds-field[data-invalid] { border-color: var(--proof-block); } .ds-field-input { flex: 1 1 auto; min-width: 0; background: transparent; border: 0; outline: none; padding: 0 16px; font-family: var(--font-mono), ui-monospace, monospace; font-size: 20px; font-variant-numeric: tabular-nums; color: var(--ink); caret-color: var(--primary-ink); } .ds-field-unit { padding-right: 16px; font-family: var(--font-mono), ui-monospace, monospace; font-size: 12px; color: var(--faint); }"
+    },
+    {
+      "name": "Navigation Link",
+      "kind": "nav",
+      "refersTo": "nav-link-active",
+      "description": "Header links as 14px pills. The active one takes a blue wash, readable-blue text and a 2px underline that slides between links via a shared layoutId — one marker moving, not four appearing.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-link ds-nav-link-active\" href=\"#\" aria-current=\"page\">Execution room<span class=\"ds-nav-marker\"></span></a><a class=\"ds-nav-link\" href=\"#\">On-chain record</a><a class=\"ds-nav-link\" href=\"#\">Judge panel</a></nav>",
+      "css": ".ds-nav { display: flex; align-items: center; gap: 4px; } .ds-nav-link { position: relative; border-radius: 8px; padding: 6px 12px; font-family: var(--font-sans), system-ui, sans-serif; font-size: 14px; font-weight: 500; text-decoration: none; color: var(--muted); transition: color 200ms ease-out, background 200ms ease-out; } .ds-nav-link:hover { background: var(--surface); color: var(--ink); } .ds-nav-link-active { background: color-mix(in oklch, var(--primary) 20%, transparent); color: var(--primary-ink); } .ds-nav-marker { position: absolute; left: 8px; right: 8px; bottom: 0; height: 2px; border-radius: 999px; background: var(--primary-ink); opacity: 0.8; } .ds-nav-link:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring); }"
+    },
+    {
+      "name": "Proof Obligation Row",
+      "kind": "custom",
+      "refersTo": "gate-console",
+      "description": "One row of the gate console. A row that did not pass is open by default — a refusal never hides its reason — and shows the label, its mono id, the state word, an explanation, and an Observed/Required pair.",
+      "html": "<div class=\"ds-proof\"><div class=\"ds-proof-head\"><span class=\"ds-proof-disc ds-proof-disc-block\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M18 6 6 18M6 6l12 12\"/></svg></span><span class=\"ds-proof-name\"><span class=\"ds-proof-label\">Oracle freshness</span><span class=\"ds-proof-id\">obl.oracle_freshness</span></span><span class=\"ds-proof-word\">BLOCK</span></div><div class=\"ds-proof-body\"><p class=\"ds-proof-why\">The observation is older than the remembered limit, so the price this action would move against cannot be trusted.</p><dl class=\"ds-proof-facts\"><div><dt>Observed</dt><dd>120 s</dd></div><div><dt>Required</dt><dd>&le; 30 s</dd></div></dl></div></div>",
+      "css": ".ds-proof { border-top: 1px solid var(--border); font-family: var(--font-sans), system-ui, sans-serif; } .ds-proof-head { display: flex; align-items: center; gap: 12px; padding: 16px 0; } .ds-proof-disc { display: grid; place-items: center; width: 24px; height: 24px; flex: 0 0 auto; border-radius: 999px; border: 1px solid; } .ds-proof-disc svg { width: 14px; height: 14px; } .ds-proof-disc-block { border-color: color-mix(in oklch, var(--proof-block) 60%, transparent); background: color-mix(in oklch, var(--proof-block) 10%, transparent); color: var(--proof-block); } .ds-proof-name { flex: 1 1 auto; min-width: 0; } .ds-proof-label { display: block; font-size: 14px; font-weight: 500; color: var(--ink); } .ds-proof-id { display: block; margin-top: 2px; font-family: var(--font-mono), ui-monospace, monospace; font-size: 12px; color: var(--faint); } .ds-proof-word { flex: 0 0 auto; font-family: var(--font-mono), ui-monospace, monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.025em; color: var(--proof-block); } .ds-proof-body { padding: 0 0 16px 36px; } .ds-proof-why { margin: 0; font-size: 13px; line-height: 1.625; color: var(--muted); } .ds-proof-facts { display: grid; gap: 12px; margin: 12px 0 0; grid-template-columns: 1fr 1fr; } .ds-proof-facts dt { border-top: 1px solid var(--border); padding-top: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.025em; color: var(--faint); } .ds-proof-facts dd { margin: 4px 0 0; font-family: var(--font-mono), ui-monospace, monospace; font-size: 12px; color: var(--ink); }"
+    },
+    {
+      "name": "Key / Value Row",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "The default shape for any evidence payload: a two-column dl at sm+, stacked below it, each row separated by a hairline. It is why the verdict, timeline, panel and firewall routes read as one product.",
+      "html": "<dl class=\"ds-kv\"><dt>calldataHash</dt><dd>0x7f21c4&hellip;9ab3</dd><dt>nonce</dt><dd>1</dd><dt>expires</dt><dd>60 s after issuance</dd></dl>",
+      "css": ".ds-kv { display: grid; grid-template-columns: minmax(0, 14rem) 1fr; column-gap: 32px; row-gap: 0; margin: 0; font-family: var(--font-sans), system-ui, sans-serif; } .ds-kv dt { border-top: 1px solid var(--border); padding: 14px 0 12px; font-family: var(--font-mono), ui-monospace, monospace; font-size: 12px; color: var(--faint); } .ds-kv dd { margin: 0; border-top: 1px solid var(--border); padding: 14px 0; font-size: 14px; color: var(--ink); overflow-wrap: break-word; } @media (max-width: 639px) { .ds-kv { grid-template-columns: 1fr; } .ds-kv dd { border-top: 0; padding-top: 0; } }"
+    },
+    {
+      "name": "Notice",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "A context band. info is a plain surface panel with a readable-blue glyph; warn is an amber tint with a triangle. The optional title runs inline with the body rather than on its own line.",
+      "html": "<div class=\"ds-notice ds-notice-warn\"><svg class=\"ds-notice-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\"/><path d=\"M12 9v4\"/><path d=\"M12 17h.01\"/></svg><div class=\"ds-notice-body\"><span class=\"ds-notice-title\">Limits you must read first.</span>This panel runs the deterministic checks only, inside a local process. The binding verdict is still the one announced on chain.</div></div>",
+      "css": ".ds-notice { display: flex; align-items: flex-start; gap: 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); padding: 16px 20px; font-family: var(--font-sans), system-ui, sans-serif; } .ds-notice-icon { width: 16px; height: 16px; flex: 0 0 auto; margin-top: 2px; color: var(--primary-ink); } .ds-notice-body { font-size: 14px; line-height: 1.625; color: var(--muted); } .ds-notice-title { margin-right: 6px; font-weight: 500; color: var(--ink); } .ds-notice-warn { border-color: color-mix(in oklch, var(--proof-review) 35%, transparent); background: color-mix(in oklch, var(--proof-review) 6%, transparent); } .ds-notice-warn .ds-notice-icon { color: var(--proof-review); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Instrument Panel",
+    "overview": "Referi looks like an instrument, not a report. The product's whole claim is that a past incident becomes a precondition — something that stands between an agent and a transaction — so the interface has to look like a thing that can refuse, not a thing that narrates. Every surface is a quiet chroma-0 ground with hairline-bordered panels laid on it, and the only saturated marks on the page are the ones that carry a decision: one brand blue for control, three signal colors for proof state. Nothing is tinted for mood.\n\nThe system is a port of the Veritas-UHI9 instrument world, pinned by the client as the visual authority (PRODUCT.md, \"Brand Commitments\"), with Referi supplying every fact. It is genuinely dual-theme: oklch(0.145 0 0) dark and oklch(0.995 0 0) light, both chroma-0, never a tinted near-black and never an off-white that leans warm. Type is a three-family pairing that separates the kinds of statement being made — Fraunces for the display voice, Hanken Grotesk for prose, IBM Plex Mono for anything that is a fact you could check.\n\nDensity is high but never crowded: an 1152px container, 20px gutters, and hairline rules that let a reader scan a panel row by row. Depth is done with one surface step and a 1px border; there is exactly one box-shadow utility in the entire codebase and it is a 1px inset highlight on the primary button. Motion is rationed to a single authored moment — the gate resolving — and everything else is feedback.",
+    "keyCharacteristics": [
+      "Chroma-0 neutral scale in oklch; every hue on screen is doing decision work",
+      "One brand blue (#004eff) for control, three proof colors for obligation state",
+      "14px hairline-bordered panels on a quiet surface; no shadow vocabulary",
+      "Fraunces display / Hanken Grotesk prose / IBM Plex Mono data",
+      "True light and dark, chosen before first paint, toggled by a real control",
+      "One authored motion moment; state swaps are enter-only and never animate a number"
+    ],
+    "rules": [
+      { "name": "The Signal Rarity Rule", "body": "Blue is the only brand and control color; --proof-pass, --proof-review, and --proof-block exist to say what a proof obligation did, and nothing else. If a color is on the screen and you cannot name the decision it reports, remove it. Test: on any full page, the saturated pixels should all be traceable to a control the user can press or a state the verifier produced.", "section": "colors" },
+      { "name": "The Never-Color-Alone Rule", "body": "No status is ever carried by color alone. Every proof state ships an icon and a word: PASS with a check, BLOCK with an X, REVIEW with a triangle (PROOF_TONE and DECISION_TONE in web/src/components/ExecutionRoom.jsx; Tag in web/src/components/PageShell.jsx). A new state needs all three or it does not ship.", "section": "colors" },
+      { "name": "The Legibility-Over-Parity Rule", "body": "Where the reference world and legibility disagree, legibility wins and the deviation gets written down. Light-theme --faint is oklch(0.47 0 0), not the reference's 0.56: at 0.56 it measures roughly 3.7:1 on the light ground, below WCAG AA 4.5:1, and this token carries the small mono labels that name obligations and files. The visual difference is imperceptible; the contrast failure was not. Recorded in docs/decisions.md ADR-032 §6.", "section": "colors" },
+      { "name": "The Two Real Themes Rule", "body": "Light is not a computed inversion. Both themes declare every token, and three of them change meaning between themes rather than just value: --primary-hover reverses direction, --primary-ink darkens to clear 7:1 on white, and all three proof hues darken so colored text stays readable on a light tint.", "section": "colors" },
+      { "name": "The Mono-Carries-Fact Rule", "body": "IBM Plex Mono marks a checkable fact: an id, a hash, a calldata shape, a threshold, an amount, a state word. Prose never uses it, and a number that is a claim about state is never set in the prose face.", "section": "typography" },
+      { "name": "The Tabular Number Rule", "body": "Any figure that can change under the reader — a reserve, an amount, a count — carries .tnum (font-variant-numeric: tabular-nums) so digits do not reflow between states.", "section": "typography" },
+      { "name": "The Sentence Headline Rule", "body": "Headlines are sentences with full stops, not labels. \"The passport is the gate.\" and \"Exact action executed.\" are the house voice; \"Gate Console\" is not.", "section": "typography" },
+      { "name": "The One Container Rule", "body": "1152px and 20px gutters, on every route, at every width. A surface that needs more room gets a wider internal grid, not a wider container.", "section": "layout" },
+      { "name": "The Hairline Separates Rule", "body": "Structure is communicated by 1px rules, not by padding. If two blocks need to read as distinct, put a border between them.", "section": "layout" },
+      { "name": "The Flat-Forever Rule", "body": "No shadows. A surface that needs to stand out changes its tone step or its border, never its elevation. The one inset highlight on the primary button is a material edge, not a shadow, and it is not a pattern to extend.", "section": "elevation" },
+      { "name": "The Recess-By-Nesting Rule", "body": "Inside a raised panel, sub-panels go back down to the page ground. Two consecutive raises never stack.", "section": "elevation" },
+      { "name": "The Radius Ladder Rule", "body": "Corner radius rises with the weight of the container: 8px for chips, 10px for controls, 12-14px for panels, 16px for evidence, 20px for the three surfaces that carry the product's central claim. Do not give a new element 20px unless it is a peer of the gate console.", "section": "shapes" },
+      { "name": "The Focus Ring Survives Rule", "body": "Never add focus-visible:outline-none to the Button base string, or to any control whose variant carries a shadow-* utility. The base layer already removes the browser outline for the whole page and replaces it with a box-shadow ring; the primary variant's inset-highlight shadow overrides that ring, which is why it declares an outline of its own. Re-add the utility and the page's main action becomes the only control invisible under Tab.", "section": "components" },
+      { "name": "The No-Exit Rule", "body": "AnimatePresence is not used anywhere in this project, and no state element has an exit animation. A stale passport or decision chip that fades out still reads as permission for as long as it is on screen. Invalidated results disappear instantly; state swaps are keyed and enter-only (docs/decisions.md ADR-032 §4).", "section": "components" },
+      { "name": "The Numbers Never Animate Rule", "body": "The reference kit's CountUp is deliberately not adopted. It sat on the post-action treasury reserve, which is a factual claim about state — and a requestAnimationFrame throttled in a background tab leaves a wrong figure on screen. State values render as-is (ADR-032 §5).", "section": "components" },
+      { "name": "The Activity-Gated Canvas Rule", "body": "The ProofLens requestAnimationFrame loop stops once the lens settles and the reveal has decayed — an idle page paints nothing. It also stops on visibilitychange. Under prefers-reduced-motion it renders one static resolved frame and never tracks the pointer.", "section": "components" },
+      { "name": "The Draw-It-Twice Rule", "body": "The GateChain diagram is authored twice — a horizontal composition at sm+ and a genuinely re-derived stacked one below sm — not scaled. A horizontal SVG squeezed to 340px puts its labels near 7px, and an unreadable diagram is worse than no diagram. The stacked version re-solves the convergence too: the four obligations gather onto a single rail before touching the gate, because the gate is below rather than beside them.", "section": "components" }
+    ],
+    "dos": [
+      "Do take every color from web/src/app/globals.css. The :root / [data-theme=\"light\"] pair is the only source of truth, and @theme inline re-exports them as Tailwind utilities.",
+      "Do ship an icon and a word with every state, in every new component (The Never-Color-Alone Rule).",
+      "Do hold the container at max-w-6xl with px-5, and reach for PageShell's Page on any new evidence route.",
+      "Do build depth with a tone step plus a hairline; use gap-px on a bg-border parent when cells should share one rule.",
+      "Do set every checkable fact — ids, hashes, thresholds, amounts, paths — in IBM Plex Mono, and add .tnum to any figure that changes.",
+      "Do key state swaps and animate them on enter only.",
+      "Do render an unavailable value as the words \"not available\" (NotAvailable), never as a dash and never as a placeholder hash.",
+      "Do label the earlier evaluator direction wherever it appears. /firewall and /timeline say so in their own ledes and the footer marks the Escrow Firewall link \"earlier direction\" — PRODUCT.md requires that no surface present those pages as the current product direction.",
+      "Do give a prefers-reduced-motion path that renders the content, not a hidden element: Reveal returns a plain tag, ProofLens paints one resolved frame, sliding markers become static spans."
+    ],
+    "donts": [
+      "Don't introduce a second accent color, or use a proof color for anything but proof state. Amber is not \"attention\", green is not \"good\", red is not \"important\".",
+      "Don't add focus-visible:outline-none to the Button base string, or to any control whose variant carries a shadow-* utility (The Focus Ring Survives Rule).",
+      "Don't import AnimatePresence or add an exit animation to a result, a chip, a passport, or a refusal.",
+      "Don't animate a number that describes state.",
+      "Don't add a box-shadow for elevation. The system is flat; the one inset highlight on the primary button is not a precedent.",
+      "Don't tint the neutrals. Both grounds are chroma-0; a near-black with a blue cast is the thing this world was defined against.",
+      "Don't scale a diagram down to fit a phone. Draw the small one.",
+      "Don't run a requestAnimationFrame loop that does not stop on its own.",
+      "Don't define a color, radius or easing in a component. If it is reusable it belongs in globals.css; if it is not reusable it is not a system value.",
+      "Don't stack two raised surfaces. Nest downward to the page ground instead."
+    ]
+  }
+}

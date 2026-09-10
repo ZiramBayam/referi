@@ -13,7 +13,7 @@ export const CHAIN_NAME = "Base Sepolia";
 // Etherscan/BaseScan tidak mengimpor dari Sourcify dan verifikasinya butuh API key yang
 // tidak ada di repo, jadi tautan ke sana mendaratkan juri di topic log MENTAH. Di
 // Blockscout log yang sama tampil dengan nama event terdekode (`VerdictPosted`,
-// `MemoryRootUpdated`) — itulah yang dirujuk README dan naskah video.
+// `MemoryRootUpdated`), itulah yang dirujuk README dan naskah video.
 //
 // Berkas deployment TIDAK diubah untuk mengikuti ini: ia artefak deploy apa adanya, dan
 // field `explorer`-nya memang tidak dibaca halaman mana pun.
@@ -31,7 +31,7 @@ export function addressUrl(address) {
 }
 
 /**
- * Nama status job ACP (ERC-8183) — enum apa adanya, bukan istilah karangan.
+ * Nama status job ACP (ERC-8183), enum apa adanya, bukan istilah karangan.
  * Sumber: `docs/api-facts.md` §A / kontrak ACP Base Sepolia.
  */
 export const ACP_STATUS = /** @type {const} */ ({
@@ -58,5 +58,5 @@ export function verdictKindLabel(kind) {
 export function acpStatusLabel(status) {
   if (status === null || status === undefined) return "not available";
   const name = /** @type {Record<number, string>} */ (ACP_STATUS)[status];
-  return name ? `${status} — ${name}` : `${status} — no enum name`;
+  return name ? `${status} · ${name}` : `${status} · no enum name`;
 }

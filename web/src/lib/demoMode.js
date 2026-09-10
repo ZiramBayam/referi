@@ -3,13 +3,13 @@
 //
 // KENAPA SATU BERKAS: sebelumnya kedua permukaan menuliskan sendiri
 // `process.env.DEMO_MODE !== "1"`. Keduanya kebetulan sama, tapi keduanya juga sama-sama
-// salah terhadap sisi agen — dan tidak ada yang memaksa mereka tetap sama. Dengan satu
+// salah terhadap sisi agen, dan tidak ada yang memaksa mereka tetap sama. Dengan satu
 // helper, "tombol dirender" dan "proksi menjawab" tidak bisa lagi berbeda pendapat.
 //
 // KENAPA BUKAN HANYA "1": helper `config_flag` di `agent/agent/vault_client.py` menerima
 // `1|true|yes|demo` (TRUE_FLAGS di sana), dan `.env.example` proyek ini menganjurkan
 // `DEMO_MODE=true`. Dengan aturan lama, juri yang mengikuti `.env.example` mendapat
-// endpoint penghapus memori HIDUP di 8010 tetapi tombolnya TIDAK PERNAH dirender —
+// endpoint penghapus memori HIDUP di 8010 tetapi tombolnya TIDAK PERNAH dirender,
 // §7 langkah 5 hilang diam-diam dan tampak seperti fitur rusak. Daftar di bawah sengaja
 // disalin persis dari sisi agen dan TIDAK boleh diperlebar sendiri.
 //

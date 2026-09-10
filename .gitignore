@@ -9,3 +9,6 @@ __pycache__/
 .next/
 .pytest_cache/
 .ruff_cache/
+
+# Artefak kerja Impeccable (tangkapan layar review, komp) — bukan hasil kerja repo.
+.impeccable/review/

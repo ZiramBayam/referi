@@ -50,7 +50,12 @@ ditemukan; hanya `uv` yang selamat (lewat `~/.profile`). Diverifikasi 2026-09-02
 | @tanstack/react-query | 5.102.2 | — |
 | @virtuals-protocol/acp-node-v2 | 0.1.12 | peer deps: viem, @account-kit/infra (4.88.5). Terpasang & dicocokkan 2026-09-07: `realpath sim/node_modules/@virtuals-protocol/acp-node-v2` → `.pnpm/@virtuals-protocol+acp-node-v2@0.1.12_...`, `package.json` `"version": "0.1.12"`. Permukaan chainId/alamat/token: api-facts §B.2 |
 | vitest | 4.1.11 | bukan 5.0.0-rc |
-| tailwindcss | latest 4.x | versi persis tidak diverifikasi → cek `pnpm view tailwindcss version` saat install |
+| tailwindcss | **4.3.3** | devDependency `web/` saja. Dipin PERSIS (bukan `^`). Diverifikasi 2026-09-10: `node -e "require('web/node_modules/tailwindcss/package.json').version"` → `4.3.3`; `pnpm view tailwindcss version` → `4.3.3`. Tidak ada `tailwind.config.js`: di v4 seluruh token hidup di `@theme inline` dalam `web/src/app/globals.css`, jadi hanya ada SATU sumber sistem desain |
+| @tailwindcss/postcss | **4.3.3** | devDependency `web/` saja; plugin PostCSS resmi Tailwind v4, dipasang lewat `web/postcss.config.mjs`. Versinya WAJIB sama dengan `tailwindcss` |
+| motion | **12.43.0** | dependency `web/`. Penerus `framer-motion`; dipakai untuk transisi state di `ExecutionRoom` dan penanda nav yang bergeser. Major line 12 dipilih supaya sama dengan frontend rujukan Veritas-UHI9 (`^12.40.0`), **13.x = ganti major line → wajib ADR**. `AnimatePresence` SENGAJA tidak dipakai di mana pun (ADR-032 keputusan 4) |
+| lucide-react | **1.43.0** | dependency `web/`. Menggantikan `web/src/components/Icon.jsx` (7 path Lucide yang di-inline tangan). Ikon Referi kini datang dari satu pustaka dengan bobot garis seragam, sama seperti frontend rujukan |
+| clsx | **2.1.1** | dependency `web/`. Penggabung kelas kondisional; dipakai HANYA lewat `cn()` di `web/src/lib/utils.js` |
+| tailwind-merge | **3.6.0** | dependency `web/`. Membuat override kelas dari pemanggil benar-benar menang atas kelas bawaan komponen; dipakai HANYA lewat `cn()` |
 
 ## Python (agent/)
 | Paket | Versi | Catatan |

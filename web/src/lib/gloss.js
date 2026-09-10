@@ -3,7 +3,7 @@
  *
  * KENAPA MODUL INI ADA, dan kenapa ia bukan sekadar "belum sempat menerjemahkan":
  * setiap string di sini berada DI DALAM bundel bukti yang keccak-nya diumumkan
- * on chain sebagai `reasonHash` pada transaksi `VerdictPosted` — dan teks
+ * on chain sebagai `reasonHash` pada transaksi `VerdictPosted`, dan teks
  * deliverable-nya sendiri keccak-nya `0x246071b3…0a51`, angka yang menjadi inti
  * klaim "teks identik, verdict berlawanan". Menerjemahkan byte-nya mengubah
  * hash-nya, dan seluruh rantai bukti itu berhenti cocok dengan chain.
@@ -13,7 +13,7 @@
  * yang dibaca juri internasional adalah keduanya.
  *
  * Kunci dicocokkan PERSIS. Kalau sebuah string tidak ada di sini, tidak ada
- * terjemahan yang ditampilkan — lebih baik hilang daripada dikarang.
+ * terjemahan yang ditampilkan, lebih baik hilang daripada dikarang.
  */
 
 /** @type {Record<string, string>} */
@@ -52,7 +52,7 @@ const GLOSS = {
 
 /**
  * Terjemahan seksi deliverable, dikunci pada judul seksinya APA ADANYA seperti
- * yang dikembalikan `parseDocument` — yaitu tanpa penanda `#`, karena regex
+ * yang dikembalikan `parseDocument`, yaitu tanpa penanda `#`, karena regex
  * judulnya hanya menangkap teks sesudah penanda.
  * @type {Record<string, string>}
  */
@@ -60,9 +60,9 @@ const SECTION_GLOSS = {
   "Summary":
     "Routine inspection report for the-evaluator demo chain. This document has three sections: summary, how it works, and follow-up notes.",
   "Cara kerja":
-    "How it works — Numbers are read straight from the ACP contract on Base Sepolia, not from a copy. Every claim is checked against its on-chain value before it is written into the report. Reference link follows.",
+    "How it works. Numbers are read straight from the ACP contract on Base Sepolia, not from a copy. Every claim is checked against its on-chain value before it is written into the report. Reference link follows.",
   "Catatan lanjutan":
-    "Follow-up notes — This section summarises what to carry into the next round. TODO: complete the gas-cost comparison table across rounds.",
+    "Follow-up notes. This section summarises what to carry into the next round. TODO: complete the gas-cost comparison table across rounds.",
 };
 
 /**
@@ -87,13 +87,13 @@ export function glossSection(heading) {
  * Terjemahan PENUH deliverable job 422, dipakai sebagai permukaan baca UTAMA.
  *
  * Ia boleh menggantikan posisi utama HANYA karena strukturnya setia: dijalankan
- * lewat `evaluateText`, teks ini menghasilkan hasil yang IDENTIK dengan aslinya —
+ * lewat `evaluateText`, teks ini menghasilkan hasil yang IDENTIK dengan aslinya,
  * 3 seksi, `sampling` -> COMPLETE (2/3, nol gagal), `full` -> REJECT (3/3, gagal
  * `format`). Kalau terjemahan ini disunting sampai hasilnya berbeda, peraga di
  * halaman depan berhenti memperagakan mekanisme yang sebenarnya.
  *
  * Yang di-hash tetap teks aslinya. Teks ini TIDAK pernah ikut dihitung hash-nya
- * dan tidak pernah menggantikan byte yang diumumkan on chain — aslinya tetap
+ * dan tidak pernah menggantikan byte yang diumumkan on chain, aslinya tetap
  * ditampilkan di bawah, bersama keccak-nya.
  */
 export const DELIVERABLE_EN = `# Summary

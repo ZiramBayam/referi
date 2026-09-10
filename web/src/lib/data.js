@@ -57,7 +57,7 @@ export async function loadJob(jobId) {
 }
 
 /**
- * Bundel bukti mentah. `null` bila jobId tidak dikenal — halaman WAJIB menampilkan
+ * Bundel bukti mentah. `null` bila jobId tidak dikenal, halaman WAJIB menampilkan
  * "belum ada", bukan mengarang isi.
  * @param {string} jobId
  */

@@ -1019,3 +1019,60 @@ pembaca yang mencari string lama di kode hari ini tidak menyimpulkan sesuatu hil
 TIDAK berubah dan tidak akan berubah, karena terikat `reasonHash` on-chain: isi kurung pada `gate=`
 (`budget … melebihi cap milestone provider ini …`, `budget dalam batas cap`), seluruh `detail`/`proof`,
 teks kriteria, `unscored_reason`, dan teks deliverable.
+
+## ADR-032 Frontend `web/` mengadopsi sistem rupa Veritas-UHI9; enam dependensi baru khusus `web/`
+Tanggal: 2026-09-10. Status: diterima. Diminta langsung oleh PM. TIDAK membuka ulang ADR-010.
+
+Konteks:
+(a) `web/` sudah setengah bermigrasi ke arah rupa Veritas: `src/fonts/veritas-fonts.js` (Fraunces / Hanken
+    Grotesk / IBM Plex Mono) sudah dipakai root layout, tetapi HANYA halaman depan yang ikut. Rute
+    `/timeline`, `/verdict/[jobId]`, `/panel`, dan `/firewall` masih memanggil kelas warisan (`.card`,
+    `.kv`, `.tag`, `.readwin`, `.depthbar`) yang tinggal enam baris stub di `globals.css`, jadi rute-rute
+    itu benar-benar tampil tanpa gaya.
+(b) Nilai token di `globals.css` lama (`#090b0e`, `#11161c`, biru `#3b7cff`, panel bersudut 0) BUKAN nilai
+    yang dipakai frontend rujukan `/Users/scientivan/Programming/VeritasProtocol/Veritas-Uniswap/Veritas-UHI9`.
+    Rujukan memakai skala netral chroma-0 dalam oklch, biru `#004eff`, radius kartu 14px, dan punya tema
+    terang sungguhan lewat `[data-theme="light"]`. DESIGN.md lama menuliskan nilai yang sudah menyimpang.
+(c) PM meminta paritas rupa PENUH dengan rujukan, plus motion design, dan memilih secara eksplisit:
+    port stack rujukan (Tailwind v4 + `motion` + `lucide-react`), sertakan toggle terang/gelap, dan bawa
+    padanan kanvas ambient `DetectorLens`.
+
+Keputusan:
+1. `web/` memakai Tailwind v4 sebagai satu-satunya mesin gaya. Tidak ada `tailwind.config.js`; seluruh token
+   hidup di `@theme inline` dalam `web/src/app/globals.css`. `docs/versions.md` sudah mencatat pin
+   `tailwindcss` 4.3.3 dan `@tailwindcss/postcss` 4.3.3 (sebelumnya barisnya berbunyi "latest 4.x, versi
+   persis tidak diverifikasi").
+2. Enam dependensi baru, SEMUANYA hanya di `web/package.json`, dipin PERSIS, dicatat di `docs/versions.md`
+   dengan tanggal + perintah verifikasi: `tailwindcss`, `@tailwindcss/postcss` (dev); `motion`,
+   `lucide-react`, `clsx`, `tailwind-merge` (runtime).
+3. **Ini TIDAK membuka ulang ADR-010.** Batas ADR-010 adalah nol dependensi runtime baru **pada jalur
+   gerbang 402 milik `agent/`**, di sana pemicunya paket `x402` + satu framework web yang ikut jalan di
+   proses evaluator. Keputusan ini menyentuh permukaan yang berbeda (`web/`, hanya render), tidak
+   memasang paket 402 apa pun, dan tidak mengubah satu byte pun di `agent/`. ADR-010 tetap berlaku utuh.
+4. `AnimatePresence` milik `motion` SENGAJA tidak dipakai. Alasannya bukan teknis melainkan produk: animasi
+   keluar menahan elemen lama di layar sampai transisinya selesai, dan selama passport atau chip keputusan
+   yang sudah basi masih terlihat, ia masih terbaca sebagai IZIN. Pergantian state karena itu memakai
+   `key` + animasi masuk saja; hasil yang batal hilang seketika.
+5. `CountUp` dari kit motion rujukan tidak diadopsi. Ia sempat dipasang pada cadangan treasury pasca-aksi,
+   dan itu ANGKA KLAIM, bukan hiasan: saat `requestAnimationFrame` tercekik (tab latar), angkanya berhenti
+   di tengah jalan dan halaman menampilkan nilai yang salah. Nilai state dirender apa adanya.
+6. Satu nilai token sengaja berbeda dari rujukan: `--faint` tema TERANG dipakai `oklch(0.47 0 0)`, bukan
+   `oklch(0.56 0 0)`. Nilai rujukan hanya mencapai ~3.7:1 di atas ground terang, di bawah ambang WCAG AA
+   4.5:1, padahal token itu memikul label mono kecil (id kewajiban, nama berkas, kunci tabel). Selisih
+   rupanya tidak kasatmata; kegagalan kontrasnya nyata.
+7. Berkas yang DIHAPUS karena tergantikan: `web/src/components/Icon.jsx` (digantikan `lucide-react`),
+   `web/src/components/Reveal.jsx` (digantikan `Reveal` di `web/src/components/motion.jsx`), dan
+   `web/src/fonts/fonts.js` (tidak lagi diimpor siapa pun sejak root layout beralih ke
+   `veritas-fonts.js`). Berkas `.woff2` di `web/src/fonts/` DIBIARKAN, ia artefak vendor beserta
+   `NOTICE.md`-nya dan penghapusannya bukan bagian dari task ini.
+8. Rute warisan Escrow Firewall tetap ada dan kini ikut bergaya, TETAPI diberi label eksplisit
+   "earlier direction" di footer dan di kepala halamannya sendiri, sesuai batas PRODUCT.md: tidak ada UI
+   yang boleh menyajikan halaman warisan sebagai arah produk saat ini.
+
+Konsekuensi:
+(+) Satu sistem rupa untuk seluruh `web/`; rute bukti tidak lagi tampil tanpa gaya.
+(+) Toggle terang/gelap sungguhan, sehingga halaman terbaca di layar terang saat penjurian.
+(-) Enam entri baru di `docs/versions.md` yang harus dijaga, dan permukaan build `web/` kini punya PostCSS.
+(-) `motion` menaruh animasi masuk sebagai `opacity: 0` inline di HTML SSR. Konsekuensinya jujur: dengan
+    JavaScript mati, bagian penjelas di bawah lipatan tidak terlihat. Ini diterima karena ruang eksekusi
+    memang tidak berfungsi tanpa JavaScript sama sekali, dan rujukan berperilaku sama.

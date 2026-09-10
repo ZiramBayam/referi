@@ -1,1786 +1,328 @@
-/* ============================================================================
-   CASE FILE — dunia visual halaman bukti.
+@import "tailwindcss";
 
-   Produk ini menuduh: dua job dengan teks SAMA PERSIS berakhir berlawanan, dan
-   buktinya ada di chain. Sebelumnya tuduhan itu disampaikan di kanvas hitam.
-   Sekarang di atas KERTAS — berkas perkara yang dicetak, bukan terminal.
+/*
+  Referi design tokens.
 
-   Resepnya diambil dari situs terang yang berhasil ceria tanpa kehilangan
-   kredibilitas (Gumroad): ground tenang, tinta hitam tegas, dan SATU warna
-   keras dipakai berskala besar. Bukan pelangi. Kuning stabilo menandai hal yang
-   diputuskan; hijau dan merah hanya untuk verdict; biru hanya untuk aksi.
+  Tata rupa ini SATU sistem dengan frontend Veritas (Veritas-UHI9): skala netral
+  chroma-0 dalam oklch, satu biru merek (#004eff), dan tiga warna sinyal yang HANYA
+  dipakai untuk keputusan. Nilai warnanya identik; namanya saja yang memakai kosakata
+  Referi, di sini sumbu keputusannya bukan "risiko" melainkan status kewajiban bukti:
 
-   Terang adalah komitmen, bukan tema.
-   ========================================================================== */
+    --proof-pass    kewajiban terpenuhi              (hijau)
+    --proof-review  tidak bisa diverifikasi → manusia (amber)
+    --proof-block   kewajiban gagal → aksi ditahan    (merah)
 
-:root {
+  Gelap adalah bawaan; tema terang sungguhan lewat [data-theme="light"].
+*/
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: oklch(0.145 0 0);
+  --surface: oklch(0.185 0 0);
+  --surface-2: oklch(0.225 0 0);
+  --border: oklch(0.275 0 0);
+  --border-strong: oklch(0.34 0 0);
+  --ink: oklch(0.975 0 0);
+  --muted: oklch(0.74 0 0);
+  --faint: oklch(0.58 0 0);
+
+  --primary: oklch(0.522 0.267 263.3); /* #004eff */
+  --primary-hover: oklch(0.575 0.247 263);
+  --primary-ink: oklch(0.78 0.13 263); /* biru yang terbaca sebagai teks di gelap */
+  --on-primary: oklch(0.99 0 0);
+  --ring: oklch(0.7 0.2 263);
+
+  --proof-pass: oklch(0.72 0.17 152);
+  --proof-review: oklch(0.8 0.15 85);
+  --proof-block: oklch(0.62 0.21 25);
+
+  /* Kekuatan atmosfer kanvas ProofLens (dibaca saat runtime). */
+  --wave-alpha: 0.5;
+
+  --radius: 14px;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+[data-theme="light"] {
   color-scheme: light;
 
-  /* Kertas */
-  --void: #f7f4ec;
-  --surface: #fffdf8;
-  --raised: #f1ede1;
-  --hair: #e0dacb;
-  --hair-2: #16150f;
-
-  /* Tinta */
-  --bone: #16150f;
-  --bone-2: #4a4739;
-  --dim: #6f6a58;
-
-  /* Sinyal: stabilo kuning untuk yang diputuskan, biru untuk aksi */
-  --amber: #f5c518;
-  --amber-dim: #fdf3cf;
-  --action: #2a2be0;
-
-  /* Semantik verdict */
-  --pass: #0b6b39;
-  --pass-dim: #dcf1e4;
-  --fail: #c62416;
-  --fail-dim: #fbe3e0;
-  --unver: #8a5a00;
-  --unver-dim: #fbeecd;
-
-  --sel: #ffe89a;
-  --on-action: #ffffff;
-
-  /* Jarak */
-  --s1: 4px;
-  --s2: 8px;
-  --s3: 12px;
-  --s4: 16px;
-  --s5: 24px;
-  --s6: 40px;
-  --s7: 64px;
-  --s8: 104px;
-
-  --r: 14px;
-  --r-sm: 8px;
-
-  /* Skala tipe. Sebelum ini ada 14 ukuran statis berbeda (9,5 / 10 / 10,5 / 11
-     / 12 / 12,5 / 13 / 13,5 / 14 / 14,5 / 15 / 16 / 22 / 40) — itu bukan skala,
-     itu keputusan satu per satu. Tujuh langkah, dan tiap peran memilih salah
-     satunya. */
-  --t1: 10px;   /* label mikro, huruf besar */
-  --t2: 12px;   /* data mono, caption */
-  --t3: 13px;   /* antarmuka sekunder */
-  --t4: 14px;   /* kontrol, prosa kecil */
-  --t5: 16px;   /* prosa */
-  --t6: 22px;   /* sub-judul */
-  --t7: 40px;   /* judul dalam kartu */
-
-  --ease: cubic-bezier(0.16, 1, 0.3, 1);
-  --measure: 62ch;
-
-  /* Di dunia kertas, kedalaman datang dari blok tinta yang bergeser — bukan
-     bayangan kabur. Ini dipilih sadar, jadi ia sistem, bukan kostum. */
-  --block: 3px 3px 0 var(--bone);
-}
-
-* {
-  box-sizing: border-box;
-}
-
-html {
-  -webkit-text-size-adjust: 100%;
-  scroll-behavior: smooth;
-}
-
-body {
-  margin: 0;
-  background: var(--void);
-  color: var(--bone);
-  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
-  font-size: var(--t5);
-  line-height: 1.65;
-  -webkit-font-smoothing: antialiased;
-
-  /* Tekstur berasal dari dunia subjeknya: kisi tipis seperti kertas grafik
-     laboratorium, nyaris tak terlihat, bukan hiasan gradien. */
-  background-image: linear-gradient(var(--hair) 1px, transparent 1px),
-    linear-gradient(90deg, var(--hair) 1px, transparent 1px);
-  background-size: 64px 64px;
-  background-position: -1px -1px;
-}
-
-::selection {
-  background: var(--sel);
-  color: var(--bone);
-}
-
-:focus-visible {
-  outline: 2px solid var(--action);
-  outline-offset: 3px;
-  border-radius: 3px;
-}
-
-a {
-  color: var(--bone);
-  text-decoration-color: var(--hair-2);
-  text-underline-offset: 3px;
-  text-decoration-thickness: 1px;
-  transition: color 0.16s var(--ease), text-decoration-color 0.16s var(--ease);
-}
-
-a:hover {
-  color: var(--action);
-  text-decoration-color: var(--action);
-}
-
-code,
-.mono {
-  font-family: var(--font-mono), ui-monospace, Menlo, monospace;
-  font-size: 0.88em;
-  letter-spacing: -0.01em;
-}
-
-/* Angka bukti dibandingkan antar baris — harus rata kolom. */
-code,
-.mono,
-td,
-th,
-.kv dd {
-  font-variant-numeric: tabular-nums;
-}
-
-/* ------------------------------------------------------------------ ikon --
-   Ikon Lucide (ISC), di-inline di `components/Icon.jsx`. Ia mewarisi warna dan
-   duduk pada garis dasar teks yang ditemaninya. */
-
-.icon {
-  vertical-align: -0.14em;
-  flex: none;
-}
-
-a .icon {
-  margin-left: 0.35em;
-  opacity: 0.55;
-  transition: opacity 0.16s var(--ease);
-}
-
-a:hover .icon {
-  opacity: 1;
-}
-
-.backlink {
-  display: inline-flex;
-  align-items: center;
-  gap: 0;
-  text-decoration: none;
-  color: var(--dim);
-  font-size: var(--t4);
-}
-
-.backlink .icon {
-  margin-left: 0;
-  margin-right: 0.45em;
-  opacity: 1;
-}
-
-.backlink:hover {
-  color: var(--action);
-}
-
-/* Status tidak boleh disampaikan warna saja — ikonnya ikut mengatakannya. */
-.tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4em;
-}
-
-.skip {
-  position: absolute;
-  left: -9999px;
-  top: 0;
-  background: var(--raised);
-  color: var(--bone);
-  border: 1px solid var(--hair-2);
-  border-radius: var(--r-sm);
-  padding: var(--s2) var(--s4);
-  z-index: 20;
-}
-
-.skip:focus {
-  left: var(--s3);
-  top: var(--s3);
-}
-
-.wrap {
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: var(--s6) var(--s5) var(--s8);
-}
-
-/* ---------------------------------------------------------------- header -- */
-
-header.top {
-  border-bottom: 1px solid var(--hair);
-  background: color-mix(in srgb, var(--void) 82%, transparent);
-  backdrop-filter: blur(10px);
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
-
-header.top .wrap {
-  padding: var(--s3) var(--s5);
-  display: flex;
-  align-items: center;
-  gap: var(--s5);
-}
-
-/* Wordmark. Huruf besar pada serif display butuh spasi POSITIF — tracking rapat
-   yang benar untuk "The Evaluator" membuat "REFERI" saling menempel. */
-header.top .wordmark a {
-  color: inherit;
-  text-decoration: none;
-}
-
-header.top .wordmark a:hover {
-  color: var(--action);
-}
-
-header.top .wordmark {
-  display: inline-block;
-  line-height: 1.2;
-  font-family: var(--font-display), Georgia, serif;
-  font-variation-settings: "opsz" 24;
-  font-weight: 600;
-  font-size: var(--t6);
-  font-weight: 400;
-  letter-spacing: 0.08em;
-  margin: 0;
-  white-space: nowrap;
-}
-
-header.top nav {
-  display: flex;
-  gap: var(--s4);
-}
-
-header.top nav a {
-  text-decoration: none;
-  color: var(--dim);
-  font-size: var(--t3);
-  font-weight: 500;
-  letter-spacing: 0.01em;
-}
-
-header.top nav a:hover {
-  color: var(--action);
-}
-
-header.top .net {
-  margin-left: auto;
-  color: var(--dim);
-  font-family: var(--font-mono), monospace;
-  font-size: var(--t1);
-  letter-spacing: 0.02em;
-  text-align: right;
-}
-
-/* ------------------------------------------------------------------ type -- */
-
-/* Judul utama halaman dan judul seksi memakai potongan yang sama; yang
-   membedakan hanya perannya di pohon dokumen. */
-h1,
-h2 {
-  font-family: var(--font-display), Georgia, serif;
-  font-variation-settings: "opsz" 72;
-  font-size: clamp(30px, 4vw, 46px);
-  font-weight: 400;
-  line-height: 1.06;
-  letter-spacing: -0.025em;
-  margin: var(--s7) 0 var(--s4);
-  max-width: 26ch;
-  /* Tanpa ini judul patah jadi "Where these numbers come / from" — satu kata
-     yatim di baris kedua. */
-  text-wrap: balance;
-}
-
-h1:first-child,
-h2:first-child {
-  margin-top: 0;
-}
-
-/* Hero punya ukurannya sendiri dan tidak boleh ikut aturan di atas. */
-.hero h1 {
-  margin: 0;
-}
-
-/* Judul yang menyusul tautan kembali tidak butuh jarak satu layar. */
-p.lead:first-child + h1,
-p.lead:first-child + h2 {
-  margin-top: var(--s5);
-}
-
-h3 {
-  font-size: var(--t1);
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--dim);
-  margin: var(--s5) 0 var(--s3);
-}
-
-p.lead {
-  color: var(--bone-2);
-  margin: var(--s3) 0 var(--s4);
-  max-width: var(--measure);
-}
-
-strong {
-  color: var(--bone);
-  font-weight: 600;
-}
-
-/* ------------------------------------------------------------------ hero --
-   Satu momen yang diarahkan. Tesis produk dinyatakan sebesar-besarnya, lalu
-   dua pelat bukti yang saling menjauh — kalimatnya dan gambarnya mengatakan
-   hal yang sama. */
-
-/* Udara di atas judul adalah keputusan, bukan sisa. Linear dan Resend sama-sama
-   memulai judulnya sekitar seperempat viewport ke bawah, dan ruang kosong di
-   kanannya dibiarkan kosong — asimetri itu yang membuatnya terbaca percaya diri
-   alih-alih penuh sesak. */
-/* Hero mengisi TEPAT satu layar, tidak lebih. Sebelumnya ia 989px pada viewport
-   900px — sepuluh persen terlalu tinggi, yang artinya pelat bukti terpotong
-   persis di lipatan dan pembaca melihat separuh kartu tanpa tahu ada dua.
-   Flex + min-height membuat isinya berpusat dan berhenti di batas layar.
-
-   Seksi LAIN sengaja TIDAK dipaksa setinggi ini: tabel dan provenance adalah
-   bahan rujukan yang dibandingkan antar baris, dan memaksanya 100vh hanya
-   menambah ruang kosong sekaligus menjauhkan baris yang perlu diadu. */
-.hero {
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: var(--s7) 0;
-  border-bottom: 1px solid var(--hair);
-}
-
-/* Isyarat bahwa halaman berlanjut — tanpa ini satu layar penuh terbaca sebagai
-   seluruh halaman. */
-.hero .more {
-  margin: var(--s6) 0 0;
-  font-family: var(--font-mono), monospace;
-  font-size: var(--t1);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--dim);
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-}
-
-.hero .more::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--hair);
-  max-width: 120px;
-}
-
-.hero h1 {
-  font-family: var(--font-display), Georgia, serif;
-  font-variation-settings: "opsz" 144;
-  font-size: clamp(46px, 9vw, 118px);
-  font-weight: 400;
-  /* 0.94 memuat dua baris rapat dengan indah SELAMA tidak ada latar. Begitu
-     baris kedua distabilo, kotak latarnya memakan turunan huruf baris pertama;
-     1.06 memberi blok itu ruangnya sendiri. */
-  line-height: 1.06;
-  letter-spacing: -0.038em;
-  margin: 0;
-  /* 11ch memecah "Opposite verdicts." jadi dua baris dan mematahkan kalimatnya;
-     13ch menahannya tetap dua baris utuh sampai lebar penuh. */
-  max-width: 13ch;
-  text-wrap: balance;
-}
-
-/* Satu warna keras, berskala besar: kalimat yang diputuskan DISTABILO, bukan
-   diwarnai. Teks kuning di atas kertas krem tidak terbaca; tinta hitam di atas
-   blok kuning terbaca, dan jauh lebih ceria. */
-.hero h1 em {
-  /* Fraunces subset ini tidak punya face italic; `font-style: italic` akan
-     dimiringkan sintetis oleh browser dan hasilnya kotor. Tekanan datang dari
-     bobot dan sumbu opsz-nya sendiri. */
-  font-style: normal;
-  font-weight: 600;
-  color: var(--bone);
-  background: var(--amber);
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
-  padding: 0 0.12em;
-  margin-left: -0.06em;
-}
-
-/* Sub-baris TIDAK boleh bersaing dengan judul: lebih kecil, lebih redup, dan
-   dipotong pendek. Versi sebelumnya empat baris pada 17px — itu paragraf kedua,
-   bukan sub-judul. */
-.hero .sub {
-  margin: var(--s5) 0 0;
-  color: var(--bone-2);
-  max-width: 46ch;
-  font-size: var(--t4);
-  line-height: 1.6;
-}
-
-.hero .actions {
-  display: flex;
-  align-items: center;
-  gap: var(--s5);
-  margin-top: var(--s5);
-}
-
-.hero .actions .go {
-  border: 2px solid var(--bone);
-  box-shadow: var(--block);
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5em;
-  /* CTA hero lebih besar dari tombol biasa: ia satu-satunya hal di layar
-     pertama yang meminta ditekan. */
-  padding: var(--s3) var(--s5);
-  font-size: var(--t4);
-  border-radius: 999px;
-  background: var(--amber);
-  color: var(--bone);
-  font-size: var(--t3);
-  font-weight: 600;
-  text-decoration: none;
-  transition: background 0.16s var(--ease);
-}
-
-.hero .actions .go:hover {
-  background: var(--action);
-  color: var(--on-action);
-}
-
-.hero .actions .go {
-  transition: background 0.16s var(--ease), color 0.16s var(--ease),
-    transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
-}
-
-.hero .actions .go .icon {
-  margin-left: 0;
-  opacity: 1;
-  transition: transform 0.22s var(--ease);
-}
-
-.hero .actions .go:hover .icon {
-  transform: translateX(3px);
-}
-
-/* Blok tinta ikut tertekan saat diklik — di dunia kertas ini itu satu-satunya
-   umpan balik tekan yang masuk akal. */
-.hero .actions .go:active {
-  transform: translate(2px, 2px);
-  box-shadow: 1px 1px 0 var(--bone);
-}
-
-.hero .actions .quiet {
-  color: var(--dim);
-  font-size: var(--t3);
-  text-decoration: none;
-}
-
-.hero .actions .quiet:hover {
-  color: var(--amber);
-}
-
-/* dua pelat yang menjauh */
-/* Pelat bukti tidak melebar penuh: menyisakan kolom kosong di kanan menjaga
-   asimetri hero dan membuat keduanya terbaca sebagai spesimen, bukan panel. */
-.plates {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: stretch;
-  gap: var(--s4);
-  margin-top: var(--s6);
-  max-width: 880px;
-}
-
-.plate {
-  border: 2px solid var(--bone);
-  border-radius: var(--r);
-  background: var(--surface);
-  box-shadow: var(--block);
-  padding: var(--s5);
-}
-
-.plate .id {
-  font-family: var(--font-mono), monospace;
-  font-size: var(--t2);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-
-.plate .verdict {
-  font-family: var(--font-display), Georgia, serif;
-  /* Fraunces lebih lebar dari Instrument Serif: pada 40px "COMPLETE (kind=1)"
-     pecah dua baris sementara "REJECT (kind=2)" tetap satu, dan pasangan pelat
-     itu berhenti terbaca sejajar. Keduanya harus muat satu baris. */
-  font-variation-settings: "opsz" 48;
-  font-size: clamp(22px, 2.5vw, 31px);
-  line-height: 1.05;
-  letter-spacing: -0.02em;
-  margin: var(--s2) 0 var(--s4);
-}
-
-.plate.is-pass {
-  background: var(--pass-dim);
-}
-
-.plate.is-pass .verdict {
-  color: var(--pass);
-}
-
-.plate.is-fail {
-  background: var(--fail-dim);
-}
-
-.plate.is-fail .verdict {
-  color: var(--fail);
-}
-
-.plate dl {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: var(--s1) var(--s4);
-  margin: 0;
-  font-size: var(--t3);
-}
-
-.plate dt {
-  color: var(--dim);
-}
-
-.plate dd {
-  margin: 0;
-  font-family: var(--font-mono), monospace;
-  color: var(--bone);
-}
-
-.plate-split {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--s3);
-  color: var(--dim);
-  font-family: var(--font-mono), monospace;
-  font-size: var(--t1);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  padding: 0 var(--s2);
-}
-
-.plate-split::before,
-.plate-split::after {
-  content: "";
-  flex: 1;
-  width: 1px;
-  background: linear-gradient(var(--hair), var(--hair-2), var(--hair));
-}
-
-.shared {
-  max-width: 880px;
-  margin-top: var(--s4);
-  padding: var(--s3) var(--s4);
-  border: 1px dashed var(--hair-2);
-  border-radius: var(--r-sm);
-  font-family: var(--font-mono), monospace;
-  font-size: var(--t2);
-  color: var(--bone-2);
-  text-align: center;
-}
-
-.shared b {
-  color: var(--bone);
-  background: var(--amber);
-  padding: 1px var(--s1);
-  font-weight: 400;
-}
-
-/* ---------------------------------------------------------------- langkah --
-   Rantai sebab, bukan tiga kartu seragam. Nomornya BEKERJA di sini: urutannya
-   sendiri yang membawa informasi — langkah 2 mustahil tanpa langkah 1. */
-
-.steps {
-  list-style: none;
-  margin: var(--s5) 0 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0;
-  border-top: 1px solid var(--hair);
-}
-
-.steps li {
-  position: relative;
-  padding: var(--s5) var(--s5) var(--s5) 0;
-  border-right: 1px solid var(--hair);
-}
-
-.steps li:last-child {
-  border-right: none;
-}
-
-.steps li + li {
-  padding-left: var(--s5);
-}
-
-.steps .n {
-  font-family: var(--font-mono), monospace;
-  font-size: var(--t1);
-  color: var(--bone);
-  background: var(--amber);
-  padding: 1px var(--s2);
-  border-radius: 999px;
-  letter-spacing: 0.1em;
-}
-
-.steps h3 {
-  font-family: var(--font-display), Georgia, serif;
-  font-variation-settings: "opsz" 36;
-  font-size: var(--t6);
-  font-weight: 400;
-  letter-spacing: -0.015em;
-  text-transform: none;
-  color: var(--bone);
-  margin: var(--s2) 0 var(--s3);
-}
-
-.steps p {
-  color: var(--bone-2);
-  font-size: var(--t4);
-  margin: 0 0 var(--s4);
-}
-
-.steps .src {
-  font-family: var(--font-mono), monospace;
-  font-size: var(--t1);
-  color: var(--dim);
-}
-
-/* ----------------------------------------------------------------- tabel -- */
-
-.table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--hair);
-  border-radius: var(--r);
-  background: var(--surface);
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-th,
-td {
-  text-align: left;
-  padding: var(--s3) var(--s4);
-  border-bottom: 1px solid var(--hair);
-  vertical-align: middle;
-}
-
-th {
-  background: var(--raised);
-  font-size: var(--t1);
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--dim);
-  white-space: nowrap;
-}
-
-tbody tr:last-child td {
-  border-bottom: none;
-}
-
-tbody tr {
-  transition: background 0.16s var(--ease);
-}
-
-tbody tr:hover {
-  background: var(--raised);
-}
-
-/* Catatan job menempel pada barisnya: satu garis di bawah data, bukan daftar
-   terpisah yang mengulang kelima job yang sama. */
-.note-row td {
-  border-bottom: none;
-  padding-top: 0;
-  padding-bottom: var(--s4);
-  color: var(--dim);
-  font-size: var(--t3);
-}
-
-.note-row:not(:last-child) td {
-  border-bottom: 1px solid var(--hair);
-}
-
-.note-row:hover {
-  background: none;
-}
-
-caption {
-  caption-side: top;
-  text-align: left;
-  padding: var(--s3) var(--s4);
-  border-bottom: 1px solid var(--hair);
-  color: var(--dim);
-  font-size: var(--t3);
-}
-
-/* Batang kedalaman: memori menentukan berapa banyak yang dibaca, jadi
-   kedalaman layak punya bentuk, bukan hanya kata. */
-.depthbar {
-  display: inline-flex;
-  gap: 2px;
-  vertical-align: middle;
-  margin-right: var(--s2);
-}
-
-.depthbar i {
-  width: 4px;
-  height: 13px;
-  border-radius: 1px;
-  background: var(--hair-2);
-}
-
-.depthbar i.on {
-  background: var(--amber);
-}
-
-/* ---------------------------------------------------------------- kartu --- */
-
-.card {
-  background: var(--surface);
-  border: 1px solid var(--hair);
-  border-radius: var(--r);
-  padding: var(--s5);
-  margin: var(--s4) 0;
-}
-
-.card > :first-child {
-  margin-top: 0;
-}
-
-.card > :last-child {
-  margin-bottom: 0;
-}
-
-.kv {
-  display: grid;
-  grid-template-columns: 200px 1fr;
-  gap: var(--s2) var(--s5);
-}
-
-.kv dt {
-  color: var(--dim);
-  font-size: var(--t3);
-}
-
-.kv dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-/* --------------------------------------------------------------- verdict -- */
-
-.tag {
-  padding: var(--s1) var(--s3);
-  border-radius: 999px;
-  border: 1px solid transparent;
-  font-family: var(--font-mono), monospace;
-  font-size: var(--t1);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  white-space: nowrap;
-}
-
-.tag.pass {
-  color: var(--pass);
-  background: var(--pass-dim);
-  border-color: color-mix(in srgb, var(--pass) 32%, transparent);
-}
-
-.tag.fail {
-  color: var(--fail);
-  background: var(--fail-dim);
-  border-color: color-mix(in srgb, var(--fail) 32%, transparent);
-}
-
-.tag.unverified {
-  color: var(--unver);
-  background: var(--unver-dim);
-  border-color: color-mix(in srgb, var(--unver) 32%, transparent);
-}
-
-.none {
-  color: var(--dim);
-  font-style: italic;
-}
-
-/* ------------------------------------------------------------------ bukti -- */
-
-pre.proof,
-pre.doc {
-  background: var(--raised);
-  border: 1px solid var(--hair);
-  border-radius: var(--r-sm);
-  padding: var(--s4);
-  margin: var(--s3) 0 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-x: auto;
-  font-family: var(--font-mono), monospace;
-  font-size: var(--t2);
-  line-height: 1.6;
-  color: var(--bone-2);
-}
-
-/* ---------------------------------------------------------------- kontrol -- */
-
-label {
-  display: inline-block;
-  color: var(--dim);
-  font-size: var(--t3);
-  margin-bottom: var(--s2);
-}
-
-textarea {
-  width: 100%;
-  min-height: 200px;
-  padding: var(--s4);
-  border: 1px solid var(--hair-2);
-  border-radius: var(--r-sm);
-  background: var(--void);
-  color: var(--bone);
-  font-family: var(--font-mono), monospace;
-  font-size: var(--t2);
-  line-height: 1.6;
-  transition: border-color 0.16s var(--ease), box-shadow 0.16s var(--ease);
-}
-
-textarea::placeholder {
-  color: var(--dim);
-}
-
-textarea:focus {
-  border-color: var(--action);
-  box-shadow: 0 0 0 3px var(--amber-dim);
-  outline: none;
-}
-
-/* Widget unggah bawaan OS adalah kotak abu-abu terang; di kanvas ini ia satu-
-   satunya benda yang tidak digambar siapa pun. Ia ikut sistem. */
-input[type="file"] {
-  color: var(--dim);
-  font-family: var(--font-mono), monospace;
-  font-size: var(--t2);
-  max-width: 100%;
-}
-
-input[type="file"]::file-selector-button {
-  font-family: var(--font-sans), sans-serif;
-  font-size: var(--t3);
-  font-weight: 500;
-  margin-right: var(--s3);
-  padding: var(--s2) var(--s4);
-  border: 1px solid var(--hair-2);
-  border-radius: var(--r-sm);
-  background: var(--raised);
-  color: var(--bone);
-  cursor: pointer;
-  transition: border-color 0.16s var(--ease), color 0.16s var(--ease);
-}
-
-input[type="file"]::file-selector-button:hover {
-  border-color: var(--action);
-  color: var(--action);
-}
-
-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5em;
-}
-
-button,
-select {
-  font-family: inherit;
-  font-size: var(--t3);
-  font-weight: 500;
-  padding: var(--s2) var(--s4);
-  border: 1px solid var(--hair-2);
-  border-radius: var(--r-sm);
-  background: var(--raised);
-  color: var(--bone);
-  cursor: pointer;
-  transition: background 0.16s var(--ease), border-color 0.16s var(--ease),
-    color 0.16s var(--ease), transform 0.16s var(--ease);
-}
-
-button:hover:not(:disabled) {
-  border-color: var(--action);
-  color: var(--action);
-}
-
-button:active:not(:disabled) {
-  transform: translateY(1px);
-}
-
-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-button.primary {
-  background: var(--bone);
-  color: var(--surface);
-  border-color: var(--bone);
-  font-weight: 600;
-  box-shadow: var(--block);
-}
-
-button.primary:hover:not(:disabled) {
-  background: var(--action);
-  border-color: var(--action);
-  color: var(--on-action);
-}
-
-button.danger {
-  color: var(--fail);
-  background: var(--fail-dim);
-  border-color: color-mix(in srgb, var(--fail) 40%, transparent);
-}
-
-button.danger:hover:not(:disabled) {
-  color: var(--fail);
-  border-color: var(--fail);
-  background: color-mix(in srgb, var(--fail) 18%, var(--surface));
-}
-
-.row {
-  display: flex;
-  gap: var(--s3);
-  align-items: center;
-  flex-wrap: wrap;
-  margin: var(--s4) 0;
-}
-
-/* -------------------------------------------------------------- callout ---
-   Elevasi dinyatakan SEKALI: latar bertinta + garis 1px. Tanpa pita tebal. */
-
-.warn {
-  background: var(--unver-dim);
-  border-color: color-mix(in srgb, var(--unver) 30%, transparent);
-}
-
-.note {
-  background: var(--raised);
-  border-color: var(--hair);
-}
-
-ul.lead {
-  color: var(--bone-2);
-  padding-left: var(--s5);
-}
-
-ul.lead li {
-  margin-bottom: var(--s2);
-}
-
-/* ---------------------------------------------------------------- footer -- */
-
-footer.site {
-  border-top: 1px solid var(--hair);
-  background: var(--surface);
-  margin-top: var(--s8);
-}
-
-footer.site .wrap {
-  padding: var(--s6) var(--s5);
-}
-
-footer.site .cols {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--s5);
-}
-
-footer.site .k {
-  display: block;
-  font-size: var(--t1);
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--dim);
-  margin-bottom: var(--s2);
-}
-
-footer.site .cols a,
-footer.site .cols .mono {
-  font-family: var(--font-mono), monospace;
-  font-size: var(--t2);
-  overflow-wrap: anywhere;
-}
-
-footer.site .disclaimer {
-  margin: var(--s6) 0 0;
-  padding-top: var(--s4);
-  border-top: 1px solid var(--hair);
-  color: var(--dim);
-  font-size: var(--t3);
-  max-width: var(--measure);
-}
-
-/* Halaman verdict mengelompokkan fieldnya; judul kelompok tidak boleh menempel
-   pada kelompok sebelumnya. */
-.card h3 + .kv {
-  margin-bottom: var(--s5);
-}
-
-.card .kv + h3 {
-  margin-top: var(--s5);
-  padding-top: var(--s4);
-  border-top: 1px solid var(--hair);
-}
-
-/* ----------------------------------------------------------------- gerak --
-   Satu momen: hero naik bertahap, lalu baris tabel menyusul. Tidak ada
-   entrance identik di setiap seksi. */
-
-@media (prefers-reduced-motion: no-preference) {
-  .hero .eyebrow,
-  .hero h1,
-  .hero .sub,
-  .plates,
-  .shared {
-    animation: rise 0.72s var(--ease) both;
+  --bg: oklch(0.995 0 0);
+  --surface: oklch(0.975 0 0);
+  --surface-2: oklch(0.95 0 0);
+  --border: oklch(0.9 0 0);
+  --border-strong: oklch(0.82 0 0);
+  --ink: oklch(0.22 0 0);
+  --muted: oklch(0.45 0 0);
+  /* Satu-satunya nilai yang SENGAJA berbeda dari sistem Veritas. Di sana --faint
+     terang (0.56) dan hanya mencapai ~3.7:1 di atas ground terang, di bawah 4.5:1,
+     padahal token ini memikul label mono kecil (id kewajiban, nama berkas, kunci
+     tabel). Digelapkan sampai lolos AA; selisih rupanya tidak kasatmata. */
+  --faint: oklch(0.47 0 0);
+
+  --primary: oklch(0.522 0.267 263.3);
+  --primary-hover: oklch(0.47 0.25 263);
+  --primary-ink: oklch(0.5 0.25 263); /* biru lebih gelap agar >=7:1 di atas putih */
+  --on-primary: oklch(0.995 0 0);
+  --ring: oklch(0.55 0.24 263);
+
+  /* Hue sinyal digelapkan supaya teks/ikon berwarna terbaca di atas tint terang.
+     `--proof-review` juga bergeser hue-nya (85 → 70), berbeda dari dua yang lain:
+     nilai ini disalin apa adanya dari sistem rujukan, di mana amber pada lightness
+     rendah perlu dibawa ke arah kuning-cokelat agar tidak terbaca sebagai zaitun.
+     Dicatat sebagai fakta asal-usul, bukan sebagai aturan yang kami turunkan. */
+  --proof-pass: oklch(0.52 0.15 152);
+  --proof-review: oklch(0.56 0.12 70);
+  --proof-block: oklch(0.55 0.2 25);
+
+  --wave-alpha: 0.7;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-ink: var(--primary-ink);
+  --color-on-primary: var(--on-primary);
+  --color-ring: var(--ring);
+
+  --color-proof-pass: var(--proof-pass);
+  --color-proof-review: var(--proof-review);
+  --color-proof-block: var(--proof-block);
+
+  --font-display: var(--font-display), Georgia, serif;
+  --font-sans: var(--font-sans), system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, monospace;
+
+  --radius-card: var(--radius);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
   }
-
-  .hero h1 {
-    animation-delay: 0.06s;
+  html {
+    background: var(--bg);
+    -webkit-text-size-adjust: 100%;
   }
-  .hero .sub {
-    animation-delay: 0.14s;
-  }
-  .plates {
-    animation-delay: 0.22s;
-  }
-  .shared {
-    animation-delay: 0.3s;
-  }
-
-  .plate {
-    animation: spread 0.8s var(--ease) 0.22s both;
-  }
-
-  .plate.is-fail {
-    --dir: 14px;
-  }
-  .plate.is-pass {
-    --dir: -14px;
-  }
-
-
-  @keyframes rise {
-    from {
-      opacity: 0;
-      transform: translateY(14px);
-    }
-    to {
-      opacity: 1;
-      transform: none;
-    }
-  }
-
-  @keyframes spread {
-    from {
-      opacity: 0;
-      transform: translateX(calc(var(--dir, 0px) * -1));
-    }
-    to {
-      opacity: 1;
-      transform: none;
-    }
-  }
-}
-
-/* ------------------------------------------------------------ layar sempit */
-
-@media (max-width: 860px) {
-  .plates {
-    grid-template-columns: 1fr;
-  }
-
-  .steps,
-  footer.site .cols {
-    grid-template-columns: 1fr;
-  }
-
-  .steps li,
-  .steps li + li {
-    border-right: none;
-    border-bottom: 1px solid var(--hair);
-    padding: var(--s4) 0;
-  }
-
-  .steps li:last-child {
-    border-bottom: none;
-  }
-
-  .plate-split {
-    flex-direction: row;
-    padding: var(--s2) 0;
-  }
-
-  .plate-split::before,
-  .plate-split::after {
-    width: auto;
-    height: 1px;
-    background: var(--hair-2);
-  }
-}
-
-@media (max-width: 720px) {
   body {
-    font-size: var(--t4);
-    background-size: 44px 44px;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans), system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
-
-  .wrap {
-    padding: var(--s5) var(--s4) var(--s7);
+  ::selection {
+    background: color-mix(in oklch, var(--primary) 30%, transparent);
+    color: var(--ink);
   }
-
-  header.top {
-    position: static;
+  :focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 2px var(--bg),
+      0 0 0 4px var(--ring);
+    border-radius: 6px;
   }
-
-  header.top .wrap {
-    flex-wrap: wrap;
-    gap: var(--s2) var(--s4);
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
   }
-
-  header.top .net {
-    margin-left: 0;
-    flex-basis: 100%;
-    text-align: left;
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
   }
-
-  .hero {
-    padding: var(--s6) 0 var(--s5);
+  *::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 999px;
+    border: 3px solid var(--bg);
   }
-
-  h2 {
-    margin-top: var(--s7);
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display), Georgia, serif;
+    text-wrap: balance;
+    letter-spacing: -0.02em;
   }
-
-  .card {
-    padding: var(--s4);
+  p {
+    text-wrap: pretty;
   }
-
-  .kv {
-    grid-template-columns: 1fr;
-    gap: 2px 0;
-  }
-
-  .kv dt {
-    margin-top: var(--s3);
-  }
-
-  button,
-  select {
-    min-height: 44px;
+  /* Caret di field angka mengikuti biru merek, bukan bawaan peramban. */
+  input,
+  textarea {
+    caret-color: var(--primary-ink);
   }
 }
 
-/* ------------------------------------------------------- jendela membaca --
-   Bagian yang bisa DIMAINKAN. Kedalaman digeser, seksi ketiga menyala atau
-   padam, dan verdictnya berbalik — dijalankan oleh `evaluateText`, kode yang
-   sama yang menulis bundel on-chain. */
-
-.readwin {
-  border: 2px solid var(--bone);
-  border-radius: var(--r);
-  background: var(--surface);
-  box-shadow: var(--block);
-  overflow: hidden;
-  margin-top: var(--s5);
-}
-
-.readwin-controls {
-  display: flex;
-  border-bottom: 2px solid var(--bone);
-}
-
-.readwin-controls button {
-  flex: 1;
-  display: block;
-  text-align: left;
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
-  background: var(--raised);
-  color: var(--dim);
-  padding: var(--s3) var(--s5);
-  font-size: var(--t4);
-  font-weight: 600;
-  font-family: var(--font-mono), monospace;
-}
-
-.readwin-controls button + button {
-  border-left: 2px solid var(--bone);
-}
-
-.readwin-controls button em {
-  display: block;
-  font-family: var(--font-sans), sans-serif;
-  font-style: normal;
-  font-size: var(--t2);
-  font-weight: 400;
-  margin-top: 2px;
-}
-
-.readwin-controls button.on {
-  background: var(--amber);
-  color: var(--bone);
-}
-
-.readwin-controls button:hover:not(.on) {
-  background: var(--surface);
-  color: var(--bone);
-}
-
-.readwin-body {
-  display: grid;
-  grid-template-columns: 1fr 280px;
-}
-
-.readwin .doc {
-  padding: var(--s5);
-  border-right: 2px solid var(--bone);
-}
-
-.readwin .sec {
-  border-left: 3px solid var(--hair);
-  padding-left: var(--s4);
-  margin-bottom: var(--s4);
-  opacity: 0.38;
-  transition: opacity 0.28s var(--ease), border-color 0.28s var(--ease);
-}
-
-.readwin .sec.read {
-  opacity: 1;
-  border-left-color: var(--bone);
-}
-
-.readwin .sec .marker {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35em;
-  font-family: var(--font-mono), monospace;
-  font-size: var(--t1);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-
-.readwin .sec.read .marker {
-  color: var(--pass);
-}
-
-.readwin .sec pre {
-  margin: var(--s2) 0 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: var(--font-mono), monospace;
-  font-size: var(--t2);
-  line-height: 1.6;
-  color: var(--bone-2);
-}
-
-.readwin mark {
-  background: var(--fail);
-  color: var(--on-action);
-  padding: 0 4px;
-  font-weight: 600;
-}
-
-.readwin .out {
-  padding: var(--s5);
-  transition: background 0.28s var(--ease);
-}
-
-.readwin .out.is-pass {
-  background: var(--pass-dim);
-}
-
-.readwin .out.is-fail {
-  background: var(--fail-dim);
-}
-
-.readwin .out .k {
-  font-size: var(--t1);
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-
-.readwin .out .v {
-  font-family: var(--font-display), Georgia, serif;
-  font-size: var(--t7);
-  line-height: 1;
-  letter-spacing: -0.02em;
-  margin: var(--s2) 0 var(--s4);
-}
-
-.readwin .out.is-pass .v {
-  color: var(--pass);
-}
-
-.readwin .out.is-fail .v {
-  color: var(--fail);
-}
-
-.readwin .out dl {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: var(--s1) var(--s3);
-  margin: 0 0 var(--s4);
-  font-size: var(--t2);
-}
-
-.readwin .out dt {
-  color: var(--dim);
-}
-
-.readwin .out dd {
-  margin: 0;
-  font-family: var(--font-mono), monospace;
-}
-
-.readwin .out .why {
-  margin: 0;
-  font-size: var(--t3);
-  color: var(--bone-2);
-  border-top: 1px solid color-mix(in srgb, var(--bone) 18%, transparent);
-  padding-top: var(--s3);
-}
-
-@media (max-width: 860px) {
-  .readwin-body {
-    grid-template-columns: 1fr;
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display), Georgia, serif;
   }
-
-  .readwin .doc {
-    border-right: none;
-    border-bottom: 2px solid var(--bone);
+  .font-mono {
+    font-family: var(--font-mono), ui-monospace, monospace;
+  }
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+  .reveal {
+    animation: reveal 0.7s var(--ease-out-expo) both;
+  }
+  /* Denyut halus pada penanda tahap yang sedang berjalan (satu-satunya glow). */
+  .stage-glow {
+    animation: stage-pulse 2.6s var(--ease-out-quart) infinite;
+  }
+  /* Garis pemindai yang menyapu konsol SELAMA preflight berjalan, lalu berhenti. */
+  .scanline::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    height: 2px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--primary-ink),
+      transparent
+    );
+    opacity: 0.75;
+    animation: scan 1.15s var(--ease-out-quart) infinite;
   }
 }
 
-/* Layar PENDEK (laptop 768p, dan 1280x720 yang dipakai merekam video demo).
-   Tanpa blok ini hero setinggi 922px pada viewport 720px, jadi kedua pelat
-   bukti terpotong di lipatan — tepat pada resolusi yang direkam. Yang dipangkas
-   hanya ritme vertikalnya; tidak ada isi yang hilang. */
-@media (max-height: 820px) {
-  /* Di layar sependek ini isi hero (judul + sub + aksi + dua pelat + hash)
-     memang TIDAK muat satu layar. `min-height` dengan isi yang lebih tinggi
-     dari kotaknya membuat `justify-content: center` meluber ke DUA arah, jadi
-     bagian atas ikut terpotong — lebih buruk daripada sekadar menggulir.
-     Maka di sini hero kembali setinggi isinya, dan itu keputusan sadar:
-     satu layar penuh berlaku di layar yang benar-benar punya ruangnya. */
-  .hero {
-    min-height: 0;
-    display: block;
-    padding: var(--s5) 0;
-  }
+/*
+  Alur GateChain. Satu putaran menjalankan rantainya dari kiri ke kanan: setiap
+  penghubung menggambar dirinya, setiap simpul menyala saat aliran tiba, lalu
+  keduanya beristirahat sebentar sebelum putaran berikutnya. Semuanya digerakkan
+  `animation-delay` di elemennya masing-masing, jadi urutannya terbaca sebagai
+  perjalanan, bukan sebagai empat animasi yang kebetulan berbarengan.
 
-  .hero h1 {
-    font-size: clamp(40px, 6.2vw, 74px);
-  }
+  Loop ini hanya berjalan saat diagramnya benar-benar terlihat (kelas `is-flowing`
+  dipasang komponennya lewat useInView), dan mati sendiri di prefers-reduced-motion
+  karena aturan global di bawah.
+*/
+.chain-draw {
+  /* Setiap stroke yang dianimasikan membawa `pathLength="100"`, jadi satuan dash-nya
+     dinormalkan: satu angka bekerja untuk garis lurus maupun kurva panjang. */
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: chain-draw 5.2s var(--ease-out-quart) infinite;
+}
 
-  .hero .sub {
-    margin-top: var(--s4);
-  }
+.chain-node {
+  animation: chain-node 5.2s var(--ease-out-quart) infinite;
+}
 
-  .hero .actions {
-    margin-top: var(--s4);
-  }
+/* Riak yang menyapu palang gerbang tepat saat aliran sampai. */
+.chain-gate {
+  animation: chain-gate 5.2s var(--ease-out-quart) infinite;
+}
 
-  .plates {
-    margin-top: var(--s5);
+@keyframes chain-draw {
+  0% {
+    stroke-dashoffset: 100;
   }
-
-  .plate {
-    padding: var(--s4);
+  12%,
+  86% {
+    stroke-dashoffset: 0;
   }
-
-  .plate .verdict {
-    font-size: clamp(22px, 2.6vw, 30px);
-    margin: var(--s1) 0 var(--s3);
-  }
-
-  .shared {
-    margin-top: var(--s3);
-    padding: var(--s2) var(--s4);
-  }
-
-  /* Isyarat "lanjut ke bawah" tidak muat di layar sepenuh ini — dan tidak
-     dibutuhkan: isi yang menyentuh tepi layar sudah menjadi isyaratnya. */
-  .hero .more {
-    display: none;
+  100% {
+    stroke-dashoffset: 0;
   }
 }
 
-/* --------------------------------------------------------------- glosarium --
-   Terjemahan Inggris di samping byte yang di-hash. Ia sengaja terlihat SEKUNDER:
-   yang mengikat adalah teks aslinya, dan pembaca harus bisa melihat mana yang
-   mana dalam sekali pandang. */
-
-.gloss {
-  display: block;
-  margin: var(--s2) 0 0;
-  padding-left: var(--s3);
-  border-left: 2px solid var(--amber);
-  color: var(--dim);
-  font-family: var(--font-sans), sans-serif;
-  font-size: var(--t2);
-  line-height: 1.55;
-  font-style: normal;
-}
-
-.gloss > span:first-child {
-  display: inline-block;
-  margin-right: 0.5em;
-  padding: 0 var(--s1);
-  background: var(--amber);
-  color: var(--bone);
-  font-family: var(--font-mono), monospace;
-  font-size: var(--t1);
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  vertical-align: 1px;
-}
-
-/* Glosarium di bawah kutipan deliverable utuh: satu blok, bukan sisipan. */
-.doc-gloss {
-  margin-top: var(--s3);
-}
-
-.doc-gloss .gloss + .gloss {
-  margin-top: var(--s2);
-}
-
-/* Byte asli yang di-hash, dilipat di kaki jendela membaca. Ia tidak
-   disembunyikan — ia diletakkan sesudah bacaan, bukan menggantikannya. */
-.readwin .source {
-  border-top: 2px solid var(--bone);
-  padding: var(--s4) var(--s5);
-  background: var(--raised);
-}
-
-.readwin .source summary {
-  cursor: pointer;
-  font-size: var(--t3);
-  color: var(--bone-2);
-}
-
-.readwin .source summary::marker {
-  color: var(--amber);
-}
-
-.readwin .source .note-line {
-  margin: var(--s3) 0 0;
-  font-size: var(--t2);
-  color: var(--dim);
-  max-width: 78ch;
-}
-
-.readwin .source pre {
-  margin: var(--s3) 0 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: var(--font-mono), monospace;
-  font-size: var(--t2);
-  line-height: 1.6;
-  color: var(--dim);
-  border-left: 2px solid var(--hair);
-  padding-left: var(--s3);
-}
-
-/* ------------------------------------------------ dibuka saat digulir ------
-   Hanya berlaku ketika `Reveal` sudah memasang `js-reveal` di <html>. Tanpa JS,
-   tanpa IntersectionObserver, atau dengan gerak dikurangi, seluruh blok ini
-   tidak pernah menyala dan isinya tampil biasa.
-
-   Gerakannya TIDAK seragam di tiap seksi. Langkah dibuka BERURUTAN karena
-   urutannya memang membawa arti — langkah 2 mustahil tanpa langkah 1. Baris
-   tabel dibuka berurutan karena ia catatan yang bertambah. Jendela membaca
-   dibuka utuh, sekali, karena ia satu alat. */
-
-@media (prefers-reduced-motion: no-preference) {
-  .js-reveal [data-reveal] {
-    opacity: 0;
-    transform: translateY(18px);
-    transition: opacity 0.6s var(--ease), transform 0.6s var(--ease);
+@keyframes chain-node {
+  0%,
+  4% {
+    opacity: 0.28;
   }
-
-  .js-reveal [data-reveal].is-in {
+  12%,
+  88% {
     opacity: 1;
-    transform: none;
   }
+  100% {
+    opacity: 0.28;
+  }
+}
 
-  /* rantai sebab: satu per satu */
-  .js-reveal .steps li {
+@keyframes chain-gate {
+  0%,
+  40% {
+    opacity: 0.45;
+  }
+  52%,
+  88% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes stage-pulse {
+  0%,
+  100% {
+    opacity: 0.16;
+  }
+  50% {
+    opacity: 0.34;
+  }
+}
+
+@keyframes scan {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.75;
+  }
+  85% {
+    opacity: 0.75;
+  }
+  100% {
+    transform: translateY(var(--scan-distance, 220px));
+    opacity: 0;
+  }
+}
+
+@keyframes reveal {
+  from {
     opacity: 0;
     transform: translateY(14px);
-    transition: opacity 0.5s var(--ease), transform 0.5s var(--ease);
   }
-
-  .js-reveal .steps.is-in li {
+  to {
     opacity: 1;
     transform: none;
   }
+}
 
-  .js-reveal .steps.is-in li:nth-child(2) {
-    transition-delay: 0.12s;
+/* Crossfade warna HANYA saat pengguna menekan tombol tema (hindari kedip saat muat). */
+html.theme-anim,
+html.theme-anim *,
+html.theme-anim *::before,
+html.theme-anim *::after {
+  transition:
+    background-color 0.28s var(--ease-out-quart),
+    border-color 0.28s var(--ease-out-quart),
+    color 0.28s var(--ease-out-quart),
+    fill 0.28s var(--ease-out-quart);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
-
-  .js-reveal .steps.is-in li:nth-child(3) {
-    transition-delay: 0.24s;
-  }
-
-  /* catatan yang bertambah */
-  .js-reveal .table-wrap tbody tr {
-    opacity: 0;
-    transition: opacity 0.4s var(--ease);
-  }
-
-  .js-reveal .table-wrap.is-in tbody tr {
-    opacity: 1;
-  }
-
-  .js-reveal .table-wrap.is-in tbody tr:nth-child(2) { transition-delay: 0.06s; }
-  .js-reveal .table-wrap.is-in tbody tr:nth-child(4) { transition-delay: 0.12s; }
-  .js-reveal .table-wrap.is-in tbody tr:nth-child(6) { transition-delay: 0.18s; }
-  .js-reveal .table-wrap.is-in tbody tr:nth-child(8) { transition-delay: 0.24s; }
-  .js-reveal .table-wrap.is-in tbody tr:nth-child(10) { transition-delay: 0.3s; }
-
-  /* batang kedalaman terisi sesudah barisnya muncul — perbedaan sampling vs
-     full itulah yang ingin dilihat mata, jadi ia yang bergerak terakhir. */
-  .js-reveal .table-wrap .depthbar i {
-    transform: scaleY(0.25);
-    transform-origin: bottom;
-    transition: transform 0.35s var(--ease), background 0.35s var(--ease);
-  }
-
-  .js-reveal .table-wrap.is-in .depthbar i {
-    transform: none;
-    transition-delay: 0.34s;
-  }
-}
-
-/* Penutup landing: dua pintu ke aplikasinya. Yang pertama utama, yang kedua
-   memakai kerangka yang sama tanpa isian — sejajar bentuknya, beda bobotnya. */
-.outro {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s4);
-  margin-top: var(--s5);
-}
-
-.outro .go {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5em;
-  padding: var(--s3) var(--s5);
-  border: 2px solid var(--bone);
-  border-radius: 999px;
-  background: var(--amber);
-  color: var(--bone);
-  font-size: var(--t4);
-  font-weight: 600;
-  text-decoration: none;
-  box-shadow: var(--block);
-  transition: background 0.16s var(--ease), color 0.16s var(--ease),
-    transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
-}
-
-.outro .go.ghost {
-  background: var(--surface);
-}
-
-.outro .go:hover {
-  background: var(--action);
-  color: var(--on-action);
-}
-
-.outro .go:active {
-  transform: translate(2px, 2px);
-  box-shadow: 1px 1px 0 var(--bone);
-}
-
-.outro .go .icon {
-  margin-left: 0;
-  opacity: 1;
-  transition: transform 0.22s var(--ease);
-}
-
-.outro .go:hover .icon {
-  transform: translateX(3px);
-}
-
-/* "Apa ini" — tiga kolom pendek. Sengaja BUKAN kartu: garis rambut memisahkan,
-   sama seperti rantai langkah, supaya halaman ini punya satu bahasa saja untuk
-   "beberapa hal setara berdampingan". */
-.what {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0;
-  border-top: 1px solid var(--hair);
-  margin-top: var(--s5);
-}
-
-.what > div {
-  padding: var(--s5) var(--s5) var(--s5) 0;
-  border-right: 1px solid var(--hair);
-}
-
-.what > div + div {
-  padding-left: var(--s5);
-}
-
-.what > div:last-child {
-  border-right: none;
-}
-
-.what h3 {
-  margin-top: 0;
-}
-
-.what p {
-  margin: 0;
-  color: var(--bone-2);
-  font-size: var(--t4);
-}
-
-@media (max-width: 860px) {
-  .what {
-    grid-template-columns: 1fr;
-  }
-
-  .what > div,
-  .what > div + div {
-    border-right: none;
-    border-bottom: 1px solid var(--hair);
-    padding: var(--s4) 0;
-  }
-
-  .what > div:last-child {
-    border-bottom: none;
-  }
-}
-
-/* Empat bukti yang bisa diperiksa sendiri. Dua kolom bernomor — bukan kartu,
-   dan bukan rantai bersambung seperti `.steps`, karena keempatnya berdiri
-   sendiri: urutannya tidak membawa arti, hanya jumlahnya. */
-.proofs {
-  list-style: none;
-  counter-reset: proof;
-  margin: var(--s5) 0 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--s5) var(--s6);
-}
-
-.proofs li {
-  counter-increment: proof;
-  position: relative;
-  padding-left: var(--s6);
-}
-
-.proofs li::before {
-  content: counter(proof);
-  position: absolute;
-  left: 0;
-  top: 1px;
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  border: 2px solid var(--bone);
-  border-radius: 999px;
-  background: var(--amber);
-  font-family: var(--font-mono), monospace;
-  font-size: var(--t2);
-  font-weight: 600;
-}
-
-.proofs h3 {
-  margin: 0 0 var(--s2);
-  font-size: var(--t4);
-  letter-spacing: 0.01em;
-  text-transform: none;
-  color: var(--bone);
-  font-weight: 600;
-}
-
-.proofs p {
-  margin: 0;
-  color: var(--bone-2);
-  font-size: var(--t4);
-}
-
-@media (max-width: 860px) {
-  .proofs {
-    grid-template-columns: 1fr;
-  }
-}
-
-
-/* Target sentuh di dalam tabel. Tautan hash dan "open evidence" tingginya
-   18-21px karena hanya setinggi barisnya; WCAG 2.5.8 meminta 24px. Padding
-   vertikal menaikkannya tanpa mengubah ritme baris, karena selnya sudah lebih
-   tinggi dari itu. */
-td a {
-  display: inline-block;
-  padding-block: 3px;
-}
-
-
-/* Judul kelompok di kartu verdict adalah seksi tingkat atas halaman itu, jadi
-   ia <h2> — sebelumnya <h3> langsung sesudah <h1> dan urutan judulnya melompat.
-   Tampilannya tetap label kecil: yang berubah pohon dokumennya, bukan matanya. */
-h2.grouplabel {
-  font-family: var(--font-sans), sans-serif;
-  font-variation-settings: normal;
-  font-size: var(--t1);
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--dim);
-  line-height: 1.4;
-  max-width: none;
-  margin: var(--s5) 0 var(--s3);
-}
-
-.card > h2.grouplabel:first-child {
-  margin-top: 0;
-}
-
-.card .kv + h2.grouplabel {
-  margin-top: var(--s5);
-  padding-top: var(--s4);
-  border-top: 1px solid var(--hair);
 }

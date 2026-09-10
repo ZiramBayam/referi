@@ -1,6 +1,6 @@
 // Pembaca encoding kanonik bundel bukti (`evaluator-verdict-evidence/v3` & `/v4`).
 //
-// Agen menulis setiap uint sebagai objek `{"$u":"418"}`, BUKAN sebagai angka JSON — itu
+// Agen menulis setiap uint sebagai objek `{"$u":"418"}`, BUKAN sebagai angka JSON, itu
 // yang membuat `keccak256(isi berkas)` bisa dicocokkan ulang tanpa bergantung pada cara
 // tiap bahasa mencetak angka. Halaman ini karena itu TIDAK BOLEH menganggap angka biasa.
 //

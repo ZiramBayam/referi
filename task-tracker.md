@@ -372,9 +372,38 @@ MVP positioning yang wajib dipertahankan:
 - [ ] Production oracle/simulation/attestation design only after threat model/audit.
 - [ ] Dashboard/UI, notifications, multi-operator approval, PMF/market validation.
 
+## 12. Interactive execution room (requested after MVP)
+
+This section supersedes the earlier UI exclusion only for the explicitly requested public
+demonstration surface. It does not expand the on-chain MVP boundary.
+
+- [x] Record durable product truth in `PRODUCT.md`: primary user, bounded testnet/mock flow,
+  product mechanism, evidence, and non-goals.
+- [x] Replace the legacy homepage story with an interactive `treasury-rebalance` execution room.
+- [x] Add a route-backed preflight fixture that exposes the canonical incident, Control Hypothesis,
+  four proof obligations, and the three decision states.
+- [x] Let a user change the rebalance amount and observe the post-state invariant change.
+- [x] Let a user run the seeded stale-oracle path, refresh the fixture, and rerun preflight.
+- [x] Show an action-bound Passport preview with target, selector, calldata binding, memory root,
+  expiry, and nonce fields; explicitly label it as a fixture preview until a public deployment
+  adapter exists.
+- [x] Demonstrate exactly-once acceptance, mutated-calldata rejection, and replay rejection as
+  user-triggered fixture outcomes.
+- [x] Demonstrate missing-memory behavior as `human-review-required`, never as an auto-pass.
+- [x] Apply the approved dark protocol-console visual direction while preserving product facts.
+- [x] Add focused tests for stale oracle, fresh issuance, reserve invariant, and missing memory.
+- [x] Run web lint, web tests, production build, and local GET/POST smoke tests.
+- [!] Connect the room to a real public testnet PassportVerifier, wallet signing, explorer links,
+  and a live transaction only after public deployment addresses and a safe signer flow exist.
+  Until then the site must keep saying `fixture`, `mock`, or `no real funds`.
+- [ ] Migrate `/timeline`, `/panel`, and `/firewall` legacy surfaces or remove their navigation
+  once the evidence/archive information architecture is finalized.
+
 ## Decision log
 
 - 2026-09-09: Focus changed from Escrow Firewall to Execution Passport: an incident-derived hard execution condition is more distinct than an advisory escrow-term proposal.
 - 2026-09-09: Treasury rebalance is a real MVP product boundary, not merely a video shortcut; other DeFi actions are roadmap items.
 - 2026-09-09: Use a narrow mock verifier, not production Safe infrastructure, because guard failure/recovery is out of scope.
 - 2026-09-10: This replaces the active tracker. Frontend/UI is excluded until separately requested.
+- 2026-09-10: Frontend/UI was explicitly requested again; the interactive room is a fixture-backed
+  product demonstration, while public wallet/testnet execution remains blocked on deployment.
