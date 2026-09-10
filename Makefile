@@ -1,4 +1,4 @@
-.PHONY: doctor test demo demo-passport dual-gate virtuals-evidence
+.PHONY: doctor test demo demo-passport deploy-passport dual-gate virtuals-evidence
 # doctor: cetak versi toolchain DAN gagal keras (exit 1) bila tidak cocok docs/versions.md.
 # Ambang sengaja major/minor saja (lihat "Ambang ADR" di docs/versions.md): drift patch tidak
 # memerahkan gate. Kecuali forge, yang dipin persis karena memengaruhi bytecode.
@@ -64,8 +64,14 @@ demo:
 
 # Execution Passport MVP: isolated Anvil + mock treasury/verifier + Sibyl memory loop.
 # No real funds, external RPC, or frontend is used. The Python demo stops its own Anvil.
+# Kunci akun 0 Anvil, diterbitkan Foundry dan sengaja publik. Ia hidup di sini, bukan di
+# dalam modul Python, supaya penjaga "nol konstanta 32-byte di agent/**.py" di
+# tests/test_verdict_root.py tetap berlaku tanpa satu pun pengecualian. Lihat komentar di
+# agent/agent/passport_demo.py.
+PASSPORT_DEMO_KEY ?= 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+
 demo-passport:
-	cd agent && uv run python -m agent.passport_demo --start-anvil
+	cd agent && PASSPORT_DEMO_KEY=$(PASSPORT_DEMO_KEY) uv run python -m agent.passport_demo --start-anvil
 
 # Satu-satunya entrypoint deploy yang sah (ADR-016).
 #
@@ -96,6 +102,29 @@ deploy-address:
 print([t['contractAddress'] for t in d['transactions'] if t.get('contractName')=='EvaluatorVault'][0])"
 
 -include Makefile.local
+
+# Broadcast fixture Execution Passport ke Base Sepolia (ADR-033).
+#
+# Kunci privat TIDAK pernah masuk ke perintah ini. Ia dibaca Foundry dari keystore
+# TERENKRIPSI, dan Foundry sendiri yang meminta passphrase-nya secara interaktif
+# (ADR-016). `--sender` sengaja ditulis sebagai alamat LITERAL, bukan hasil
+# substitusi perintah. Buat keystore-nya sekali:
+#
+#   cast wallet import agent --interactive
+#
+# Jalankan simulasi lebih dulu bila ragu: hapus `--broadcast`.
+# WAJIB memenuhi tiga hal sekaligus, dan kegagalan salah satunya baru terlihat saat
+# broadcast: (1) sama dengan AGENT_ADDRESS di .env, (2) punya keystore bernama `agent`,
+# (3) PUNYA SALDO ETH di jaringan target. Ia juga menjadi `policySigner` verifier secara
+# default, artinya HANYA tanda tangan alamat ini yang akan diterima passport verifier
+# seumur hidup kontrak itu. Set POLICY_SIGNER bila penanda tangan passport beda wallet.
+DEPLOY_SENDER ?= 0xfA4F11Ec0e0C060D0471028633B954a7CA739911
+DEPLOY_RPC    ?= https://sepolia.base.org
+
+deploy-passport:
+	cd contracts && forge script script/DeployPassport.s.sol:DeployPassport \
+		--rpc-url $(DEPLOY_RPC) --broadcast \
+		--account agent --sender $(DEPLOY_SENDER)
 
 # Laporan baca-saja: satu memori Sibyl melayani gerbang ACP dan gerbang passport, dan
 # root yang diumumkan on-chain mengikat keduanya. Nol jaringan, nol transaksi, nol kunci.

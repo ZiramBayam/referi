@@ -1,10 +1,16 @@
 import Link from "next/link";
-import { ArrowRight, FileCheck2, ShieldCheck, TriangleAlert } from "lucide-react";
+import { ArrowRight, ExternalLink, FileCheck2, ShieldCheck, TriangleAlert } from "lucide-react";
 import { buttonClasses } from "./ui/Button.jsx";
 import { Reveal } from "./motion.jsx";
 import { GateChain } from "./illustrations/GateChain.jsx";
-import { cn } from "../lib/utils.js";
+import { cn, shortenAddress } from "../lib/utils.js";
 import { ACTION_CLASS, HYPOTHESIS_ID, INCIDENT_TYPE } from "../lib/passportDemo.js";
+import {
+  PASSPORT_BLOCK,
+  PASSPORT_CONTRACTS,
+  PASSPORT_DEPLOY_COST_ETH,
+  passportAddressUrl,
+} from "../lib/deployment.js";
 
 /**
  * Halaman depan. Tugasnya SATU: membuat mekanismenya bisa dimengerti, lalu
@@ -16,6 +22,8 @@ export default function Landing() {
     <>
       <Hero />
       <MemoryChangesCondition />
+      <TwoGates />
+      <DeployedOnChain />
       <ReproduceBand />
       <FinalCta />
     </>
@@ -210,6 +218,135 @@ function MemoryChangesCondition() {
             </figcaption>
           </figure>
         </Reveal>
+      </div>
+    </section>
+  );
+}
+
+const GATES = [
+  {
+    name: "Gate 1 · Virtuals ACP",
+    what: "Memory sets how deeply a deliverable is checked and what budget cap a provider gets.",
+    proof: "Five jobs on the real ACP contract. Jobs 421 and 422 have identical text and opposite verdicts.",
+    check: "make virtuals-evidence",
+  },
+  {
+    name: "Gate 2 · Base",
+    what: "Memory turns a past incident into four proof obligations a treasury action must satisfy.",
+    proof: "PassportVerifier, MockTreasury, and MockOracle deployed and verified on Base Sepolia.",
+    check: "make demo-passport",
+  },
+];
+
+function TwoGates() {
+  return (
+    <section className="border-b border-border">
+      <div className="mx-auto max-w-6xl px-5 py-20">
+        <Reveal>
+          <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+            <h2 className="font-display text-[clamp(1.8rem,3.5vw,2.6rem)] font-semibold leading-tight text-ink">
+              One memory, two gates.
+            </h2>
+            <div className="flex flex-col gap-5 text-[15px] leading-relaxed text-muted lg:pt-2">
+              <p>
+                Referi enforces in two places, on two protocols, against two different failure
+                modes. Both gates read the same Sibyl store through the same code.
+              </p>
+              <p className="text-ink">
+                They are anchored together, not merely adjacent. The passport gate&apos;s Control
+                Hypothesis lives in the same reference namespace the on-chain memory root commits
+                to, so the root the ACP evaluator announces also commits to the Base gate&apos;s
+                policy. Change one and the other&apos;s root changes.
+              </p>
+            </div>
+          </div>
+        </Reveal>
+
+        <Reveal delay={0.08}>
+          <ol className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-border bg-border md:grid-cols-2">
+            {GATES.map((g) => (
+              <li key={g.name} className="flex flex-col gap-4 bg-bg p-7">
+                <h3 className="font-display text-xl font-semibold text-ink">{g.name}</h3>
+                <p className="text-sm leading-relaxed text-muted">{g.what}</p>
+                <p className="text-sm leading-relaxed text-ink">{g.proof}</p>
+                <p className="mt-auto pt-2 font-mono text-xs text-primary-ink">{g.check}</p>
+              </li>
+            ))}
+          </ol>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+function DeployedOnChain() {
+  return (
+    <section className="border-b border-border bg-surface/30">
+      <div className="mx-auto max-w-6xl px-5 py-20">
+        <div className="grid gap-12 lg:grid-cols-[0.95fr_1.05fr] lg:gap-16">
+          <Reveal>
+            <h2 className="font-display text-[clamp(1.8rem,3.5vw,2.6rem)] font-semibold leading-tight text-ink">
+              The gate is on chain, and its source is readable.
+            </h2>
+            <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-muted">
+              The verifier that refuses a replayed passport is deployed on Base Sepolia, not described
+              in a diagram. All three contracts are verified on Sourcify, so the explorer shows source
+              rather than bytecode.
+            </p>
+            <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-ink">
+              Two of the bindings that matter are immutable and you can read them back yourself: the
+              verifier points at that treasury, and it accepts exactly one signer. Neither can be
+              changed after deployment, which is what makes the refusal meaningful.
+            </p>
+            <p className="mt-4 max-w-xl text-[13px] leading-relaxed text-faint">
+              Fixture boundary: the treasury holds no real funds and the oracle observation is set by
+              its own owner. This demonstrates the enforcement mechanism, it does not move money.
+            </p>
+          </Reveal>
+
+          <Reveal delay={0.1}>
+            <div className="rounded-2xl border border-border bg-surface/40 p-2">
+              <div className="flex items-center justify-between px-3 py-3">
+                <span className="text-xs font-medium text-muted">Deployment manifest</span>
+                <span className="font-mono text-xs text-faint">
+                  chain 84532 · block {PASSPORT_BLOCK.toLocaleString("en-US")}
+                </span>
+              </div>
+              <ul className="overflow-hidden rounded-xl border border-border bg-bg">
+                {PASSPORT_CONTRACTS.map((c, i) => (
+                  <li key={c.name} className={cn(i > 0 && "border-t border-border")}>
+                    <a
+                      href={passportAddressUrl(c.address)}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`View ${c.name} on Blockscout, opens in a new tab`}
+                      className="group flex items-center justify-between gap-4 px-4 py-4 transition-colors hover:bg-surface"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate font-mono text-sm text-ink">{c.name}</div>
+                        <div className="mt-0.5 text-xs text-muted">{c.role}</div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2 font-mono text-xs text-primary-ink">
+                        {shortenAddress(c.address)}
+                        <ExternalLink
+                          className="size-3.5 text-faint transition-colors group-hover:text-primary-ink"
+                          strokeWidth={2}
+                          aria-hidden
+                        />
+                      </div>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              <p className="px-3 py-3 text-xs leading-relaxed text-faint">
+                Verified on Sourcify, exact match, all three. Deployed for{" "}
+                {PASSPORT_DEPLOY_COST_ETH} ETH. Addresses, transaction hashes, and the post-deploy
+                state read back from chain are in{" "}
+                <span className="font-mono text-muted">deployments/passport-84532.json</span>.
+              </p>
+            </div>
+          </Reveal>
+        </div>
       </div>
     </section>
   );
