@@ -1,4 +1,4 @@
-.PHONY: doctor test demo demo-passport deploy-passport dual-gate virtuals-evidence
+.PHONY: doctor test demo demo-passport deploy-passport dual-gate virtuals-evidence passport-request
 # doctor: cetak versi toolchain DAN gagal keras (exit 1) bila tidak cocok docs/versions.md.
 # Ambang sengaja major/minor saja (lihat "Ambang ADR" di docs/versions.md): drift patch tidak
 # memerahkan gate. Kecuali forge, yang dipin persis karena memengaruhi bytecode.
@@ -135,3 +135,11 @@ dual-gate:
 # Base Sepolia dan mencocokkannya dengan jobs.json. BUTUH jaringan. Nol transaksi, nol kunci.
 virtuals-evidence:
 	cd agent && uv run python -m agent.virtuals_evidence
+
+# Minta passport untuk SATU executor dari memori operasional gerbang ACP (SIBYL_DB_PATH). Tanpa
+# SIGNER_KEY_ENV/EXECUTOR_KEY_ENV: nol tanda tangan, nol transaksi (RPC hanya dibaca untuk anchor).
+# Contoh: make passport-request EXECUTOR=0xc3c6... SIGNER_KEY_ENV=PASSPORT_SIGNER_KEY EXECUTOR_KEY_ENV=PROVIDER2_PRIVATE_KEY
+passport-request:
+	cd agent && uv run python -m agent.passport_request --executor $(EXECUTOR) \
+		$(if $(SIGNER_KEY_ENV),--signer-key-env $(SIGNER_KEY_ENV),) \
+		$(if $(EXECUTOR_KEY_ENV),--executor-key-env $(EXECUTOR_KEY_ENV),)
