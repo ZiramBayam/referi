@@ -30,6 +30,7 @@ The output must contain these labelled facts:
 ```text
 before_memory_decision=human-review-required
 incident_timestamps=oracle=<unix-seconds> observed=<unix-seconds>
+incident_digest=0x<32-byte-keccak>
 stored_hypothesis=stale-oracle-rebalance/v1
 fresh_process_recall=stale-oracle-rebalance/v1
 fresh_timestamps=oracle=<unix-seconds> observed=<unix-seconds>

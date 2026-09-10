@@ -124,6 +124,7 @@ def run(rpc_url: str, memory_db: Path | None = None) -> None:
     )
     print(f"incident_oracle_age_seconds={incident.oracle_age_seconds}")
     print(f"incident_timestamps=oracle={oracle_timestamp} observed={now}")
+    print(f"incident_digest={incident.evidence_digest}")
     print(f"before_memory_decision={blocked.decision} reason={blocked.reason}")
     remembered = record_incident(memory, incident)
     print(f"stored_hypothesis={remembered.hypothesis_id} memory_root={memory_root_hex(memory)}")
