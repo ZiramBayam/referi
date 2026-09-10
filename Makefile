@@ -1,4 +1,4 @@
-.PHONY: doctor test demo demo-passport
+.PHONY: doctor test demo demo-passport dual-gate virtuals-evidence
 # doctor: cetak versi toolchain DAN gagal keras (exit 1) bila tidak cocok docs/versions.md.
 # Ambang sengaja major/minor saja (lihat "Ambang ADR" di docs/versions.md): drift patch tidak
 # memerahkan gate. Kecuali forge, yang dipin persis karena memengaruhi bytecode.
@@ -96,3 +96,13 @@ deploy-address:
 print([t['contractAddress'] for t in d['transactions'] if t.get('contractName')=='EvaluatorVault'][0])"
 
 -include Makefile.local
+
+# Laporan baca-saja: satu memori Sibyl melayani gerbang ACP dan gerbang passport, dan
+# root yang diumumkan on-chain mengikat keduanya. Nol jaringan, nol transaksi, nol kunci.
+dual-gate:
+	cd agent && uv run python -m agent.dual_gate_report
+
+# Bukti baca-saja bahwa gerbang Virtuals berjalan di chain: membaca kontrak ACP asli di
+# Base Sepolia dan mencocokkannya dengan jobs.json. BUTUH jaringan. Nol transaksi, nol kunci.
+virtuals-evidence:
+	cd agent && uv run python -m agent.virtuals_evidence
