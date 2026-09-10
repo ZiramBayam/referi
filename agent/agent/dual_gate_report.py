@@ -20,6 +20,7 @@ from web3 import Web3
 
 import agent.execution_passport as ep
 import agent.memory_policy as mp
+from agent.memory_lock import locked_client
 
 DEMO_PROVIDER = "0x20212e4d95a75e6716575ed26e884cdeff66b321"
 DEMO_TREASURY = "0x68Cca28DceFAd1c7a73f97FACC74cD51B145772B"
@@ -68,15 +69,19 @@ def report(db_path: str | None = None) -> list[str]:
 
     try:
         client = MemoryClient.local(str(path))
-        snapshot = mp.load_snapshot(client)
-        hypotheses = [k for k in snapshot.patterns if k.startswith(ep.HYPOTHESIS_KEY)]
-        root = mp.memory_root_for_onchain(client)
-        covers_both = bool(snapshot.providers) and bool(hypotheses)
+        # Satu kunci mengikat pembacaan daftar dan root ke keadaan store yang sama.
+        with locked_client(client):
+            view = mp.DecisionMemoryView(client)
+            providers = {name: body for name, body in view.raw_providers()}
+            patterns = view.raw_references(mp.REFERENCE_PATTERN_PREFIX)
+            root = mp.memory_root_for_onchain(client)
+        hypotheses = [k for k in patterns if k.startswith(ep.HYPOTHESIS_KEY)]
+        covers_both = bool(providers) and bool(hypotheses)
 
         return [
             f"memory_db={path}",
-            f"gate_acp_providers={len(snapshot.providers)}",
-            f"gate_acp_provider_ids={','.join(sorted(snapshot.providers)) or 'none'}",
+            f"gate_acp_providers={len(providers)}",
+            f"gate_acp_provider_ids={','.join(sorted(providers)) or 'none'}",
             f"gate_passport_hypotheses={len(hypotheses)}",
             f"gate_passport_keys={','.join(sorted(hypotheses)) or 'none'}",
             f"shared_pattern_namespace={mp.REFERENCE_PATTERN_PREFIX}",
