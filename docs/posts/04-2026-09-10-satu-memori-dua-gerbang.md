@@ -61,3 +61,5 @@ local flow still runs end to end with `make demo`.
 
 So the honest claim is narrow and, we think, more interesting than the wide one: two
 enforcement surfaces, one memory, and a root on chain that binds both.
+
+Update, 11 Sep (after the deadline): the functional link now exists in one direction. See post 5.

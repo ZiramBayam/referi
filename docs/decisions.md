@@ -1154,3 +1154,44 @@ Keputusan:
 Konsekuensi:
 (+) Argumen multiplier bersandar pada properti yang bisa diperiksa, bukan pada framing.
 (-) Dua perintah dan satu berkas tes baru yang harus dijaga.
+
+
+## ADR-035 Obligasi `actor-standing`: verdict Virtuals mengubah izin Base, dan verifier mengikat executor
+Tanggal: 2026-09-11 (SESUDAH deadline hackathon, lihat tag `submission-2026-09-10`). Status: diterima.
+Aditif; tidak mencabut ADR-002, ADR-020, ADR-022, ADR-033.
+
+Konteks:
+(a) ADR-034 menyajikan dua gerbang satu memori, tetapi tautannya baru berupa ko-komitmen
+    root: tidak ada keputusan di satu gerbang yang berubah karena data dari gerbang lain.
+    Rubrik memberi 1.25 hanya bila integrasi "doing real work" (`docs/spec.md:58`).
+(b) Asesmen 2026-09-10 menutup arah Base -> Virtuals (`needs-rule-change`). Arah sebaliknya
+    hanya butuh PEMBACAAN profil provider, yang sudah punya reader jalur keputusan.
+(c) Passport v1 tidak menyebut siapa yang boleh memakainya, jadi penilaian atas sebuah alamat
+    tidak bisa ditegakkan kontrak.
+
+Keputusan:
+1. Hipotesis kendali memilih obligasi kelima `actor-standing` dengan ambang `max_risk_level`
+   yang tersimpan di memori (default 0). Store lama berisi empat obligasi tetap sah dan
+   TIDAK memeriksa executor: itu pilihan memori, bukan cacat.
+2. Jalur keputusan passport membaca profil executor HANYA lewat `DecisionMemoryView.provider`.
+   Entity `suspicion` tidak tersentuh. `derive_cap`, `promote_suspicions`, `_recompute_risk`
+   tidak berubah. Alamat tanpa entity dinilai `satisfied` dengan `acp_history=none`, karena
+   bagi ACP pun provider bersih dan alamat baru tidak bisa dibedakan.
+3. `PassportVerifier` v2: field `executor` di struct dan typehash, `msg.sender` wajib sama,
+   `PassportConsumed` mengindeks executor, `PASSPORT_VERSION=2`. Fixture v1
+   (`0x43D978e2…37C1`) ditinggalkan dan dicatat di `deployments/passport-84532.json.previous`.
+4. Bukti urutannya tetap: passport executor dikonsumsi DULU, dua job ACP menolak executor itu,
+   lalu permintaan yang sama ditolak `decision=block` dengan menyebut kedua jobId. Semua di
+   `docs/evidence.md`. Executor pembuktian adalah wallet provider di `.env` saat ini
+   (`0xA2beb04BE7F3d0948828Cf1893876513f4Fa2cde`), bukan provider Beta lama, karena wallet sudah dirotasi.
+
+Konsekuensi:
+(+) Ada satu keputusan Base yang berubah karena verdict Virtuals, dan kontrak Base menegakkan
+    hasilnya (siapa yang boleh memakai passport). Klaim multiplier bersandar pada transaksi.
+(-) Identitas yang diikat adalah KUNCI, bukan badan hukum: executor di Base adalah kunci yang
+    sama dengan provider di ACP. Tanpa ERC-8004 itu tautan terkuat yang ada
+    (`docs/limitations.md` item 37).
+(-) Penolakan passport tidak meninggalkan jejak on-chain; yang terlihat adalah ketiadaan
+    `PassportConsumed` kedua dan keluaran perintah.
+(-) Seluruh pekerjaan ini bertanggal 11 Sep, sesudah deadline. Ia tidak diklaim sebagai
+    pekerjaan di dalam window.

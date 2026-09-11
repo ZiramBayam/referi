@@ -953,3 +953,22 @@ contents and a "memory wiped" that leaves a WAL behind is a false green.
 
 Still good practice: run `web/` through the script that already pins `-H 127.0.0.1`, and turn on
 `DEMO_MODE=1` only when you are actually demonstrating the destructive test.
+
+
+## 37. `actor-standing` binds a key, not a party, a refusal leaves no on-chain trace, and it landed after the deadline
+
+The fifth obligation reads the executor's provider profile from the same Sibyl store the ACP gate
+writes, and `PassportVerifier` v2 refuses anyone but that executor. Three things this does NOT prove:
+
+- That the executor on Base is the same legal party as the provider on ACP. It is the same **key**
+  (`0xA2beb04BE7F3d0948828Cf1893876513f4Fa2cde` in the recorded proof). Without ERC-8004 identity that is the strongest link
+  available, and it is stated as such.
+- That a refusal happened. `decision=block` is an off-chain decision; the chain shows only that no
+  second `PassportConsumed` for that executor exists. The command output is the record.
+- That this was built inside the hackathon window. It was not: every commit after the tag
+  `submission-2026-09-10` is dated 11 Sep, and the v2 fixture was deployed at block 46658144 that
+  day. See the README note.
+
+An unknown address (no provider entity) is `satisfied` with `acp_history=none`. That is deliberate:
+ACP itself cannot tell a clean provider from a new one, and a gate that punished newcomers would be
+lying about what memory knows.
