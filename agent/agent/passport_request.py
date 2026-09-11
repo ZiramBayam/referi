@@ -62,6 +62,25 @@ def load_deployment() -> dict[str, Any]:
     }
 
 
+def _secret_from_env(name: str) -> str:
+    """Nilai variabel `name`: dari environment, fallback baris `NAME=` di `.env` repo.
+
+    Pola yang sama dengan `vault_client.load_private_key`, supaya operator tidak perlu
+    meng-export kunci ke shell. Nilainya tidak pernah dicetak.
+    """
+    value = os.environ.get(name, "").strip()
+    if not value:
+        env_path = _repo_root() / ".env"
+        if env_path.exists():
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                if line.startswith(f"{name}="):
+                    value = line.split("=", 1)[1].split("#", 1)[0].strip()
+                    break
+    if not value:
+        raise RuntimeError(f"{name} kosong di environment dan di .env")
+    return value if value.startswith("0x") else "0x" + value
+
+
 def _calldata(amount: int) -> str:
     return "0x" + (REBALANCE_SELECTOR + abi_encode(["uint256"], [int(amount)])).hex()
 
@@ -183,7 +202,7 @@ def main() -> int:
     if args.signer_key_env is None:
         print("signed=False (beri --signer-key-env untuk menandatangani)")
         return EXIT_ISSUED
-    signer_key = os.environ[args.signer_key_env]
+    signer_key = _secret_from_env(args.signer_key_env)
     signature = decision.passport.sign(deployment["verifier"], signer_key)
     print(f"signed=True signer={Account.from_key(signer_key).address.lower()}")
     calldata = _calldata(args.amount)
@@ -199,7 +218,7 @@ def main() -> int:
 
     if args.executor_key_env is None:
         return EXIT_ISSUED
-    executor_account = Account.from_key(os.environ[args.executor_key_env])
+    executor_account = Account.from_key(_secret_from_env(args.executor_key_env))
     if executor_account.address.lower() != normalize_address(args.executor):
         print("executor_key_mismatch=True")
         return EXIT_ERROR
