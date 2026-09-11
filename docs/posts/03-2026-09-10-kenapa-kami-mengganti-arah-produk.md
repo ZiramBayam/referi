@@ -97,4 +97,4 @@ Calling this a pivot was accurate about our attention and wrong about the archit
 The two gates share one Sibyl store, one `pattern:` namespace, and one root function, and
 the root the ACP gate announces on chain commits to the Base gate's policy. We did not
 abandon half the project, we added a second enforcement point to the same memory. Post 4
-shows the command that proves it.
+shows the shared root; post 5 shows a verdict on Virtuals changing a permission on Base.

@@ -27,6 +27,7 @@ from agent.memory_policy import (
     REFERENCE_PATTERN_PREFIX,
     DecisionMemoryView,
     MemoryIntegrityError,
+    ProviderProfile,
     memory_root_for_onchain,
     normalize_address,
     under_memory_lock,
@@ -38,7 +39,7 @@ HYPOTHESIS_ID: Final = "stale-oracle-rebalance/v1"
 HYPOTHESIS_KEY_SUFFIX: Final = "passport.control-hypothesis.stale-oracle-rebalance.v1"
 HYPOTHESIS_KEY: Final = f"{REFERENCE_PATTERN_PREFIX}{HYPOTHESIS_KEY_SUFFIX}"
 HYPOTHESIS_SCHEMA: Final = "execution-passport/control-hypothesis/v1"
-PASSPORT_VERSION: Final = 1
+PASSPORT_VERSION: Final = 2
 EIP712_DOMAIN_NAME: Final = "Execution Passport"
 EIP712_DOMAIN_VERSION: Final = "1"
 DEFAULT_FRESHNESS_SECONDS: Final = 60
@@ -58,6 +59,7 @@ PASSPORT_TYPE_FIELDS: Final[tuple[tuple[str, str], ...]] = (
     ("actionClass", "bytes32"),
     ("chainId", "uint256"),
     ("target", "address"),
+    ("executor", "address"),
     ("selector", "bytes4"),
     ("calldataHash", "bytes32"),
     ("value", "uint256"),
@@ -75,13 +77,18 @@ PROOF_STATE_ANCHOR: Final = "state-anchor-fresh"
 PROOF_ORACLE: Final = "oracle-freshness"
 PROOF_SIMULATION: Final = "simulation-match"
 PROOF_INVARIANT: Final = "post-state-invariant"
+PROOF_ACTOR: Final = "actor-standing"
 PROOF_ROLLBACK: Final = "rollback-route"
-MVP_PROOF_IDS: Final[tuple[str, ...]] = (
+# Empat obligasi pertama sudah ada sebelum actor-standing. Store yang menyimpannya tetap
+# sah: ia hanya belum memilih obligasi kelima, dan itu keputusan memori, bukan kesalahan.
+LEGACY_PROOF_IDS: Final[tuple[str, ...]] = (
     PROOF_STATE_ANCHOR,
     PROOF_ORACLE,
     PROOF_SIMULATION,
     PROOF_INVARIANT,
 )
+MVP_PROOF_IDS: Final[tuple[str, ...]] = (*LEGACY_PROOF_IDS, PROOF_ACTOR)
+DEFAULT_MAX_RISK_LEVEL: Final = 0
 KNOWN_PROOF_IDS: Final[frozenset[str]] = frozenset((*MVP_PROOF_IDS, PROOF_ROLLBACK))
 PROOF_RESULTS: Final[frozenset[str]] = frozenset({"satisfied", "unsatisfied", "unverifiable"})
 DECISIONS: Final[frozenset[str]] = frozenset(
@@ -353,6 +360,7 @@ class ObligationDefinition:
     blocking: bool = True
     max_age_seconds: int | None = None
     min_reserve: int | None = None
+    max_risk_level: int | None = None
 
     def __post_init__(self) -> None:
         if self.obligation_id not in KNOWN_PROOF_IDS:
@@ -363,6 +371,10 @@ class ObligationDefinition:
             _nonnegative_int(self.max_age_seconds, "max_age_seconds")
         if self.min_reserve is not None:
             _nonnegative_int(self.min_reserve, "min_reserve")
+        if self.max_risk_level is not None:
+            _nonnegative_int(self.max_risk_level, "max_risk_level")
+            if self.obligation_id != PROOF_ACTOR:
+                raise PassportValidationError("max_risk_level only applies to actor-standing")
         if self.obligation_id == PROOF_ROLLBACK:
             raise PassportValidationError("rollback-route is roadmap-only in the MVP")
 
@@ -372,6 +384,8 @@ class ObligationDefinition:
             body["max_age_seconds"] = self.max_age_seconds
         if self.min_reserve is not None:
             body["min_reserve"] = self.min_reserve
+        if self.max_risk_level is not None:
+            body["max_risk_level"] = self.max_risk_level
         return body
 
 
@@ -429,8 +443,11 @@ class ControlHypothesis:
             self.required_obligations
         ):
             raise PassportValidationError("hypothesis obligations must be non-empty and unique")
-        if tuple(o.obligation_id for o in self.required_obligations) != MVP_PROOF_IDS:
-            raise PassportValidationError("MVP hypothesis must select the four approved obligations in order")
+        ids = tuple(o.obligation_id for o in self.required_obligations)
+        if ids not in (MVP_PROOF_IDS, LEGACY_PROOF_IDS):
+            raise PassportValidationError(
+                "hypothesis must select the approved obligations in order (four legacy or five current)"
+            )
         if self.enforcement_mode != "block":
             raise PassportValidationError("MVP stale-oracle hypothesis must be blocking")
         if not self.counterfactual:
@@ -510,6 +527,7 @@ class ControlHypothesis:
                     blocking=item.get("blocking", True),
                     max_age_seconds=item.get("max_age_seconds"),
                     min_reserve=item.get("min_reserve"),
+                    max_risk_level=item.get("max_risk_level"),
                 )
                 for item in raw_obligations
                 if isinstance(item, Mapping)
@@ -578,6 +596,7 @@ def initial_control_hypothesis(action: ActionProposal, *, observed_at: int = 0) 
             ObligationDefinition(PROOF_ORACLE, max_age_seconds=DEFAULT_FRESHNESS_SECONDS),
             ObligationDefinition(PROOF_SIMULATION),
             ObligationDefinition(PROOF_INVARIANT, min_reserve=DEFAULT_MIN_RESERVE),
+            ObligationDefinition(PROOF_ACTOR, max_risk_level=DEFAULT_MAX_RISK_LEVEL),
         ),
         enforcement_mode="block",
         counterfactual="simulation alone did not establish oracle freshness and reserve safety",
@@ -824,6 +843,7 @@ class ExecutionPassport:
     action_class: str
     chain_id: int
     target: str
+    executor: str
     selector: str
     calldata_hash: str
     value: int
@@ -843,6 +863,7 @@ class ExecutionPassport:
             raise PassportValidationError("passport action class is not treasury-rebalance")
         object.__setattr__(self, "chain_id", _nonnegative_int(self.chain_id, "chain_id"))
         object.__setattr__(self, "target", _canonical_address(self.target, "target"))
+        object.__setattr__(self, "executor", _canonical_address(self.executor, "executor"))
         object.__setattr__(self, "selector", _canonical_selector(self.selector))
         for field_name in (
             "calldata_hash",
@@ -871,6 +892,7 @@ class ExecutionPassport:
             "actionClass": self.action_class,
             "chainId": self.chain_id,
             "target": self.target,
+            "executor": self.executor,
             "selector": self.selector,
             "calldataHash": self.calldata_hash,
             "value": self.value,
@@ -918,6 +940,7 @@ def build_execution_passport(
     hypothesis: ControlHypothesis,
     results: Iterable[ObligationResult],
     *,
+    executor: str,
     memory_root_value: str,
     issued_at: int,
     expires_at: int,
@@ -933,6 +956,7 @@ def build_execution_passport(
         action_class="0x" + ACTION_CLASS_HASH.hex(),
         chain_id=action.chain_id,
         target=action.target,
+        executor=_canonical_address(executor, "executor"),
         selector=action.selector,
         calldata_hash=action.calldata_hash,
         value=action.value,
@@ -978,6 +1002,16 @@ def _obligation_result(
             "unsatisfied": "simulated post-state reserve is below the remembered minimum",
             "unverifiable": "post-state reserve cannot be verified from the supplied observations",
         },
+        PROOF_ACTOR: {
+            "satisfied": "executor has no disqualifying verdict history on ACP",
+            "unsatisfied": (
+                "executor is disqualified by ACP verdict history: "
+                f"risk_level={observed.get('risk_level')} "
+                f"incident_jobs={','.join(str(j) for j in observed.get('incident_jobs', [])) or 'none'} "
+                f"confirmed_patterns={','.join(observed.get('confirmed_patterns', [])) or 'none'}"
+            ),
+            "unverifiable": "executor standing cannot be verified because ACP memory was not read",
+        },
     }[obligation.obligation_id][result]
     body = {
         "id": obligation.obligation_id,
@@ -994,6 +1028,8 @@ def evaluate_obligations(
     action: ActionProposal,
     hypothesis: ControlHypothesis,
     environment: DeterministicEnvironment,
+    *,
+    executor_profile: ProviderProfile | None = None,
 ) -> tuple[ObligationResult, ...]:
     """Evaluate exactly the proof list selected by the retrieved hypothesis.
 
@@ -1069,6 +1105,32 @@ def evaluate_obligations(
                 result = "satisfied"
             else:
                 result = "unsatisfied"
+        elif obligation.obligation_id == PROOF_ACTOR:
+            # Satu-satunya jembatan Virtuals -> Base. Profil executor DIBACA oleh pemanggil
+            # lewat reader jalur keputusan; di sini hanya dinilai. Tanpa profil = tidak bisa
+            # diverifikasi, bukan lolos. Tanpa entity = bersih, dengan alasan yang sama ACP
+            # tidak bisa membedakan provider bersih dari alamat baru.
+            threshold = {"max_risk_level": obligation.max_risk_level}
+            if executor_profile is None or obligation.max_risk_level is None:
+                observed = {"acp_history": "unread"}
+                result = "unverifiable"
+            else:
+                has_history = bool(executor_profile.incident_jobs) or bool(
+                    executor_profile.confirmed_patterns
+                )
+                observed = {
+                    "executor": executor_profile.address,
+                    "risk_level": executor_profile.risk_level,
+                    "incident_jobs": list(executor_profile.incident_jobs),
+                    "confirmed_patterns": list(executor_profile.confirmed_patterns),
+                    "acp_history": "found" if has_history else "none",
+                }
+                if executor_profile.risk_level > obligation.max_risk_level:
+                    result = "unsatisfied"
+                elif executor_profile.confirmed_patterns:
+                    result = "unsatisfied"
+                else:
+                    result = "satisfied"
         else:  # pragma: no cover - ControlHypothesis validation prevents this
             result = "unverifiable"
             threshold = {}
@@ -1142,6 +1204,7 @@ def evaluate_rebalance_for_passport(
     action: ActionProposal,
     environment: DeterministicEnvironment,
     *,
+    executor: str,
     verifier_address: str,
     issued_at: int,
     nonce: int,
@@ -1153,9 +1216,14 @@ def evaluate_rebalance_for_passport(
     empty, unreadable, or conflicting, the result is human review and no signature.
     """
 
+    executor_address = _canonical_address(executor, "executor")
     try:
         hypotheses = load_control_hypotheses(client)
         selected = select_hypothesis(hypotheses, action)
+        # Profil executor dibaca lewat reader jalur keputusan yang sama dengan gerbang ACP:
+        # entity `suspicion` tidak pernah tersentuh (ADR-002 aturan 1). Ini SATU-SATUNYA
+        # jembatan Virtuals -> Base, dan ia baca-saja.
+        executor_profile = DecisionMemoryView(client).provider(executor_address)
     except (PassportMemoryError, MemoryIntegrityError, OSError) as exc:
         return PassportDecision("human-review-required", f"memory-unavailable: {exc}")
     if selected is None:
@@ -1164,14 +1232,13 @@ def evaluate_rebalance_for_passport(
             "no-matching-hypothesis: bootstrap human review required",
         )
 
-    results = evaluate_obligations(action, selected, environment)
+    results = evaluate_obligations(action, selected, environment, executor_profile=executor_profile)
     if not obligations_allow_execution(selected, results):
-        failed = ",".join(
-            result.obligation_id
-            for result in results
-            if result.result != "satisfied"
+        failed = ",".join(r.obligation_id for r in results if r.result != "satisfied")
+        detail = "; ".join(r.explanation for r in results if r.result != "satisfied")
+        return PassportDecision(
+            "block", f"blocking obligations failed: {failed} ({detail})", selected, results
         )
-        return PassportDecision("block", f"blocking obligations failed: {failed}", selected, results)
 
     root = memory_root_hex(client)
     expiry = issued_at + PASSPORT_MAX_LIFETIME_SECONDS if expires_at is None else expires_at
@@ -1179,6 +1246,7 @@ def evaluate_rebalance_for_passport(
         action,
         selected,
         results,
+        executor=executor_address,
         memory_root_value=root,
         issued_at=issued_at,
         expires_at=expiry,

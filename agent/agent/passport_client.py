@@ -51,6 +51,7 @@ def passport_tuple(passport: ExecutionPassport) -> tuple[Any, ...]:
         bytes.fromhex(message["actionClass"][2:]),
         message["chainId"],
         Web3.to_checksum_address(message["target"]),
+        Web3.to_checksum_address(message["executor"]),
         bytes.fromhex(message["selector"][2:]),
         bytes.fromhex(message["calldataHash"][2:]),
         message["value"],

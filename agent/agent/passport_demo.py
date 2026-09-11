@@ -24,6 +24,7 @@ from web3 import Web3
 
 from agent.execution_passport import (
     DEFAULT_MIN_RESERVE,
+    PROOF_ACTOR,
     REBALANCE_SELECTOR,
     ActionProposal,
     DeterministicEnvironment,
@@ -140,6 +141,7 @@ def run(rpc_url: str, memory_db: Path | None = None) -> None:
             simulation_succeeded=simulation.success,
             simulated_post_reserve=simulation.simulated_post_reserve,
         ),
+        executor=caller,
         verifier_address=verifier.address,
         issued_at=now,
         nonce=1,
@@ -200,6 +202,7 @@ def run(rpc_url: str, memory_db: Path | None = None) -> None:
             simulation_succeeded=simulation.success,
             simulated_post_reserve=simulation.simulated_post_reserve,
         ),
+        executor=caller,
         verifier_address=verifier.address,
         issued_at=fresh_now,
         nonce=2,
@@ -214,6 +217,11 @@ def run(rpc_url: str, memory_db: Path | None = None) -> None:
         "thresholds_from_memory="
         f"oracle={current.hypothesis.required_obligations[1].max_age_seconds} "
         f"reserve={current.hypothesis.required_obligations[3].min_reserve}"
+    )
+    actor = next(r for r in current.results if r.obligation_id == PROOF_ACTOR)
+    print(
+        f"executor_standing={actor.result} acp_history={actor.observed.get('acp_history')} "
+        f"max_risk_level={actor.threshold.get('max_risk_level')}"
     )
     if not current.issued or current.passport is None:
         raise RuntimeError(f"expected passport-issued, got {current.decision}: {current.reason}")
@@ -251,6 +259,7 @@ def run(rpc_url: str, memory_db: Path | None = None) -> None:
             simulation_succeeded=simulation.success,
             simulated_post_reserve=simulation.simulated_post_reserve,
         ),
+        executor=caller,
         verifier_address=verifier.address,
         issued_at=fresh_now,
         nonce=3,

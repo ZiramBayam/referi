@@ -71,6 +71,7 @@ def _deployment() -> dict[str, Any]:
         "chain_id": int(data["chainId"]),
         "treasury": data["contracts"]["MockTreasury"],
         "verifier": data["contracts"]["PassportVerifier"],
+        "deployer": str(data.get("deployer", "")).lower(),
         "status": data.get("status"),
     }
 
@@ -128,6 +129,9 @@ def evaluate(request: dict[str, Any]) -> dict[str, Any]:
     oracle_fresh = request.get("oracleFresh", False) is True
 
     deployment = _deployment()
+    # Executor default = deployer fixture. Situs boleh mengirim alamat lain supaya juri bisa
+    # mencoba provider ACP yang riwayatnya ada di store yang sama.
+    executor = str(request.get("executor") or deployment["deployer"]).lower()
     now = int(time.time())
     anchor_number, anchor_hash = _synthetic_anchor(now, amount)
 
@@ -173,6 +177,7 @@ def evaluate(request: dict[str, Any]) -> dict[str, Any]:
                 simulation_succeeded=simulation.success,
                 simulated_post_reserve=simulation.simulated_post_reserve,
             ),
+            executor=executor,
             verifier_address=deployment["verifier"],
             issued_at=now,
             nonce=now,
@@ -184,6 +189,7 @@ def evaluate(request: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "engine": "agent",
+        "executor": executor,
         "decision": decision.decision,
         "reason": decision.reason,
         "hypothesisId": decision.hypothesis.hypothesis_id if decision.hypothesis else None,

@@ -182,3 +182,42 @@ today: **item 7**. The root ↔ evidence-bundle binding (the only pair that matc
 | blocks 46355036 / 46355080, synthetic jobIds 9000000 / 9000001 (`0x895440` / `0x895441`) | `cast logs MemoryRootUpdated` in item 7 |
 | deploy block 46350667, gas 816,969, solc 0.8.36, optimizer 200 | `deployments/84532.json` |
 | chainId 84532 | `deployments/84532.json` |
+
+
+## Virtuals verdicts change Base permissions (11 Sep 2026)
+
+Built and run **after the submission deadline** (tag `submission-2026-09-10`); listed here with real
+timestamps. One executor key, `0xA2beb04BE7F3d0948828Cf1893876513f4Fa2cde` (the provider wallet in the
+current `.env`), no ACP history at the start. Fixture: `PassportVerifier` v2 `0xfB59bE1D2bb2418406cFD02b7141978dc1cfE3Ea`,
+`MockTreasury` `0xc8933Ae40e31f08984b7034C2824be92477DF737`, `MockOracle` `0x57FAc019f4B5e4574c26068fB12d06D1cfB78F8E`. Read in this order; the order is the argument.
+
+| Step | What | Evidence |
+|---|---|---|
+| 0 | Operational store seeded with the Control Hypothesis; zero providers | `make dual-gate --db` style read: `gate_acp_providers=0`, `gate_passport_hypotheses=1`, root `0xc730fda5…f8c7` |
+| 1 | Executor asks the Base gate; ACP profile absent; passport issued and **consumed on chain** by that executor | [`0x680c74df…212a4`](https://base-sepolia.blockscout.com/tx/0x680c74dfb3568dfed2bdf425cd4141f9924ccbe43f50fac34ac44ee482e212a4) block 46658323, `PassportConsumed` topic 3 = `0x…a2beb04b…2cde`; `treasury.reserve()` 1,000,000 -> 900,000 |
+| 2a | ACP job **424** (same executor as provider, deliverable `sim/scenarios/coarse-defect.md`) rejected by the vault | `postVerdict` [`0xdac99192…17f4`](https://base-sepolia.blockscout.com/tx/0xdac99192bd95dc2818402ecb617be6a060bbb81364de7004b5eb7a97ed5817f4) block 46658645, memory root `0xc730fda5…f8c7`; `finalize` [`0x065d3343…2ccd`](https://base-sepolia.blockscout.com/tx/0x065d334397080c312143579e8891b6ce3b901f7a8fbce015c4ea9ed200562ccd) block 46658710 emits `JobRejected(424)` (topic0 `0xae7362b1`) |
+| 2b | ACP job **425**, same provider, rejected; quarantine promoted to `format.placeholder-text`, `risk_level` 1 -> 2 | `postVerdict` [`0xfdba63af…0d71`](https://base-sepolia.blockscout.com/tx/0xfdba63afed601818f9c9e47972864f07c14f22ec3522874d7bd6b56eae7b0d71) block 46658827, memory root `0x7f8bf622…4db2`; `finalize` [`0x8d158744…7fa3`](https://base-sepolia.blockscout.com/tx/0x8d158744ec48319ad54e1461f322da33078f2b5b53128a200559d8e847627fa3) block 46658898 emits `JobRejected(425)` |
+| 3 | The **same request** for the same executor, refused | `make passport-request EXECUTOR=0xA2beb04BE7F3d0948828Cf1893876513f4Fa2cde` exits 3, output below |
+
+Step 3, verbatim:
+
+```
+executor=0xa2beb04be7f3d0948828cf1893876513f4fa2cde
+acp_profile=found risk_level=2 incident_jobs=424,425 confirmed_patterns=format.placeholder-text
+actor_standing=unsatisfied max_risk_level=0
+decision=block
+reason=blocking obligations failed: oracle-freshness,actor-standing (oracle observation exceeds the remembered freshness window; executor is disqualified by ACP verdict history: risk_level=2 incident_jobs=424,425 confirmed_patterns=format.placeholder-text)
+memory_root=0xbdc1122c3e917fd602f93118ddf7e15615ea0f2cfdbab30026bea1db617962d5
+```
+
+Two honest readings of that output. First, `oracle-freshness` also failed, because the fixture oracle
+was set once before step 1 and had gone stale by step 3; `actor-standing` fails on its own and would
+block with a fresh oracle too (the unit test `test_acp_rejections_block_the_base_passport` holds
+every other obligation satisfied). Second, the memory root announced by `postVerdict` for job 425
+(`0x7f8bf622…4db2`, now `EvaluatorVault.lastMemoryRoot()`) already commits to both the Control
+Hypothesis and this provider's profile: the ACP gate's on-chain root moved because of memory that the
+Base gate reads.
+
+What the chain enforces and what it does not: `PassportVerifier` v2 enforces the executor
+(`WrongExecutor`) and the calldata; the refusal in step 3 is off-chain and visible only as the
+absence of a second `PassportConsumed` for this executor. Limitation item 37.

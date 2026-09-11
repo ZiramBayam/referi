@@ -94,7 +94,7 @@ This is the highest-value 90 seconds in the video. Slow down here.
 > contracts are `exact_match` on Sourcify. This row is true, record it. Open Blockscout, not
 > BaseScan: only Blockscout shows the Sourcify source.
 | 3:48 | Switch to `/timeline` | five jobs | "And this is the earlier direction of this project, five evaluation jobs that really landed on chain, kept because the memory argument was proved there first." |
-| 3:52 | Terminal: `make dual-gate` | ten lines, ending `root_covers_both_gates=True` | "One memory serves both. The root this evaluator announced on chain commits to the passport policy too, which is why these are two gates and not two projects." |
+| 3:52 | Terminal: `make passport-request EXECUTOR=0xa2be…` | `acp_profile=found risk_level=2`, `decision=block` | "Same request that got a passport this morning. Two rejections on Virtuals later, Base says no. Memory is the only thing that changed." |
 | 3:56 | Point at the footer boundary line | `no real funds` | "One action class, mock treasury, testnet. Everything else is roadmap, not a claim." |
 | 4:10 | Stop | | "Proof before permission." |
 

@@ -17,11 +17,11 @@ contract PassportVerifier is EIP712, ReentrancyGuardTransient {
 
     bytes32 public constant ACTION_CLASS = keccak256("treasury-rebalance");
     bytes4 public constant REBALANCE_SELECTOR = bytes4(keccak256("rebalance(uint256)"));
-    uint256 public constant PASSPORT_VERSION = 1;
+    uint256 public constant PASSPORT_VERSION = 2;
     uint256 public constant MAX_PASSPORT_LIFETIME = 60;
 
     bytes32 private constant EXECUTION_PASSPORT_TYPEHASH = keccak256(
-        "ExecutionPassport(uint256 passportVersion,bytes32 actionClass,uint256 chainId,address target,bytes4 selector,bytes32 calldataHash,uint256 value,uint256 stateBlockNumber,bytes32 stateBlockHash,bytes32 hypothesisIdsHash,bytes32 obligationResultsHash,bytes32 memoryRoot,uint256 issuedAt,uint256 expiresAt,uint256 nonce)"
+        "ExecutionPassport(uint256 passportVersion,bytes32 actionClass,uint256 chainId,address target,address executor,bytes4 selector,bytes32 calldataHash,uint256 value,uint256 stateBlockNumber,bytes32 stateBlockHash,bytes32 hypothesisIdsHash,bytes32 obligationResultsHash,bytes32 memoryRoot,uint256 issuedAt,uint256 expiresAt,uint256 nonce)"
     );
     bytes32 private constant ACTION_DIGEST_TYPEHASH = keccak256(
         "Action(uint256 chainId,address target,bytes4 selector,bytes32 calldataHash,uint256 value,uint256 stateBlockNumber,bytes32 stateBlockHash)"
@@ -32,6 +32,9 @@ contract PassportVerifier is EIP712, ReentrancyGuardTransient {
         bytes32 actionClass;
         uint256 chainId;
         address target;
+        /// @dev The only account allowed to consume this passport. The policy signer bound
+        ///      it after reading that account's standing in memory; the contract enforces it.
+        address executor;
         bytes4 selector;
         bytes32 calldataHash;
         uint256 value;
@@ -61,11 +64,13 @@ contract PassportVerifier is EIP712, ReentrancyGuardTransient {
     error PassportLifetimeTooLong();
     error NonceAlreadyUsed();
     error WrongSigner();
+    error WrongExecutor();
     error TreasuryCallFailed();
 
     event PassportConsumed(
         uint256 indexed nonce,
         bytes32 indexed passportDigest,
+        address indexed executor,
         bytes32 actionDigest,
         bytes32 hypothesisIdsHash,
         bytes32 obligationResultsHash,
@@ -89,6 +94,7 @@ contract PassportVerifier is EIP712, ReentrancyGuardTransient {
         if (passport.actionClass != ACTION_CLASS) revert WrongActionClass();
         if (passport.chainId != block.chainid) revert WrongChain();
         if (passport.target != address(treasury)) revert WrongTarget();
+        if (msg.sender != passport.executor) revert WrongExecutor();
         if (passport.selector != REBALANCE_SELECTOR) revert WrongSelector();
         if (passport.value != msg.value) revert ValueMismatch();
         if (passport.issuedAt > block.timestamp) revert PassportNotYetValid();
@@ -111,19 +117,30 @@ contract PassportVerifier is EIP712, ReentrancyGuardTransient {
         bytes32 digest = _hashPassport(passport);
         if (digest.recover(signature) != policySigner) revert WrongSigner();
 
+        return _consume(passport, digest, rebalanceCalldata);
+    }
+
+    /// @dev Split out of `execute` only to keep the stack shallow after the executor field was
+    ///      added; it performs the single state change and the single external call.
+    function _consume(
+        ExecutionPassport calldata passport,
+        bytes32 digest,
+        bytes calldata rebalanceCalldata
+    ) internal returns (bytes memory result) {
         usedNonces[passport.nonce] = true;
-        (bool ok, bytes memory result) = address(treasury).call{value: msg.value}(rebalanceCalldata);
+        bool ok;
+        (ok, result) = address(treasury).call{value: msg.value}(rebalanceCalldata);
         if (!ok) revert TreasuryCallFailed();
 
         emit PassportConsumed(
             passport.nonce,
             digest,
+            passport.executor,
             _actionDigest(passport),
             passport.hypothesisIdsHash,
             passport.obligationResultsHash,
             passport.memoryRoot
         );
-        return result;
     }
 
     /// @notice Exposes the exact digest for local clients and fixed-vector tests.

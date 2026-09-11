@@ -109,3 +109,14 @@ def test_broken_input_reports_an_error_instead_of_crashing_silently(memory_db):
     payload = json.loads(completed.stdout)
     # Situs HARUS bisa membedakan "agen menolak" dari "agen rusak".
     assert "error" in payload
+
+
+def test_executor_defaults_to_deployer_and_can_be_overridden(memory_db):
+    out = evaluate({"amount": 100_000, "memoryAvailable": True, "oracleFresh": True})
+    assert out["executor"] == out["passport"]["executor"]
+
+    beta = "0xc3c6bf20dde1a547a35f6479d54b08e1548daeff"
+    out = evaluate({"amount": 100_000, "oracleFresh": True, "executor": beta})
+    assert out["passport"]["executor"] == beta
+    actor = next(o for o in out["obligations"] if o["id"] == "actor-standing")
+    assert actor["result"] == "satisfied"

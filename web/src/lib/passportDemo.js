@@ -79,6 +79,17 @@ export function evaluateDemoAction(input = {}) {
         ? "The simulated treasury remains above its remembered minimum reserve."
         : "The proposed rebalance would cross the remembered minimum reserve.",
     },
+    {
+      id: "actor-standing",
+      label: "Executor standing on ACP",
+      // Fixture: tidak ada memori ACP di browser, jadi executor fixture dianggap tanpa riwayat.
+      result: memoryAvailable ? "satisfied" : "unverifiable",
+      observed: memoryAvailable ? "acp history: none" : "acp memory not read",
+      threshold: "risk level at most 0, no confirmed patterns",
+      explanation: memoryAvailable
+        ? "The executor has no disqualifying verdict history on the ACP gate."
+        : "The provider profile could not be read, so standing cannot be verified.",
+    },
   ];
 
   let decision = "passport-issued";
