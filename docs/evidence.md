@@ -206,16 +206,16 @@ executor=0xa2beb04be7f3d0948828cf1893876513f4fa2cde
 acp_profile=found risk_level=2 incident_jobs=424,425 confirmed_patterns=format.placeholder-text
 actor_standing=unsatisfied max_risk_level=0
 decision=block
-reason=blocking obligations failed: oracle-freshness,actor-standing (oracle observation exceeds the remembered freshness window; executor is disqualified by ACP verdict history: risk_level=2 incident_jobs=424,425 confirmed_patterns=format.placeholder-text)
+reason=blocking obligations failed: actor-standing (executor is disqualified by ACP verdict history: risk_level=2 incident_jobs=424,425 confirmed_patterns=format.placeholder-text)
 memory_root=0xbdc1122c3e917fd602f93118ddf7e15615ea0f2cfdbab30026bea1db617962d5
 ```
 
-Two honest readings of that output. First, `oracle-freshness` also failed, because the fixture oracle
-was set once before step 1 and had gone stale by step 3; `actor-standing` fails on its own and would
-block with a fresh oracle too (the unit test `test_acp_rejections_block_the_base_passport` holds
-every other obligation satisfied). Second, the memory root announced by `postVerdict` for job 425
+The oracle was set fresh immediately before this request (`setObservation`
+[`0x41c051ce…e571`](https://base-sepolia.blockscout.com/tx/0x41c051ce3156c62e3e938893f9b1e52ed5c81b45dd2aa98e86bf4c660ae2e571),
+block 46666828), so the other four obligations held and `actor-standing` is the only reason for the
+block. One more thing to read alongside it: the memory root announced by `postVerdict` for job 425
 (`0x7f8bf622…4db2`, now `EvaluatorVault.lastMemoryRoot()`) already commits to both the Control
-Hypothesis and this provider's profile: the ACP gate's on-chain root moved because of memory that the
+Hypothesis and this provider's profile. The ACP gate's on-chain root moved because of memory that the
 Base gate reads.
 
 What the chain enforces and what it does not: `PassportVerifier` v2 enforces the executor
