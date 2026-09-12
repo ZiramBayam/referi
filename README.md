@@ -1,5 +1,8 @@
 # REFERI
 
+**Live site: [referi-agent.vercel.app](https://referi-agent.vercel.app)** — the hosted build has no
+Python runtime, so its badge reads `RULE SIMULATION`. For `LIVE AGENT`, run it locally (below).
+
 **Proof before permission.** Referi is one memory system with two enforcement gates.
 
 Sibyl memory decides, and both gates read the same store through the same code. On
@@ -9,7 +12,7 @@ memory turns a past incident into deterministic proof obligations, and a treasur
 moves value only when all five hold. The fifth obligation, `actor-standing`, reads the
 executor's verdict history from the ACP gate: two rejections on Virtuals and the Base gate
 refuses that address a passport. `PassportVerifier` then refuses anyone else the passport it
-did issue. The transactions, in order, are in [`docs/evidence.md`](docs/evidence.md#virtuals-verdicts-change-base-permissions-11-sep-2026).
+did issue. Run `make virtuals-evidence` to check every transaction against the chain yourself.
 
 The two are not neighbours, they are anchored together: the passport gate's Control
 Hypothesis lives in the same `pattern:` reference namespace that `MemorySnapshot` covers,
