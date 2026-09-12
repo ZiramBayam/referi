@@ -28,6 +28,7 @@ const LABELS = {
   "oracle-freshness": "Oracle freshness",
   "simulation-match": "Exact simulation match",
   "post-state-invariant": "Post-state invariant",
+  "actor-standing": "Executor standing on ACP",
 };
 
 /** @param {Record<string, any>} value */

@@ -6,7 +6,16 @@ Sibyl memory decides, and both gates read the same store through the same code. 
 **Virtuals ACP**, memory sets how deeply a deliverable is checked and what budget cap a
 provider gets, and every verdict announces the memory root on chain. On **Base**, that same
 memory turns a past incident into deterministic proof obligations, and a treasury action
-moves value only when all four hold.
+moves value only when all five hold. The fifth obligation, `actor-standing`, reads the
+executor's verdict history from the ACP gate: two rejections on Virtuals and the Base gate
+refuses that address a passport. `PassportVerifier` then refuses anyone else the passport it
+did issue. The transactions, in order, are in [`docs/evidence.md`](docs/evidence.md#virtuals-verdicts-change-base-permissions-11-sep-2026).
+
+> **Post-deadline note.** The hackathon window closed 10 Sep 23:59 UTC. Everything up to the tag
+> [`submission-2026-09-10`](https://github.com/ZiramBayam/referi/releases/tag/submission-2026-09-10)
+> (commit `9a18e91`) is the submission. Commits after that tag, including the `actor-standing`
+> link described above, were made on 11 Sep with their real timestamps. Judge the tag if the
+> window matters; nothing after it is claimed as in-window work.
 
 The two are not neighbours, they are anchored together: the passport gate's Control
 Hypothesis lives in the same `pattern:` reference namespace that `MemorySnapshot` covers,
@@ -38,6 +47,7 @@ thresholds_from_memory=oracle=60 reserve=250000  # the limits come FROM memory, 
 fresh_process_recall=... executor_identity=child-process   # a NEW process recalls it
 invalid_passport_rejected=calldata-mismatch      # one changed byte and the passport is void
 passport_memory_deleted=True after_delete_decision=human-review-required   # delete it, behaviour reverts
+executor_standing=satisfied acp_history=none      # the fifth obligation reads the executor's ACP history
 ```
 
 That is what "memory is load-bearing" has to mean: the memory changes the **decision**, not the
@@ -58,20 +68,21 @@ If you only want to know what does NOT work: the **Limitations** section below.
 ## How it works
 
 ```
-  INCIDENT                 CONTROL HYPOTHESIS            FOUR OBLIGATIONS
+  INCIDENT                 CONTROL HYPOTHESIS            FIVE OBLIGATIONS
   a stale oracle    ───►   the mechanism,          ───►  state-anchor-fresh
   moved value once         not the symptom               oracle-freshness
                            (stored in Sibyl)             simulation-match
                                                          post-state-invariant
+                                                         actor-standing (from ACP)
                                                                 │
-                                    all four must hold          │
+                                    all five must hold          │
                                                                 ▼
                                                         ┌───────────────┐
                                                         │  GATE         │
                                                         └───────┬───────┘
                                                                 │
                                               EIP-712 Execution Passport
-                                              bound to target + selector +
+                                              bound to target + executor + selector +
                                               calldata hash + chain +
                                               memory root + nonce, 60s life
                                                                 │
@@ -102,21 +113,22 @@ so the source reads on the explorer instead of appearing as raw bytecode.
 
 | Contract | Address | Purpose |
 |---|---|---|
-| `PassportVerifier` | [`0x43D978e2…37C1`](https://base-sepolia.blockscout.com/address/0x43D978e26bEe32A8f2E2DaB1f212F9A36F5937C1) | action-bound, single-use enforcement |
-| `MockTreasury` | [`0x68Cca28D…772B`](https://base-sepolia.blockscout.com/address/0x68Cca28DceFAd1c7a73f97FACC74cD51B145772B) | the fixture that holds the reserve |
-| `MockOracle` | [`0x8b0e7572…bDe3`](https://base-sepolia.blockscout.com/address/0x8b0e7572eDF67Fded93ff8dBFfD318d2E3D2bDe3) | the observation the incident is about |
+| `PassportVerifier` v2 | [`0xfB59bE1D…E3Ea`](https://base-sepolia.blockscout.com/address/0xfB59bE1D2bb2418406cFD02b7141978dc1cfE3Ea) | action-bound, executor-bound, single-use enforcement |
+| `MockTreasury` | [`0xc8933Ae4…F737`](https://base-sepolia.blockscout.com/address/0xc8933Ae40e31f08984b7034C2824be92477DF737) | the fixture that holds the reserve |
+| `MockOracle` | [`0x57FAc019…8F8E`](https://base-sepolia.blockscout.com/address/0x57FAc019f4B5e4574c26068fB12d06D1cfB78F8E) | the observation the incident is about |
+| `PassportVerifier` v1 | [`0x43D978e2…37C1`](https://base-sepolia.blockscout.com/address/0x43D978e26bEe32A8f2E2DaB1f212F9A36F5937C1) | superseded 11 Sep (no executor binding), kept for the audit trail |
 | `EvaluatorVault` | [`0x5c6EE458…f384`](https://base-sepolia.blockscout.com/address/0x5c6EE4586ACABcb6326069c229E58091B21ef384) | the earlier direction, FROZEN (ADR-022) |
 
-Deployed at block 46629087 for 0.0000088 ETH. Every address, transaction hash, constructor argument,
+v2 deployed at block 46658144 on 11 Sep for 0.0000090 ETH (v1 at block 46629087 on 10 Sep). Every address, transaction hash, constructor argument,
 and the post-deploy state read back **from chain rather than copied from the deploy log**, is in
 [`deployments/passport-84532.json`](deployments/passport-84532.json).
 
 Three things you can check yourself in one command each:
 
 ```sh
-cast call 0x68Cca28DceFAd1c7a73f97FACC74cD51B145772B "verifier()(address)"  --rpc-url https://sepolia.base.org
-cast call 0x43D978e26bEe32A8f2E2DaB1f212F9A36F5937C1 "treasury()(address)"  --rpc-url https://sepolia.base.org
-cast call 0x43D978e26bEe32A8f2E2DaB1f212F9A36F5937C1 "ACTION_CLASS()(bytes32)" --rpc-url https://sepolia.base.org
+cast call 0xc8933Ae40e31f08984b7034C2824be92477DF737 "verifier()(address)"  --rpc-url https://sepolia.base.org
+cast call 0xfB59bE1D2bb2418406cFD02b7141978dc1cfE3Ea "treasury()(address)"  --rpc-url https://sepolia.base.org
+cast call 0xfB59bE1D2bb2418406cFD02b7141978dc1cfE3Ea "ACTION_CLASS()(bytes32)" --rpc-url https://sepolia.base.org
 ```
 
 The first two must point at each other. The third must equal `cast keccak "treasury-rebalance"`.
@@ -134,6 +146,9 @@ Deploy script and its guards: [`contracts/script/DeployPassport.s.sol`](contract
 make doctor          # print toolchain versions, exit 1 if they do not match the pins
 make test            # forge test + uv run pytest + pnpm -r test
 make demo-passport   # the Execution Passport scenario, from scratch, on local Anvil
+make dual-gate       # one Sibyl store serving both gates, zero network, zero keys
+make passport-request EXECUTOR=0x...   # ask the Base gate for a passport for one address; it reads
+                     # that address's ACP verdict history first (exit 0 issued, 3 blocked, 4 review)
 make demo            # the earlier evaluator scenario, incl. two destructive variants
                      # NEEDS INTERNET (variant B reads the frozen Sepolia vault: no funds, no transactions)
                      # measured runtime: 3m23s and 3m56s across two runs

@@ -10,47 +10,76 @@
   "deployer": "0xfA4F11Ec0e0C060D0471028633B954a7CA739911",
   "policySigner": "0xfA4F11Ec0e0C060D0471028633B954a7CA739911",
   "policySignerNote": "Immutable di PassportVerifier. HANYA tanda tangan alamat ini yang diterima verifier ini, seumur hidup kontraknya.",
-  "deployedAt": "2026-09-10",
-  "deployedAtBlock": 46629087,
-  "totalPaidEth": "0.000008760876",
-  "totalGasUsed": 1460146,
+  "deployedAt": "2026-09-11",
+  "deployedAtBlock": 46658144,
+  "totalPaidEth": "0.00000895443",
+  "totalGasUsed": 1492405,
   "contracts": {
-    "MockTreasury": "0x68Cca28DceFAd1c7a73f97FACC74cD51B145772B",
-    "MockOracle": "0x8b0e7572eDF67Fded93ff8dBFfD318d2E3D2bDe3",
-    "PassportVerifier": "0x43D978e26bEe32A8f2E2DaB1f212F9A36F5937C1"
+    "MockTreasury": "0xc8933Ae40e31f08984b7034C2824be92477DF737",
+    "MockOracle": "0x57FAc019f4B5e4574c26068fB12d06D1cfB78F8E",
+    "PassportVerifier": "0xfB59bE1D2bb2418406cFD02b7141978dc1cfE3Ea"
   },
   "txHashes": {
-    "MockTreasury": "0x9f72416c0f90bce3e6a2252287cf2c6d837dc1bacaf6416ed7e6e3e95557c024",
-    "MockOracle": "0x23c883202a556b9783ce51b01580e4bd316132c5b34b0b5df9d0563815a32e5d",
-    "PassportVerifier": "0xaa68c69e927bf74e2e94e60440fa615931ac8f1f64a4ee7361ca8e298fe1e801",
-    "configureVerifier": "0x776e1276a0c09ba6d846f5d49048dd98dd5bce4f187cc6cf42ca15d2218705e3"
+    "MockTreasury": "0x96e9b5c524045e53d6624a88d7fafb16a4ad763eeb74fec91444fde0c5223a93",
+    "MockOracle": "0x5e075f71f3997ec211a3ce02aaf5ffb2e5a16670fa0cf23d0e7adca44e9a9389",
+    "PassportVerifier": "0x005ac70dffb3158b2f5c73490104a3f2c1e7a92fc5ef55776ebc2c80b0a930b4",
+    "configureVerifier": "0x0fa5ec0ea673e3df19806de9a043bb4c7968f6ae45290597543d82b0e05bcc3b"
   },
   "constructorArgs": {
-    "MockTreasury": { "owner": "0xfA4F11Ec0e0C060D0471028633B954a7CA739911", "initialReserve": 1000000, "minimumReserve": 250000 },
-    "MockOracle": { "owner": "0xfA4F11Ec0e0C060D0471028633B954a7CA739911" },
-    "PassportVerifier": { "treasury": "0x68Cca28DceFAd1c7a73f97FACC74cD51B145772B", "policySigner": "0xfA4F11Ec0e0C060D0471028633B954a7CA739911" }
+    "MockTreasury": {
+      "owner": "0xfA4F11Ec0e0C060D0471028633B954a7CA739911",
+      "initialReserve": 1000000,
+      "minimumReserve": 250000
+    },
+    "MockOracle": {
+      "owner": "0xfA4F11Ec0e0C060D0471028633B954a7CA739911"
+    },
+    "PassportVerifier": {
+      "treasury": "0xc8933Ae40e31f08984b7034C2824be92477DF737",
+      "policySigner": "0xfA4F11Ec0e0C060D0471028633B954a7CA739911"
+    }
   },
   "sourcify": {
     "status": "exact_match",
     "allThree": true,
-    "checkedAt": "2026-09-10",
+    "checkedAt": "2026-09-11",
     "command": "curl -s https://sourcify.dev/server/v2/contract/84532/<address>"
   },
   "verifiedOnChain": {
-    "checkedAt": "2026-09-10",
+    "checkedAt": "2026-09-11",
     "note": "Dibaca ulang dari chain sesudah broadcast, bukan disalin dari log forge.",
-    "treasury.verifier()": "0x43D978e26bEe32A8f2E2DaB1f212F9A36F5937C1",
+    "treasury.verifier()": "0xfB59bE1D2bb2418406cFD02b7141978dc1cfE3Ea",
     "treasury.owner()": "0xfA4F11Ec0e0C060D0471028633B954a7CA739911",
     "treasury.reserve()": 1000000,
     "treasury.minimumReserve()": 250000,
-    "verifier.treasury()": "0x68Cca28DceFAd1c7a73f97FACC74cD51B145772B",
+    "verifier.treasury()": "0xc8933Ae40e31f08984b7034C2824be92477DF737",
     "verifier.policySigner()": "0xfA4F11Ec0e0C060D0471028633B954a7CA739911",
+    "verifier.PASSPORT_VERSION()": 2,
     "verifier.ACTION_CLASS()": "0x14c0e60ed5dca29c41c41565f8a6fcf9f3afeda168f3f41093955b75bcbd1dcf",
     "verifier.ACTION_CLASS() sama dengan": "cast keccak 'treasury-rebalance'",
-    "verifier.MAX_PASSPORT_LIFETIME()": 60
+    "verifier.MAX_PASSPORT_LIFETIME()": 60,
+    "oracle.owner()": "0xfA4F11Ec0e0C060D0471028633B954a7CA739911"
   },
-  "boundary": "Fixture demonstrasi. MockTreasury tidak memegang dana nyata, MockOracle observasinya di-set pemiliknya sendiri. Ini BUKAN vault produksi, BUKAN integrasi Safe, dan BUKAN izin memindahkan dana sungguhan.",
+  "boundary": "Fixture demonstrasi. MockTreasury tidak memegang dana nyata, MockOracle observasinya di-set pemiliknya sendiri. Ini BUKAN vault produksi, BUKAN integrasi Safe, dan BUKAN izin memindahkan dana sungguhan. PassportVerifier v2 menambah satu hal yang ditegakkan: hanya `executor` yang tercantum di passport yang boleh memakainya (ADR-035).",
   "solc": "0.8.36",
   "evmVersion": "osaka",
-  "optimizerRuns": 200
+  "optimizerRuns": 200,
+  "passportVersion": 2,
+  "txHashesNote": "Label di keluaran forge tertukar antar-kontrak pada run ini; pemetaan di atas diambil dari contracts/broadcast/DeployPassport.s.sol/84532/run-latest.json dan dicek ulang lewat cast call.",
+  "previous": {
+    "note": "v1 fixture, passports without an executor binding. Kept for the audit trail; superseded by ADR-035.",
+    "deployedAt": "2026-09-10",
+    "deployedAtBlock": 46629087,
+    "contracts": {
+      "MockTreasury": "0x68Cca28DceFAd1c7a73f97FACC74cD51B145772B",
+      "MockOracle": "0x8b0e7572eDF67Fded93ff8dBFfD318d2E3D2bDe3",
+      "PassportVerifier": "0x43D978e26bEe32A8f2E2DaB1f212F9A36F5937C1"
+    },
+    "txHashes": {
+      "MockTreasury": "0x9f72416c0f90bce3e6a2252287cf2c6d837dc1bacaf6416ed7e6e3e95557c024",
+      "MockOracle": "0x23c883202a556b9783ce51b01580e4bd316132c5b34b0b5df9d0563815a32e5d",
+      "PassportVerifier": "0xaa68c69e927bf74e2e94e60440fa615931ac8f1f64a4ee7361ca8e298fe1e801",
+      "configureVerifier": "0x776e1276a0c09ba6d846f5d49048dd98dd5bce4f187cc6cf42ca15d2218705e3"
+    }
+  }
 }

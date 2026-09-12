@@ -82,7 +82,7 @@ function Horizontal({ run }) {
     >
       <title id="gate-chain-title">How one incident becomes one permission</title>
       <desc id="gate-chain-desc">
-        A stale-oracle incident compiles into a Control Hypothesis, which selects four proof
+        A stale-oracle incident compiles into a Control Hypothesis, which selects five proof
         obligations. All four converge on a single gate. Only when every one holds does the gate
         issue a single-use Execution Passport, which admits exactly one call and refuses a replay.
       </desc>
@@ -170,7 +170,7 @@ function Stacked({ run }) {
     >
       <title id="gate-chain-title-s">How one incident becomes one permission</title>
       <desc id="gate-chain-desc-s">
-        A stale-oracle incident compiles into a Control Hypothesis, which selects four proof
+        A stale-oracle incident compiles into a Control Hypothesis, which selects five proof
         obligations. All four converge on a single gate. Only when every one holds does the gate
         issue a single-use Execution Passport, which admits exactly one call and refuses a replay.
       </desc>

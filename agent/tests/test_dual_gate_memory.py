@@ -105,3 +105,58 @@ def test_report_names_both_gates_and_one_root(tmp_path):
     assert "gate_passport_hypotheses=1" in joined
     assert "shared_memory_root=0x" in joined
     assert "root_covers_both_gates=True" in joined
+
+
+def _environment_for(action: ep.ActionProposal) -> ep.DeterministicEnvironment:
+    simulation = ep.simulate_rebalance(action, current_reserve=1_000_000, minimum_reserve=250_000)
+    return ep.DeterministicEnvironment(
+        now=2_000,
+        current_block_number=action.state_block_number,
+        current_block_hash=action.state_block_hash,
+        state_block_timestamp=2_000,
+        oracle_timestamp=1_990,
+        simulation_action_digest=simulation.action_digest,
+        simulation_succeeded=simulation.success,
+        simulated_post_reserve=simulation.simulated_post_reserve,
+    )
+
+
+def test_acp_rejections_block_the_base_passport(tmp_path):
+    """Verdict Virtuals mengubah izin Base. Ini klaim yang menopang multiplier 1.25."""
+    client = _store(tmp_path)
+    incident = build_incident(TREASURY, 100_000)
+    ep.record_incident(client, incident)
+    action = incident.action
+    beta = "0xc3c6bf20dde1a547a35f6479d54b08e1548daeff"
+
+    before = ep.evaluate_rebalance_for_passport(
+        client, action, _environment_for(action), executor=beta,
+        verifier_address=TREASURY, issued_at=2_000, nonce=1,
+    )
+    assert before.decision == "passport-issued"
+    assert before.passport.executor == beta
+
+    # Dua job ACP berbeda, bukti deterministik, lalu promosi: jalur yang SAMA dengan yang
+    # dipakai gerbang ACP di Base Sepolia. Tidak ada tulisan langsung ke risk_level.
+    mp.record_suspicion(client, beta, "format.bad", mp.Evidence(job_id=423, check_id="format"))
+    mp.record_suspicion(client, beta, "format.bad", mp.Evidence(job_id=424, check_id="format"))
+    assert mp.promote_suspicions(client, beta) == ["format.bad"]
+    assert mp.load_snapshot(client).providers  # profil Beta kini ada di preimage root
+
+    after = ep.evaluate_rebalance_for_passport(
+        client, action, _environment_for(action), executor=beta,
+        verifier_address=TREASURY, issued_at=2_000, nonce=2,
+    )
+    assert after.decision == "block"
+    assert "actor-standing" in after.reason
+    assert "423" in after.reason and "424" in after.reason
+    # Root yang diumumkan gerbang ACP ikut berubah, karena profil Beta masuk preimage.
+    assert "0x" + mp.memory_root_for_onchain(client).hex() != before.passport.memory_root
+
+
+def test_report_shows_the_demo_executor_standing():
+    from agent.dual_gate_report import report
+
+    lines = "\n".join(report())
+    assert "demo_executor=" in lines
+    assert "demo_executor_standing=unsatisfied" in lines

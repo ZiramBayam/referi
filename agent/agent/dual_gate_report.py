@@ -12,6 +12,7 @@ sendiri saat dijalankan tanpa argumen, dan ia tidak menyentuh jaringan sama seka
 from __future__ import annotations
 
 import argparse
+import json
 import tempfile
 from pathlib import Path
 
@@ -31,9 +32,12 @@ def _seed_demo_store(db_path: Path) -> None:
     from eth_abi import encode as abi_encode
 
     client = MemoryClient.local(str(db_path))
-    mp.save_provider(
-        client, mp.ProviderProfile(address=DEMO_PROVIDER, risk_level=1, passed_budgets=(1_000,))
-    )
+    # Riwayat provider dibangun lewat jalur ACP yang asli (karantina dua job, lalu promosi),
+    # bukan dengan menulis risk_level langsung, supaya angka yang dilaporkan bisa ditelusuri.
+    mp.save_provider(client, mp.ProviderProfile(address=DEMO_PROVIDER, passed_budgets=(1_000,)))
+    mp.record_suspicion(client, DEMO_PROVIDER, "format.bad", mp.Evidence(job_id=418, check_id="format"))
+    mp.record_suspicion(client, DEMO_PROVIDER, "format.bad", mp.Evidence(job_id=419, check_id="format"))
+    mp.promote_suspicions(client, DEMO_PROVIDER)
     calldata = "0x" + (ep.REBALANCE_SELECTOR + abi_encode(["uint256"], [100_000])).hex()
     action = ep.ActionProposal(
         chain_id=84532,
@@ -57,6 +61,40 @@ def _seed_demo_store(db_path: Path) -> None:
     )
 
 
+def _executor_standing_lines(
+    providers: dict[str, Any], patterns: dict[str, Any], hypotheses: list[str]
+) -> list[str]:
+    """Nilai standing provider pertama terhadap obligasi `actor-standing` di hipotesis.
+
+    Ini pembacaan yang sama dengan jalur keputusan passport (profil provider + ambang dari
+    memori), diulang di sini hanya untuk dilaporkan. Tidak ada keputusan yang diambil.
+    """
+    if not providers or not hypotheses:
+        return []
+    executor = sorted(providers)[0]
+    profile = mp.ProviderProfile.from_body(executor, providers[executor])
+    body = patterns.get(hypotheses[0])
+    if isinstance(body, str):
+        # Body reference disimpan sebagai teks JSON oleh Sibyl; profil provider sudah dict.
+        body = json.loads(body)
+    if not isinstance(body, dict):
+        return []
+    hypothesis = ep.ControlHypothesis.from_body(body)
+    actor = next(
+        (o for o in hypothesis.required_obligations if o.obligation_id == ep.PROOF_ACTOR), None
+    )
+    if actor is None or actor.max_risk_level is None:
+        return [f"demo_executor={executor}", "demo_executor_standing=unverifiable"]
+    disqualified = profile.risk_level > actor.max_risk_level or bool(profile.confirmed_patterns)
+    return [
+        f"demo_executor={executor}",
+        f"demo_executor_risk_level={profile.risk_level} incident_jobs="
+        f"{','.join(str(j) for j in profile.incident_jobs) or 'none'}",
+        f"demo_executor_standing={'unsatisfied' if disqualified else 'satisfied'} "
+        f"max_risk_level={actor.max_risk_level}",
+    ]
+
+
 def report(db_path: str | None = None) -> list[str]:
     """Kembalikan baris laporan. Tanpa `db_path`, buat store contoh sementara."""
     temp_dir = None
@@ -77,6 +115,7 @@ def report(db_path: str | None = None) -> list[str]:
             root = mp.memory_root_for_onchain(client)
         hypotheses = [k for k in patterns if k.startswith(ep.HYPOTHESIS_KEY)]
         covers_both = bool(providers) and bool(hypotheses)
+        standing_lines = _executor_standing_lines(providers, patterns, hypotheses)
 
         return [
             f"memory_db={path}",
@@ -87,6 +126,7 @@ def report(db_path: str | None = None) -> list[str]:
             f"shared_pattern_namespace={mp.REFERENCE_PATTERN_PREFIX}",
             f"shared_memory_root=0x{root.hex()}",
             f"root_covers_both_gates={covers_both}",
+            *standing_lines,
             "root_function=agent.memory_policy.memory_root_for_onchain",
             "announced_onchain_by=EvaluatorVault.postVerdict(jobId,kind,reasonHash,memoryRoot)",
         ]

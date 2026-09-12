@@ -396,7 +396,7 @@ export default function ExecutionRoom() {
                             Agent is checking the action
                           </div>
                           <p className="mt-1 font-mono text-xs text-faint">
-                            Reading {HYPOTHESIS_ID}, then evaluating four blocking proofs.
+                            Reading {HYPOTHESIS_ID}, then evaluating five blocking proofs.
                           </p>
                         </div>
                       </div>

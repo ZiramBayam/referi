@@ -14,6 +14,8 @@ from agent import memory_policy as mp
 
 TARGET = "0x00000000000000000000000000000000000000aa"
 STATE_HASH = "0x" + "11" * 32
+EXECUTOR = "0xc3c6bf20dde1a547a35f6479d54b08e1548daeff"
+CLEAN = mp.ProviderProfile(address=EXECUTOR)
 
 
 def action(*, amount: int = 100_000, block: int = 10) -> ep.ActionProposal:
@@ -139,6 +141,7 @@ def test_malformed_memory_requires_human_review(client):
         client,
         action(),
         environment(action()),
+        executor=EXECUTOR,
         verifier_address="0x00000000000000000000000000000000000000cc",
         issued_at=1_000,
         nonce=31,
@@ -158,6 +161,7 @@ def test_conflicting_memory_requires_human_review(client):
         client,
         action(),
         environment(action()),
+        executor=EXECUTOR,
         verifier_address="0x00000000000000000000000000000000000000cc",
         issued_at=1_000,
         nonce=32,
@@ -256,10 +260,10 @@ def environment(action_value: ep.ActionProposal, *, now: int = 1_000, **override
 def test_all_mvp_obligations_satisfy_only_with_matching_fresh_evidence():
     proposal = action()
     hypothesis = ep.initial_control_hypothesis(proposal)
-    results = ep.evaluate_obligations(proposal, hypothesis, environment(proposal))
+    results = ep.evaluate_obligations(proposal, hypothesis, environment(proposal), executor_profile=CLEAN)
 
     assert [result.obligation_id for result in results] == list(ep.MVP_PROOF_IDS)
-    assert [result.result for result in results] == ["satisfied"] * 4
+    assert [result.result for result in results] == ["satisfied"] * 5
     assert ep.obligations_allow_execution(hypothesis, results) is True
 
 
@@ -275,7 +279,9 @@ def test_all_mvp_obligations_satisfy_only_with_matching_fresh_evidence():
 def test_failed_obligation_blocks_passport(field, value, expected):
     proposal = action()
     hypothesis = ep.initial_control_hypothesis(proposal)
-    results = ep.evaluate_obligations(proposal, hypothesis, environment(proposal, **{field: value}))
+    results = ep.evaluate_obligations(
+        proposal, hypothesis, environment(proposal, **{field: value}), executor_profile=CLEAN
+    )
 
     assert expected in [result.result for result in results]
     assert ep.obligations_allow_execution(hypothesis, results) is False
@@ -288,6 +294,7 @@ def test_missing_observation_is_unverifiable_and_never_a_pass():
         proposal,
         hypothesis,
         environment(proposal, oracle_timestamp=None, simulation_succeeded=None),
+        executor_profile=CLEAN,
     )
 
     by_id = {result.obligation_id: result.result for result in results}
@@ -299,7 +306,7 @@ def test_missing_observation_is_unverifiable_and_never_a_pass():
 def test_obligation_hash_is_order_and_content_sensitive():
     proposal = action()
     hypothesis = ep.initial_control_hypothesis(proposal)
-    results = ep.evaluate_obligations(proposal, hypothesis, environment(proposal))
+    results = ep.evaluate_obligations(proposal, hypothesis, environment(proposal), executor_profile=CLEAN)
 
     digest = ep.obligation_results_hash(result.to_body() for result in results)
     changed = ep.obligation_results_hash(
@@ -317,11 +324,12 @@ def test_execution_passport_is_typed_and_recoverable(client):
     proposal = action()
     hypothesis = ep.initial_control_hypothesis(proposal)
     ep.save_control_hypothesis(client, hypothesis)
-    results = ep.evaluate_obligations(proposal, hypothesis, environment(proposal))
+    results = ep.evaluate_obligations(proposal, hypothesis, environment(proposal), executor_profile=CLEAN)
     passport = ep.build_execution_passport(
         proposal,
         hypothesis,
         results,
+        executor=EXECUTOR,
         memory_root_value=mp.memory_root_hex(client),
         issued_at=1_000,
         expires_at=1_030,
@@ -345,7 +353,7 @@ def test_passport_cannot_be_built_from_failed_obligation(client):
     hypothesis = ep.initial_control_hypothesis(proposal)
     ep.save_control_hypothesis(client, hypothesis)
     results = ep.evaluate_obligations(
-        proposal, hypothesis, environment(proposal, oracle_timestamp=900)
+        proposal, hypothesis, environment(proposal, oracle_timestamp=900), executor_profile=CLEAN
     )
 
     with pytest.raises(ep.PassportValidationError, match="blocking obligation"):
@@ -353,6 +361,7 @@ def test_passport_cannot_be_built_from_failed_obligation(client):
             proposal,
             hypothesis,
             results,
+            executor=EXECUTOR,
             memory_root_value=mp.memory_root_hex(client),
             issued_at=1_000,
             expires_at=1_030,
@@ -363,11 +372,12 @@ def test_passport_cannot_be_built_from_failed_obligation(client):
 def test_fixed_cross_language_vector():
     proposal = action()
     hypothesis = ep.initial_control_hypothesis(proposal)
-    results = ep.evaluate_obligations(proposal, hypothesis, environment(proposal))
+    results = ep.evaluate_obligations(proposal, hypothesis, environment(proposal), executor_profile=CLEAN)
     passport = ep.build_execution_passport(
         proposal,
         hypothesis,
         results,
+        executor=EXECUTOR,
         memory_root_value="0x" + "44" * 32,
         issued_at=1_000,
         expires_at=1_030,
@@ -383,10 +393,10 @@ def test_fixed_cross_language_vector():
         "0xb1e9546ad67d2b7e25027c4ed279adafc69e9ec84dd1ef94ea3da9dca60d6ecd"
     )
     assert passport.obligation_results_hash == (
-        "0x49a8d4f0ccf032c5649f4a25b0d3a35162c11b54bb6cd35a80ca711852f6140a"
+        "0x5f14df02f59ec954dfd207634b649cdf975bc84de51d9c240bb049fad357753f"
     )
     assert Web3.to_hex(Account.sign_message(typed, "0x" + "12" * 32).message_hash) == (
-        "0x1f5ece583170ab17407e77846f1f5c4dab174153a93cebe81787221001b97b0b"
+        "0x6626747a2858708cc27753e08205a5a3de9e6f0536ea75f579fce17c54d4dd41"
     )
 
 
@@ -403,6 +413,7 @@ def test_decision_entry_point_requires_memory(client):
         client,
         action(),
         environment(action()),
+        executor=EXECUTOR,
         verifier_address="0x00000000000000000000000000000000000000cc",
         issued_at=1_000,
         nonce=3,
@@ -420,6 +431,7 @@ def test_decision_entry_point_blocks_stale_observation(client):
         client,
         proposal,
         environment(proposal, oracle_timestamp=900),
+        executor=EXECUTOR,
         verifier_address="0x00000000000000000000000000000000000000cc",
         issued_at=1_000,
         nonce=4,
@@ -437,6 +449,7 @@ def test_decision_entry_point_issues_passport_from_recalled_memory(client):
         client,
         proposal,
         environment(proposal),
+        executor=EXECUTOR,
         verifier_address="0x00000000000000000000000000000000000000cc",
         issued_at=1_000,
         nonce=5,
@@ -447,3 +460,105 @@ def test_decision_entry_point_issues_passport_from_recalled_memory(client):
     assert decision.evidence is not None
     assert decision.passport.memory_root == mp.memory_root_hex(client)
     assert [result.obligation_id for result in decision.results] == list(ep.MVP_PROOF_IDS)
+
+
+def _decide(client, proposal, *, executor=EXECUTOR, **env_overrides):
+    return ep.evaluate_rebalance_for_passport(
+        client,
+        proposal,
+        environment(proposal, **env_overrides),
+        executor=executor,
+        verifier_address="0x00000000000000000000000000000000000000cc",
+        issued_at=1_000,
+        nonce=7,
+    )
+
+
+def _incident(proposal: ep.ActionProposal) -> ep.IncidentEvidence:
+    return ep.IncidentEvidence(
+        incident_id="incident-actor",
+        incident_type=ep.INCIDENT_TYPE,
+        action=proposal,
+        oracle_timestamp=100,
+        observed_at=200,
+        evidence_digest="0x" + "22" * 32,
+    )
+
+
+def test_hypothesis_selects_five_obligations_with_actor_standing_last():
+    hypothesis = ep.initial_control_hypothesis(action())
+    ids = [o.obligation_id for o in hypothesis.required_obligations]
+    assert ids == list(ep.MVP_PROOF_IDS)
+    assert ids[-1] == ep.PROOF_ACTOR
+    assert hypothesis.required_obligations[-1].max_risk_level == 0
+
+
+def test_legacy_four_obligation_body_still_loads():
+    # Store yang ditulis sebelum actor-standing ada harus tetap terbaca: memori lama bukan
+    # memori rusak, ia hanya belum memilih obligasi kelima.
+    body = ep.initial_control_hypothesis(action()).to_body()
+    body["required_obligations"] = body["required_obligations"][:4]
+    loaded = ep.ControlHypothesis.from_body(body)
+    assert [o.obligation_id for o in loaded.required_obligations] == list(ep.LEGACY_PROOF_IDS)
+
+
+def test_max_risk_level_is_rejected_on_other_obligations():
+    with pytest.raises(ep.PassportValidationError):
+        ep.ObligationDefinition(ep.PROOF_ORACLE, max_age_seconds=60, max_risk_level=0)
+
+
+@pytest.mark.parametrize(
+    ("profile", "expected"),
+    [
+        (None, "unverifiable"),
+        (CLEAN, "satisfied"),
+        (mp.ProviderProfile(address=EXECUTOR, risk_level=1, incident_jobs=(418,)), "unsatisfied"),
+        (mp.ProviderProfile(address=EXECUTOR, confirmed_patterns=("format.bad",)), "unsatisfied"),
+    ],
+)
+def test_actor_standing_table(profile, expected):
+    proposal = action()
+    hypothesis = ep.initial_control_hypothesis(proposal)
+    results = ep.evaluate_obligations(
+        proposal, hypothesis, environment(proposal), executor_profile=profile
+    )
+    by_id = {r.obligation_id: r for r in results}
+    assert by_id[ep.PROOF_ACTOR].result == expected
+    if expected == "unsatisfied":
+        explanation = by_id[ep.PROOF_ACTOR].explanation
+        assert "418" in explanation or "format.bad" in explanation
+
+
+def test_unknown_executor_is_satisfied_and_says_so(client):
+    proposal = action()
+    ep.record_incident(client, _incident(proposal))
+    decision = _decide(client, proposal)
+    assert decision.decision == "passport-issued"
+    actor = next(r for r in decision.results if r.obligation_id == ep.PROOF_ACTOR)
+    assert actor.observed["acp_history"] == "none"
+    assert decision.passport.executor == EXECUTOR
+
+
+def test_risky_acp_provider_is_blocked_at_the_base_gate(client):
+    proposal = action()
+    ep.record_incident(client, _incident(proposal))
+    # Riwayat dibangun lewat jalur ACP yang asli: karantina dua job berbeda, lalu promosi.
+    mp.record_suspicion(client, EXECUTOR, "format.bad", mp.Evidence(job_id=418, check_id="format"))
+    mp.record_suspicion(client, EXECUTOR, "format.bad", mp.Evidence(job_id=419, check_id="format"))
+    assert mp.promote_suspicions(client, EXECUTOR) == ["format.bad"]
+
+    decision = _decide(client, proposal)
+    assert decision.decision == "block"
+    assert decision.passport is None
+    assert "actor-standing" in decision.reason
+    assert "418" in decision.reason and "419" in decision.reason
+
+
+def test_passport_executor_is_part_of_the_signed_message(client):
+    proposal = action()
+    ep.record_incident(client, _incident(proposal))
+    a = _decide(client, proposal).passport
+    b = _decide(client, proposal, executor="0x20212e4d95a75e6716575ed26e884cdeff66b321").passport
+    verifier = "0x00000000000000000000000000000000000000cc"
+    assert a.to_message()["executor"] == EXECUTOR
+    assert a.sign(verifier, "0x" + "12" * 32) != b.sign(verifier, "0x" + "12" * 32)

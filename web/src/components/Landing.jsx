@@ -232,7 +232,7 @@ const GATES = [
   },
   {
     name: "Gate 2 · Base",
-    what: "Memory turns a past incident into four proof obligations a treasury action must satisfy.",
+    what: "Memory turns a past incident into five proof obligations a treasury action must satisfy, the fifth read from the executor's ACP verdict history.",
     proof: "PassportVerifier, MockTreasury, and MockOracle deployed and verified on Base Sepolia.",
     check: "make demo-passport",
   },
