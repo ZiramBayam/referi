@@ -369,9 +369,9 @@ const ARTIFACTS = [
     path: "contracts/src/",
   },
   {
-    name: "canonical-formats.md",
+    name: "execution_passport.py",
     role: "Passport and hypothesis schemas",
-    path: "docs/execution-passport/",
+    path: "agent/agent/",
   },
 ];
 

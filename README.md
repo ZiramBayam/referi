@@ -53,7 +53,7 @@ that misleads, so it is stated rather than implied.
 
 Force the fallback to see both states: `REFERI_AGENT=off pnpm --filter web start`.
 
-If you only want to know what does NOT work: [`docs/limitations.md`](docs/limitations.md).
+If you only want to know what does NOT work: the **Limitations** section below.
 
 ## How it works
 
@@ -93,8 +93,7 @@ Four things make this different from an agent that writes a better post-mortem:
    `human-review-required`, never a permissive default.
 
 Canonical formats and the memory read/write/delete paths:
-[`docs/execution-passport/canonical-formats.md`](docs/execution-passport/canonical-formats.md) and
-[`docs/execution-passport/reproduction.md`](docs/execution-passport/reproduction.md).
+the passport and hypothesis structs in `agent/agent/execution_passport.py`.
 
 ## What is deployed
 
@@ -132,7 +131,7 @@ Deploy script and its guards: [`contracts/script/DeployPassport.s.sol`](contract
 ## Run it
 
 ```
-make doctor          # print toolchain versions, exit 1 if they do not match docs/versions.md
+make doctor          # print toolchain versions, exit 1 if they do not match the pins
 make test            # forge test + uv run pytest + pnpm -r test
 make demo-passport   # the Execution Passport scenario, from scratch, on local Anvil
 make demo            # the earlier evaluator scenario, incl. two destructive variants
@@ -149,7 +148,7 @@ cd agent && DEMO_MODE=1 uv run python -m agent.demo_reset --host 127.0.0.1 --por
 ```
 
 Per-job commands, reproducing the A/B/C chain, reproducing the depth demo, and troubleshooting exit
-code 4: [`docs/reproduce.md`](docs/reproduce.md).
+code 4: see **Reproduction** below.
 
 ## Gate 1, on Virtuals ACP
 
@@ -174,7 +173,7 @@ what sets the check depth and the per-provider budget cap.
 - Submission contract (FROZEN, ADR-022): [`0x5c6EE4586ACABcb6326069c229E58091B21ef384`](https://sepolia.basescan.org/address/0x5c6EE4586ACABcb6326069c229E58091B21ef384)
 - **The incentive is NOT fixed yet**: `evaluatorFeeBP` = 500 (5%) is only paid out when a job is
   `Completed`, so this referee is still paid only when it passes work. An up-front fee via x402 is a
-  design (ADR-004), not a feature. Details: [`docs/limitations.md`](docs/limitations.md) item 14.
+  design (ADR-004), not a feature. See **Limitations** below.
 
 Three things you can check without running anything:
 
@@ -213,7 +212,7 @@ CLIENT ──createJob(evaluator = VAULT)──► ACP (Base Sepolia) ◄──s
 ```
 
 Why those three pieces sit outside the ERC-8183 spec, and which ADR decided each:
-[`docs/design.md`](docs/design.md).
+the **Design** section above.
 
 ### Escrow Firewall: terms before funding
 
@@ -258,7 +257,7 @@ cd agent && uv run python -m agent.vault_client --job-id <job C> --kind reject
 
 On a fresh vault that command needs **two** invocations: the first creates `memory.db` and is then
 refused by the `MODE_DRIFT` guard with **exit code 4 and zero transactions** (ADR-026). Full result table
-and troubleshooting: [`docs/reproduce.md`](docs/reproduce.md). What is missing is the **artifacts**, the
+and troubleshooting: see **Reproduction** below. What is missing is the **artifacts**, the
 command leaves no log or fixture in the repo (item 19).
 
 > **Delete our memory, and you get an ordinary stateless evaluator, exactly our competitors.**
@@ -292,11 +291,11 @@ window, not a scored severity (item 19).
 
 Full address list, the A/B/C chain with `cast logs` for `JobRejected`, the history of eight
 `MemoryRootUpdated` events, four depth-demo tx hashes, and a number → source map:
-[`docs/evidence.md`](docs/evidence.md).
+the **On-chain evidence** section above.
 
 ## Limitations & trust assumptions
 
-The full list of 36 items is in [`docs/limitations.md`](docs/limitations.md), the numbering does not
+The list below is the full set, the numbering does not
 change, and the video script refers to the same numbers. The eight that matter most:
 
 1. **A wrong verdict cannot be undone by anyone.** `challenge`/`resolve` are stubs
@@ -340,20 +339,7 @@ web/         Next.js: job timeline, verdict+evidence page, judge panel (determin
              in web/public/, zero RPC from the browser (items 18 and 36)
 demo/        deliverables/<jobId>.json (deliverable text from the simulator, ADR-019, item 21)
 deployments/ 84532.json (addresses + constants), pipeline-84532.md (live pipeline, job 417)
-docs/        spec.md, decisions.md (ADRs), api-facts.md, versions.md,
-             limitations.md, evidence.md, reproduce.md, design.md
 ```
-
-## Documents
-
-| File | Contents |
-|---|---|
-| [`docs/limitations.md`](docs/limitations.md) | all 36 limitations & trust assumptions |
-| [`docs/evidence.md`](docs/evidence.md) | full on-chain evidence, tx tables, number → source map |
-| [`docs/reproduce.md`](docs/reproduce.md) | reproduction commands, destructive variants, troubleshooting |
-| [`docs/design.md`](docs/design.md) | problem → solution, day-one consumer, what sits outside ERC-8183 |
-| [`docs/decisions.md`](docs/decisions.md) | ADRs, where the spec and an ADR disagree, the ADR wins (ADR-025) |
-| [`demo/video-script.md`](demo/video-script.md) | the demo video script, one canonical script, in English |
 
 ## Licence
 

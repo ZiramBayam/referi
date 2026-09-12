@@ -4,7 +4,7 @@ import { Logo } from "./Logo.jsx";
 import { ACTION_CLASS } from "../lib/passportDemo.js";
 
 const REPO_URL = "https://github.com/ZiramBayam/referi";
-const REPRODUCTION_URL = `${REPO_URL}/blob/main/docs/execution-passport/reproduction.md`;
+const REPRODUCTION_URL = `${REPO_URL}#reproduction`;
 
 export function Footer() {
   return (
