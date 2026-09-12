@@ -12,3 +12,10 @@ __pycache__/
 
 # Artefak kerja Impeccable (tangkapan layar review, komp) — bukan hasil kerja repo.
 .impeccable/review/
+
+# alat & catatan proses, tidak pernah masuk repo
+.impeccable/
+.superstack/
+task-tracker.md
+docs/agent-evaluations/
+docs/superpowers/
