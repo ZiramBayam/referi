@@ -11,12 +11,6 @@ executor's verdict history from the ACP gate: two rejections on Virtuals and the
 refuses that address a passport. `PassportVerifier` then refuses anyone else the passport it
 did issue. The transactions, in order, are in [`docs/evidence.md`](docs/evidence.md#virtuals-verdicts-change-base-permissions-11-sep-2026).
 
-> **Post-deadline note.** The hackathon window closed 10 Sep 23:59 UTC. Everything up to the tag
-> [`submission-2026-09-10`](https://github.com/ZiramBayam/referi/releases/tag/submission-2026-09-10)
-> (commit `9a18e91`) is the submission. Commits after that tag, including the `actor-standing`
-> link described above, were made on 11 Sep with their real timestamps. Judge the tag if the
-> window matters; nothing after it is claimed as in-window work.
-
 The two are not neighbours, they are anchored together: the passport gate's Control
 Hypothesis lives in the same `pattern:` reference namespace that `MemorySnapshot` covers,
 so **the memory root that `EvaluatorVault.postVerdict` announces on chain commits to the
