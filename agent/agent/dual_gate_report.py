@@ -15,6 +15,7 @@ import argparse
 import json
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from sibyl_memory_client import MemoryClient
 from web3 import Web3
