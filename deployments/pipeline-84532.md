@@ -1,40 +1,46 @@
-# Pipa hidup Base Sepolia (84532) — job ACP 417
+# Live Base Sepolia pipeline (84532) — ACP job 417
 
-Satu job nyata menembus seluruh pipa pada 2026-09-04: **createJob → setBudget → fund → submit →
-postVerdict → finalize → `JobCompleted`**. Evaluator job ini adalah kontrak `EvaluatorVault`, bukan
-sebuah EOA, jadi pembayaran provider benar-benar diputuskan oleh vault.
+> **Historical.** This records the earlier product direction, the escrow referee, where the vault
+> itself was the evaluator. It is kept because the run really happened and the transactions are
+> still on chain. The current direction is the Execution Passport.
 
-Verdict di-hardcode dan memori masih kosong pada run ini — yang dibuktikan di sini HANYA pipanya.
+One real job drove the whole pipeline on 2026-09-04: **createJob → setBudget → fund → submit →
+postVerdict → finalize → `JobCompleted`**. The evaluator on this job is the `EvaluatorVault`
+contract, not an EOA, so the vault really does decide the provider payout.
 
-## Peran (tiga alamat berbeda, dipaksa kontrak)
+The verdict was hardcoded and memory was still empty on this run — the ONLY thing proven here
+is the pipeline.
 
-| Peran | Alamat |
+## Roles (three distinct addresses, enforced by the contract)
+
+| Role | Address |
 |---|---|
 | Client | `0xbe2c447e577F95ed2D5cD20C75cF7633FA0602C2` |
 | Provider | `0x20212E4D95A75E6716575ED26e884cdeFf66b321` |
-| Evaluator (kontrak) | `0x5c6EE4586ACABcb6326069c229E58091B21ef384` |
-| Wallet agen (menggerakkan vault) | `0xfa5AF5BAeB4aC500267D7189fa1f0AA923eCA894` |
+| Evaluator (contract) | `0x5c6EE4586ACABcb6326069c229E58091B21ef384` |
+| Agent wallet (drives the vault) | `0xfa5AF5BAeB4aC500267D7189fa1f0AA923eCA894` |
 | ACP | `0x0b93793923CD5De81850aF8604a233f3f24d461e` |
-| Token escrow | `0xECc22a8F6fD62388498fBa19813E214605a2BDb3` |
+| Escrow token | `0xECc22a8F6fD62388498fBa19813E214605a2BDb3` |
 
-`createJob` merevert `ClientIsProvider()` `0x332ff0f9` bila client == provider, jadi tiga alamat ini
-bukan pilihan gaya. Wallet agen sengaja BUKAN provider (ADR-017 poin 3).
+`createJob` reverts `ClientIsProvider()` `0x332ff0f9` when client == provider, so these three
+addresses are not a matter of taste. The agent wallet is deliberately NOT the provider
+(ADR-017 point 3).
 
-## Empat transaksi kunci
+## Four key transactions
 
 1. **createJob** — [`0x20bc0e46…be70a`](https://sepolia.basescan.org/tx/0x20bc0e469d86316089ab1868d396819804419168ff256300ae7c7f821bfbe70a)
 2. **fund** — [`0xa5b5ea60…81f370`](https://sepolia.basescan.org/tx/0xa5b5ea60a35cfb2d253144772fee6016cb67441c5ec441e6ae4d4357cd81f370)
-3. **postVerdict** — [`0x54a72152…b86dfb`](https://sepolia.basescan.org/tx/0x54a72152a922f02f62ca18d71d781ea7bc833b6df70e415ce84a9888f7b86dfb) (blok 46378567)
-4. **finalize** — [`0x808d63be…db9f33`](https://sepolia.basescan.org/tx/0x808d63be45a506ef13a9cc047194f9bb5d3f3eb875ad513b1c08b09836db9f33) (blok 46378631)
+3. **postVerdict** — [`0x54a72152…b86dfb`](https://sepolia.basescan.org/tx/0x54a72152a922f02f62ca18d71d781ea7bc833b6df70e415ce84a9888f7b86dfb) (block 46378567)
+4. **finalize** — [`0x808d63be…db9f33`](https://sepolia.basescan.org/tx/0x808d63be45a506ef13a9cc047194f9bb5d3f3eb875ad513b1c08b09836db9f33) (block 46378631)
 
-Dua transaksi provider yang melengkapi alur:
+Two provider transactions complete the flow:
 `setBudget` [`0x969b0e54…c014153`](https://sepolia.basescan.org/tx/0x969b0e54d82e5e0da3c157dc19ca404d22e58e22142924067dc2c2303c014153),
 `submit` [`0x607f88b3…9f53eb`](https://sepolia.basescan.org/tx/0x607f88b3fcbc5141fe6dad9d805bca7fbc55c7a14d2a199a570ff7cbba9f53eb).
 
-Tautan basescan di atas adalah artefak untuk MANUSIA, bukan bukti mesin: basescan menolak akses
-otomatis dengan HTTP 403. Bukti mesinnya ada di bawah.
+The basescan links above are artifacts for HUMANS, not machine proof: basescan blocks
+automated access with HTTP 403. The machine proof is below.
 
-## `JobCompleted` di chain
+## `JobCompleted` on chain
 
 ```
 $ cast logs --address 0x0b93793923CD5De81850aF8604a233f3f24d461e \
@@ -55,12 +61,13 @@ $ cast logs --address 0x0b93793923CD5De81850aF8604a233f3f24d461e \
   transactionIndex: 10
 ```
 
-Topic 1 = `0x1a1` = jobId 417. Topic 2 = alamat vault: **evaluator yang meluluskan job ini adalah
-kontrak kita**. `data` = `reasonHash` yang diumumkan vault saat `postVerdict`.
+Topic 1 = `0x1a1` = jobId 417. Topic 2 = the vault address: **the evaluator that passed this
+job is our contract**. `data` = the `reasonHash` the vault announced at `postVerdict`.
 
-Rentang blok WAJIB <= 10.000; lebih dari itu RPC publik menjawab HTTP 413 (`-32614`), bukan hasil kosong.
+The block range MUST be <= 10,000; go wider and the public RPC answers HTTP 413 (`-32614`),
+not an empty result.
 
-## Status akhir & aliran dana
+## Final status & fund flow
 
 ```
 $ cast call 0x0b93793923CD5De81850aF8604a233f3f24d461e \
@@ -76,31 +83,32 @@ $ cast call 0x0b93793923CD5De81850aF8604a233f3f24d461e \
 "the-evaluator smoke job: provider menyerahkan satu deliverable, EvaluatorVault yang menilai."
 ```
 
-status = 3 (Completed). Budget 1 USDC terbelah persis:
+status = 3 (Completed). The 1 USDC budget splits exactly:
 
-| Penerima | Jumlah | Catatan |
+| Recipient | Amount | Note |
 |---|---|---|
-| Provider | 940.000 | payout |
-| Vault (evaluator fee) | 50.000 | `evaluatorFeeBP()` = 500 = 5% |
-| Platform | 10.000 | 1% |
+| Provider | 940,000 | payout |
+| Vault (evaluator fee) | 50,000 | `evaluatorFeeBP()` = 500 = 5% |
+| Platform | 10,000 | 1% |
 
-Angka 940.000 + 50.000 + 10.000 = 1.000.000 diukur dari `balanceOf` sesudah `finalize`, bukan dihitung
-di atas kertas.
+940,000 + 50,000 + 10,000 = 1,000,000 was measured from `balanceOf` after `finalize`, not
+worked out on paper.
 
-**Utang yang terlihat dari sini, dan TIDAK ditutup:** vault memegang 50.000 token dan tidak punya jalan
-keluar. `sweepToken(address,address) onlyArbiter` mendarat di sumber (commit `e675234`) sebagai kode + tes
-SAJA; ADR-022 membekukan alamat di atas sebagai kontrak submission dan membatalkan redeploy, jadi fungsi itu
-TIDAK ADA di bytecode terdeploy — dibuktikan langsung: `cast call 0x5c6EE4586ACABcb6326069c229E58091B21ef384
-"sweepToken(address,address)" ...` → `execution reverted`. 50.000 unit (0,05 USDC testnet) hangus permanen;
-ini dilepas secara sadar oleh ADR-018 keputusan 2, bukan kelalaian.
+**Debt visible from here, and NOT closed:** the vault holds 50,000 tokens and has no way out.
+`sweepToken(address,address) onlyArbiter` landed in the source (commit `e675234`) as code +
+tests ONLY; ADR-022 froze the addresses above as the submission contracts and cancelled the
+redeploy, so that function IS NOT in the deployed bytecode — proven directly:
+`cast call 0x5c6EE4586ACABcb6326069c229E58091B21ef384 "sweepToken(address,address)" ...` →
+`execution reverted`. 50,000 units (0.05 testnet USDC) are stranded permanently; ADR-018
+decision 2 gave this up knowingly, it is not an oversight.
 
-## Cara memutar ulang
+## How to replay
 
 ```
-pnpm --filter sim run job:min          # createJob + setBudget + fund + submit → jobId baru
-cd agent && uv run python -m agent.vault_client --job-id <jobId>   # postVerdict → tunggu 120 dtk → finalize
+pnpm --filter sim run job:min          # createJob + setBudget + fund + submit → new jobId
+cd agent && uv run python -m agent.vault_client --job-id <jobId>   # postVerdict → wait 120 s → finalize
 ```
 
-Anggaran waktu: verdict WAJIB di-`finalize` sebelum `expiredAt + 900`. Sesudah ambang itu siapa pun
-boleh `claimRefund` job Submitted dan verdict jadi yatim — `complete()` sesudahnya revert
-`WrongStatus()`. Run ini selesai 2.655 detik sebelum ambang tersebut.
+Time budget: the verdict MUST be `finalize`d before `expiredAt + 900`. Past that threshold
+anyone may `claimRefund` a Submitted job and the verdict is orphaned — a later `complete()`
+reverts `WrongStatus()`. This run finished 2,655 seconds before that threshold.
